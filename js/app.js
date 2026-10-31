@@ -4,6 +4,7 @@ import { $, $$, icon, initSheets, closeSheet, toast } from "./ui.js";
 import { initSync, onSync, sync } from "./sync.js";
 import { mountSetup, renderSetup, renderPlans, renderCharts, openAdd } from "./setup.js";
 import { mountMore, renderMore, bindMore, openAuth, openNewPassword } from "./more.js";
+import { mountMoney, renderMoney, openExpense } from "./money.js";
 
 const ROUTES = ["setup", "money", "plan", "more"];
 let current = null;
@@ -23,6 +24,7 @@ function route() {
   document.title = { setup: "Koti · Home setup", money: "Koti · Money", plan: "Koti · Plan", more: "Koti · More" }[r];
   if (r === "setup") { renderPlans(); renderCharts(); }
   if (r === "more") renderMore();
+  if (r === "money") renderMoney();
   window.scrollTo(0, 0);
 }
 
@@ -34,20 +36,22 @@ function paintSync(s) {
 function init() {
   initSheets();
   mountSetup($("#view-setup"));
-  soon($("#view-money"), "Money", "money", "Your monthly money in one place, added in a few seconds.", ["Add expenses by typing, speaking or scanning a receipt", "Monthly budgets by category, with what's left until payday", "Bank CSV import for any bank, with category rules", "Charts by category and month. Home setup purchases count here too."]);
+  mountMoney($("#view-money"));
   soon($("#view-plan"), "Plan", "plan", "What's coming up and what you're saving for.", ["Bills and subscriptions on a calendar, with monthly and yearly totals", "Savings goals with how much to put aside each month"]);
   mountMore($("#view-more")); bindMore();
-  renderSetup();
+  renderSetup(); renderMoney();
 
-  store.on(() => { renderSetup(); if (current === "more") renderMore(); });
-  onSync((s, ev) => { paintSync(s); if (current === "more") renderMore(); renderSetup(); if (ev === "recovery") openNewPassword(); });
+  store.on(() => { renderSetup(); renderMoney(); if (current === "more") renderMore(); });
+  onSync((s, ev) => { paintSync(s); if (current === "more") renderMore(); renderSetup(); renderMoney(); if (ev === "recovery") openNewPassword(); });
   initSync();
 
-  document.addEventListener("click", e => { if (e.target.closest("[data-action=add]")) { e.preventDefault(); openAdd(); } });
+  document.addEventListener("click", e => { if (e.target.closest("[data-action=add]")) { e.preventDefault(); if (current === "setup") openAdd(); else openExpense(); } });
   window.addEventListener("hashchange", route);
-  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "setup") { renderPlans(); renderCharts(); } }, 120); });
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "setup") { renderPlans(); renderCharts(); } if (current === "money") renderMoney(); }, 120); });
   route();
-  if (/[?&]add=1/.test(location.search)) openAdd();
+  const q = new URLSearchParams(location.search);
+  if (q.get("add") === "1" || q.get("add") === "item") openAdd();
+  if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "speak" ? "speak" : "type" });
 
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").then(reg => {

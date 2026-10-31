@@ -211,12 +211,14 @@ export function openAdd() {
     title: "Add item", right: "Add",
     body: B => {
       B.innerHTML = `
+        <div class="seg" aria-label="What to add"><button type="button" data-switch="expense">Expense</button><button type="button" aria-pressed="true">Checklist item</button></div>
         <div class="field"><label for="adName">Item</label><input class="inp" id="adName" placeholder="e.g. Shower curtain…" autocomplete="off" maxlength="200" enterkeyhint="done" autofocus></div>
         <div class="field"><label for="adList">List</label><select class="inp" id="adList">${listOptions(def)}</select></div>
         <div class="field"><span class="flabel">Priority</span>${prioSeg("Soon")}</div>
         <p class="msg" id="adMsg" aria-live="polite"></p>
-        <p class="note">Expenses arrive with the Money update. For now, + adds to your Home setup lists.</p>`;
+        <p class="note">Bought it already? Tick it in the list and add the price: it counts in Money as Home setup.</p>`;
       bindPrio(B);
+      $("[data-switch=expense]", B).onclick = () => { closeSheet(); setTimeout(() => import("./money.js").then(m => m.openExpense()), 260); };
       $("#adName", B).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#sheet .sh-head .r").click(); } });
     },
     onRight: B => {

@@ -2,6 +2,7 @@
 import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount } from "./sync.js";
+import { openCategories } from "./money.js";
 
 let root = null, installPrompt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; });
@@ -35,6 +36,10 @@ export function renderMore() {
     <label class="row"><span class="rt">Monthly income</span><input class="inl" data-set="income" data-money inputmode="decimal" placeholder="€0" value="${moneyField(S.income)}" autocomplete="off"></label>
   </div>
   <p class="note">Money uses these to show what's left until payday.</p>
+  <div class="grp" style="margin-top:10px">
+    <button type="button" class="row" data-open="categories"><span class="ico g">${icon("money")}</span><span class="rt">Categories and budgets<small>${store.model.categories.length} categories · ${eur(store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0)).replace(/\.00$/, "")} a month</small></span>${chev}</button>
+    <label class="row"><span class="rt">Speaking language</span><select class="inl" data-set="voiceLang"><option value="en-GB"${S.voiceLang !== "fi-FI" ? " selected" : ""}>English</option><option value="fi-FI"${S.voiceLang === "fi-FI" ? " selected" : ""}>Suomi</option></select>${chev}</label>
+  </div>
 
   <div class="gh"><h2>Home setup</h2></div>
   <div class="grp">
@@ -59,7 +64,7 @@ export function renderMore() {
   <div class="grp">
     <button type="button" class="row" data-open="install"><span class="ico g">${icon("phone")}</span><span class="rt">Add Koti to your home screen</span>${chev}</button>
   </div>
-  <p class="note">Koti · step 1 of 5 · your data lives in your own Supabase project.</p>`;
+  <p class="note">Koti · step 2 of 5 · your data lives in your own Supabase project.</p>`;
 
   $$("[data-set]", root).forEach(inp => inp.addEventListener("change", () => {
     const k = inp.dataset.set; let v = inp.value;
@@ -74,7 +79,7 @@ export function renderMore() {
 
 export function bindMore() {
   document.addEventListener("click", e => {
-    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall }[o.dataset.open]; if (f) f(); return; }
+    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories }[o.dataset.open]; if (f) f(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
     ({ refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
   });

@@ -15,6 +15,8 @@
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Add item", "url": "./?add=1#setup", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+    { "name": "Add expense", "url": "./?add=expense#money", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Say an expense", "url": "./?add=expense&mode=speak#money", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Add checklist item", "url": "./?add=item#setup", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }

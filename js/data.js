@@ -23,7 +23,10 @@ const SEED = [
   ["Tools & household", "ET", "Extension cord / power strip|Soon;Light bulbs|Soon;Scissors|Soon;Tape|Later;Screwdriver set|Soon;Measuring tape|Later;Batteries|Later;First aid kit|Soon;Small household bin|Soon;Doormat|Soon"],
 ];
 const DEFAULT_ROOMS = { "Kitchen & cooking": "K", "Groceries & pantry": "K", "Living room": "OH", "Bedroom": "MH", "Bedroom & living": "MH", "Bathroom & personal care": "KPH", "Laundry & cleaning": "ET", "Tools & household": "ET" };
-const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null };
+const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB" };
+export const DEFAULT_CATEGORIES = [["Groceries", 400], ["Eating out", 120], ["Transport", 70], ["Shopping", 150], ["Health", 50], ["Fun", 100], ["Other", 60]];
+export const HOME_SETUP_CAT = "home-setup";   // derived from checklist purchases, not stored
+export const KINDS = ["lists", "items", "categories", "transactions"];
 const EPOCH = new Date(0).toISOString();
 
 export const slug = s => String(s).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "x";
@@ -41,6 +44,22 @@ function cleanItem(i, listId, pos) {
   };
 }
 
+function cleanCategory(c, pos) {
+  const budget = c.budget === null || c.budget === undefined || c.budget === "" || isNaN(Number(c.budget)) ? null : Math.max(0, Number(c.budget));
+  return { id: String(c.id).slice(0, 80), name: String(c.name).slice(0, 60), budget, position: Number.isFinite(c.position) ? c.position : pos, updatedAt: c.updatedAt || EPOCH };
+}
+export const TX_KINDS = ["expense", "income", "refund"];
+function cleanTx(t) {
+  return {
+    id: String(t.id || newId("tx")).slice(0, 120), date: String(t.date).slice(0, 10), amount: Math.round(Math.abs(Number(t.amount)) * 100) / 100,
+    kind: TX_KINDS.includes(t.kind) ? t.kind : "expense", categoryId: t.categoryId || null,
+    payee: t.payee ? String(t.payee).slice(0, 120) : null, note: t.note ? String(t.note).slice(0, 500) : null,
+    source: ["manual", "voice", "bank", "receipt"].includes(t.source) ? t.source : "manual",
+    receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, updatedAt: t.updatedAt || EPOCH,
+  };
+}
+export function seedCategories() { return DEFAULT_CATEGORIES.map(([name, budget], k) => cleanCategory({ id: "cat-" + slug(name), name, budget }, k)); }
+
 export function seedModel() {
   const lists = [], items = [];
   SEED.forEach(([name, room, raw], li) => {
@@ -48,7 +67,7 @@ export function seedModel() {
     lists.push({ id, name, room, position: li, updatedAt: EPOCH });
     raw.split(";").forEach((x, k) => { const [n, p] = x.split("|"); items.push(cleanItem({ id: slug(name) + "--" + slug(n), name: n, priority: p }, id, k)); });
   });
-  return { version: 3, lists, items, settings: { ...DEFAULT_SETTINGS, updatedAt: EPOCH } };
+  return { version: 3, lists, items, categories: seedCategories(), transactions: [], settings: { ...DEFAULT_SETTINGS, updatedAt: EPOCH } };
 }
 
 /* Version 2 (single-file dashboard / Google Sheets): categories with items + roomMap. */
@@ -63,7 +82,7 @@ export function fromV2(s) {
   });
   const settings = { ...DEFAULT_SETTINGS, budget: Number(s.budget) || 0, extraSpend: Number(s.extraSpend) || 0, carriedSpend: !!s.carriedSpend,
     notes: s.notes || "", movedIn: s.movedIn ? String(s.movedIn).slice(0, 10) : "", updatedAt: now() };
-  return { version: 3, lists, items, settings };
+  return { version: 3, lists, items, settings };   // no categories/transactions: imports keep the current ones
 }
 
 /* Version 1 (first tracker): split "Bedroom & living", move old total into other spending. */
@@ -93,12 +112,15 @@ export function normalizeModel(m) {
   const lists = (m.lists || []).filter(l => l && l.id && l.name).map((l, k) => ({ id: String(l.id), name: String(l.name), room: ZONES[l.room] ? l.room : "OH", position: Number.isFinite(l.position) ? l.position : k, updatedAt: l.updatedAt || EPOCH }));
   const ids = new Set(lists.map(l => l.id));
   const items = (m.items || []).filter(i => i && i.id && i.name && ids.has(String(i.listId))).map((i, k) => cleanItem(i, i.listId, k));
-  return { version: 3, lists, items, settings: { ...DEFAULT_SETTINGS, ...(m.settings || {}), updatedAt: (m.settings && m.settings.updatedAt) || EPOCH } };
+  const categories = (m.categories || []).filter(c => c && c.id && c.name).map((c, k) => cleanCategory(c, k));
+  const transactions = (m.transactions || []).filter(t => t && t.id && t.date && Number(t.amount) > 0).map(cleanTx);
+  return { version: 3, lists, items, categories, transactions, settings: { ...DEFAULT_SETTINGS, ...(m.settings || {}), updatedAt: (m.settings && m.settings.updatedAt) || EPOCH } };
 }
 
 /* ---------- Store ---------- */
 const MODEL_KEY = "koti.model", META_KEY = "koti.meta";
-const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, settings: false }, lastSync: { lists: null, items: null, settings: null } });
+const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, categories: {}, transactions: {}, settings: false }, lastSync: { lists: null, items: null, categories: null, transactions: null, settings: null }, tomb: { lists: {}, items: {}, categories: {}, transactions: {} } });
+function fixMeta(m) { const e = emptyMeta(); m = Object.assign(e, m || {}); ["pending", "lastSync", "tomb"].forEach(k => { m[k] = Object.assign(emptyMeta()[k], m[k] || {}); }); return m; }
 const listeners = new Set();
 
 function readJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
@@ -106,19 +128,24 @@ function writeJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } c
 
 function loadInitial() {
   const m = readJSON(MODEL_KEY);
-  if (m && m.version === 3) return { model: normalizeModel(m), migrated: false };
+  if (m && m.version === 3) {
+    const model = normalizeModel(m);
+    if (!Array.isArray(m.categories)) { model.categories = seedCategories().map(c => ({ ...c, updatedAt: now() })); return { model, migrated: false, newCategories: true }; }
+    return { model, migrated: false };
+  }
   // Earlier versions on this same site
   const v2 = readJSON("kotiTracker_v2");
-  if (v2 && Array.isArray(v2.categories)) return { model: fromV2(v2), migrated: true };
+  const withMoney = m => ({ ...m, categories: seedCategories().map(c => ({ ...c, updatedAt: now() })), transactions: [] });
+  if (v2 && Array.isArray(v2.categories)) return { model: normalizeModel(withMoney(fromV2(v2))), migrated: true };
   const v1 = readJSON("newHomeTracker_v1");
-  if (v1 && Array.isArray(v1.categories)) return { model: fromV2(v1ToV2(v1)), migrated: true };
+  if (v1 && Array.isArray(v1.categories)) return { model: normalizeModel(withMoney(fromV2(v1ToV2(v1)))), migrated: true };
   return { model: seedModel(), migrated: false };
 }
 
 const init = loadInitial();
 export const store = {
   model: init.model,
-  meta: Object.assign(emptyMeta(), readJSON(META_KEY) || {}),
+  meta: fixMeta(readJSON(META_KEY)),
   migrated: init.migrated,
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   emit(kind = "local") { listeners.forEach(fn => fn(kind)); },
@@ -143,11 +170,11 @@ export const store = {
   deleteItem(id) {
     const it = this.model.items.find(i => i.id === id); if (!it) return null;
     this.model.items = this.model.items.filter(i => i.id !== id);
-    this.meta.tomb = this.meta.tomb || { lists: {}, items: {} };
+    
     this.meta.tomb.items[id] = { ...it, deleted: true, updatedAt: now() };
     this.touch("items", id); this.commit(); return it;
   },
-  restoreItem(it) { it.updatedAt = now(); this.model.items.push(it); if (this.meta.tomb) delete this.meta.tomb.items[it.id]; this.touch("items", it.id); this.commit(); },
+  restoreItem(it) { it.updatedAt = now(); this.model.items.push(it); delete this.meta.tomb.items[it.id]; this.touch("items", it.id); this.commit(); },
   addList(name, room) {
     let id = "list-" + slug(name); if (this.model.lists.some(l => l.id === id)) id = newId("list");
     const l = { id, name, room, position: this.model.lists.length, updatedAt: now() };
@@ -156,7 +183,7 @@ export const store = {
   updateList(id, patch) { const l = this.model.lists.find(x => x.id === id); if (!l) return; Object.assign(l, patch); l.updatedAt = now(); this.touch("lists", id); this.commit(); },
   deleteList(id) {
     const l = this.model.lists.find(x => x.id === id); if (!l) return;
-    this.meta.tomb = this.meta.tomb || { lists: {}, items: {} };
+    
     this.model.items.filter(i => i.listId === id).forEach(i => { this.meta.tomb.items[i.id] = { ...i, deleted: true, updatedAt: now() }; this.touch("items", i.id); });
     this.model.items = this.model.items.filter(i => i.listId !== id);
     this.model.lists = this.model.lists.filter(x => x.id !== id);
@@ -164,23 +191,39 @@ export const store = {
   },
   updateSettings(patch) { Object.assign(this.model.settings, patch, { updatedAt: now() }); this.touch("settings"); this.commit(); },
 
+  /* Generic rows (categories, transactions) */
+  put(kind, obj) {
+    const arr = this.model[kind], i = arr.findIndex(x => x.id === obj.id);
+    const clean = kind === "transactions" ? cleanTx({ ...obj, updatedAt: now() }) : cleanCategory({ ...obj, updatedAt: now() }, arr.length);
+    if (i >= 0) arr[i] = clean; else arr.push(clean);
+    delete this.meta.tomb[kind][clean.id]; this.touch(kind, clean.id); this.commit(); return clean;
+  },
+  remove(kind, id) {
+    const arr = this.model[kind], obj = arr.find(x => x.id === id); if (!obj) return null;
+    this.model[kind] = arr.filter(x => x.id !== id);
+    this.meta.tomb[kind][id] = { ...obj, deleted: true, updatedAt: now() }; this.touch(kind, id); this.commit(); return obj;
+  },
   /* Replace everything (restore, import, start over). Marks all rows for upload and deletes rows that disappear. */
   replaceAll(model) {
     const old = this.model; const m = normalizeModel(model); const t = now();
-    this.meta.tomb = this.meta.tomb || { lists: {}, items: {} };
-    const newItems = new Set(m.items.map(i => i.id)), newLists = new Set(m.lists.map(l => l.id));
-    old.items.forEach(i => { if (!newItems.has(i.id)) { this.meta.tomb.items[i.id] = { ...i, deleted: true, updatedAt: t }; this.touch("items", i.id); } });
-    old.lists.forEach(l => { if (!newLists.has(l.id)) { this.meta.tomb.lists[l.id] = { ...l, deleted: true, updatedAt: t }; this.touch("lists", l.id); } });
-    m.items.forEach(i => { i.updatedAt = t; this.touch("items", i.id); });
-    m.lists.forEach(l => { l.updatedAt = t; this.touch("lists", l.id); });
+    
+    if (!Array.isArray(model.categories)) m.categories = old.categories.map(c => ({ ...c }));       // older backups: keep current categories
+    if (!Array.isArray(model.transactions)) m.transactions = old.transactions.map(x => ({ ...x }));
+    KINDS.forEach(kind => {
+      const keep = new Set(m[kind].map(x => x.id));
+      old[kind].forEach(x => { if (!keep.has(x.id)) { this.meta.tomb[kind][x.id] = { ...x, deleted: true, updatedAt: t }; this.touch(kind, x.id); } });
+      m[kind].forEach(x => { x.updatedAt = t; this.touch(kind, x.id); });
+    });
     m.settings.updatedAt = t; this.touch("settings");
     this.model = m; this.commit();
   },
   /* Forget local data entirely (used when a different account signs in on this device). */
   resetLocal(model) { this.model = normalizeModel(model); this.meta = emptyMeta(); this.persist(); this.emit("remote"); },
-  markAllPending() { this.model.items.forEach(i => this.touch("items", i.id)); this.model.lists.forEach(l => this.touch("lists", l.id)); this.touch("settings"); this.persist(); },
+  markAllPending() { KINDS.forEach(kind => this.model[kind].forEach(x => this.touch(kind, x.id))); this.touch("settings"); this.persist(); },
+  seedCategoriesIfEmpty() { if (this.model.categories.length) return false; this.model.categories = seedCategories().map(c => ({ ...c, updatedAt: now() })); this.model.categories.forEach(c => this.touch("categories", c.id)); this.commit(); return true; },
 };
 if (store.migrated) { store.markAllPending(); store.persist(); }
+if (init.newCategories) { store.model.categories.forEach(c => store.touch("categories", c.id)); store.persist(); }
 
 /* ---------- Derived values ---------- */
 export const listOf = id => store.model.lists.find(l => l.id === id);
@@ -194,4 +237,4 @@ export function zoneStats() {
   store.model.items.forEach(i => { const s = z[roomOf[i.listId]]; if (!s) return; s.total++; if (i.done) { s.done++; if (i.price > 0) { s.spent += i.price; s.priced++; } } else if (i.priority === "Essential") s.ess++; });
   return z;
 }
-export function backupJSON() { const { version, lists, items, settings } = store.model; return JSON.stringify({ version, exportedAt: now(), lists, items, settings }, null, 2); }
+export function backupJSON() { const { version, lists, items, categories, transactions, settings } = store.model; return JSON.stringify({ version, exportedAt: now(), lists, items, categories, transactions, settings }, null, 2); }

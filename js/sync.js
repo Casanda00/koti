@@ -10,11 +10,18 @@ export const sync = { status: "local", text: "Saved on this device", detail: "",
 export function onSync(fn) { listeners.add(fn); fn(sync); return () => listeners.delete(fn); }
 function setStatus(status, text, detail = "") { Object.assign(sync, { status, text, detail }); listeners.forEach(f => f(sync)); }
 
-const TABLES = ["lists", "items", "settings"];
+const TABLES = ["lists", "items", "categories", "transactions", "settings"];
+const ROWS = ["lists", "items", "categories", "transactions"];
 const t = s => (s ? Date.parse(s) : 0);
 const rowOfList = (l, uid) => ({ user_id: uid, id: l.id, name: l.name, room: l.room, position: l.position, deleted: !!l.deleted, updated_at: l.updatedAt });
 const rowOfItem = (i, uid) => ({ user_id: uid, id: i.id, list_id: i.listId, name: i.name, priority: i.priority, done: !!i.done, price: i.price, bought_at: i.boughtAt, position: i.position, deleted: !!i.deleted, updated_at: i.updatedAt });
 const listFromRow = r => ({ id: r.id, name: r.name, room: r.room, position: r.position, updatedAt: r.updated_at });
+const catOfRow = r => ({ id: r.id, name: r.name, budget: r.budget == null ? null : Number(r.budget), position: r.position, updatedAt: r.updated_at });
+const rowOfCat = (c, uid) => ({ user_id: uid, id: c.id, name: c.name, budget: c.budget, position: c.position, deleted: !!c.deleted, updated_at: c.updatedAt });
+const txOfRow = r => ({ id: r.id, date: r.date, amount: Number(r.amount), kind: r.kind, categoryId: r.category_id, payee: r.payee, note: r.note, source: r.source, receiptPath: r.receipt_path, bankRef: r.bank_ref, updatedAt: r.updated_at });
+const rowOfTx = (t, uid) => ({ user_id: uid, id: t.id, date: t.date, amount: t.amount, kind: t.kind, category_id: t.categoryId, payee: t.payee, note: t.note, source: t.source, receipt_path: t.receiptPath, bank_ref: t.bankRef, deleted: !!t.deleted, updated_at: t.updatedAt });
+const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, transactions: rowOfTx };
+const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow };
 const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, position: r.position, updatedAt: r.updated_at });
 
 /* ---------- Apply rows from the server ---------- */
@@ -28,7 +35,7 @@ export function applyRows(kind, rows) {
       m.settings = { ...m.settings, ...(r.data || {}), updatedAt: r.updated_at };
       meta.pending.settings = false; changed = true; continue;
     }
-    const arr = kind === "items" ? m.items : m.lists;
+    const arr = m[kind];
     const idx = arr.findIndex(x => x.id === r.id);
     const local = idx >= 0 ? arr[idx] : meta.tomb && meta.tomb[kind] && meta.tomb[kind][r.id];
     if (meta.pending[kind][r.id] && local && t(local.updatedAt) >= t(r.updated_at)) continue; // ours is newer; it will upload
@@ -36,7 +43,7 @@ export function applyRows(kind, rows) {
     delete meta.pending[kind][r.id];
     if (meta.tomb && meta.tomb[kind]) delete meta.tomb[kind][r.id];
     if (r.deleted) { if (idx >= 0) { arr.splice(idx, 1); changed = true; } continue; }
-    const obj = kind === "items" ? itemFromRow(r) : listFromRow(r);
+    const obj = FROM_ROW[kind](r);
     if (idx >= 0) arr[idx] = obj; else arr.push(obj);
     changed = true;
   }
@@ -85,26 +92,23 @@ export async function flush() {
   flushing = true;
   const c = sync.client, uid = sync.user.id, meta = store.meta, m = store.model;
   const pick = kind => Object.keys(meta.pending[kind]).map(id => {
-    const arr = kind === "items" ? m.items : m.lists;
-    const obj = arr.find(x => x.id === id) || (meta.tomb && meta.tomb[kind] && meta.tomb[kind][id]);
+    const obj = m[kind].find(x => x.id === id) || (meta.tomb && meta.tomb[kind] && meta.tomb[kind][id]);
     if (!obj) { delete meta.pending[kind][id]; return null; }
-    return { id, version: obj.updatedAt, row: kind === "items" ? rowOfItem(obj, uid) : rowOfList(obj, uid) };
+    return { id, version: obj.updatedAt, row: TO_ROW[kind](obj, uid) };
   }).filter(Boolean);
-  const lists = pick("lists"), items = pick("items");
+  const batches = Object.fromEntries(ROWS.map(k => [k, pick(k)]));
   const settings = meta.pending.settings ? { version: m.settings.updatedAt, row: { user_id: uid, data: (({ updatedAt, ...rest }) => rest)(m.settings), updated_at: m.settings.updatedAt } } : null;
-  if (!lists.length && !items.length && !settings) { flushing = false; okStatus(); return; }
+  if (ROWS.every(k => !batches[k].length) && !settings) { flushing = false; okStatus(); return; }
   setStatus("busy", "Saving…");
   try {
     const send = async (table, batch) => { for (let k = 0; k < batch.length; k += 500) { const { error } = await c.from(table).upsert(batch.slice(k, k + 500).map(b => b.row), { onConflict: "user_id,id" }); if (error) throw error; } };
-    if (lists.length) await send("lists", lists);
-    if (items.length) await send("items", items);
+    for (const k of ROWS) if (batches[k].length) await send(k, batches[k]);
     if (settings) { const { error } = await c.from("settings").upsert(settings.row, { onConflict: "user_id" }); if (error) throw error; }
     const settle = (kind, sent) => sent.forEach(s => {
-      const arr = kind === "items" ? store.model.items : store.model.lists;
-      const cur = arr.find(x => x.id === s.id) || (store.meta.tomb && store.meta.tomb[kind] && store.meta.tomb[kind][s.id]);
+      const cur = store.model[kind].find(x => x.id === s.id) || (store.meta.tomb && store.meta.tomb[kind] && store.meta.tomb[kind][s.id]);
       if (!cur || cur.updatedAt === s.version) { delete store.meta.pending[kind][s.id]; if (store.meta.tomb && store.meta.tomb[kind]) delete store.meta.tomb[kind][s.id]; }
     });
-    settle("lists", lists); settle("items", items);
+    ROWS.forEach(k => settle(k, batches[k]));
     if (settings && store.model.settings.updatedAt === settings.version) store.meta.pending.settings = false;
     store.persist(); sync.lastSync = new Date(); okStatus();
   } catch (e) { fail(e); }
@@ -112,7 +116,7 @@ export async function flush() {
 }
 
 /* ---------- Status helpers ---------- */
-export const pendingCount = () => Object.keys(store.meta.pending.items).length + Object.keys(store.meta.pending.lists).length + (store.meta.pending.settings ? 1 : 0);
+export const pendingCount = () => ROWS.reduce((n, k) => n + Object.keys(store.meta.pending[k]).length, 0) + (store.meta.pending.settings ? 1 : 0);
 function okStatus() { if (!navigator.onLine) return setStatus("offline", "Offline", "Changes are saved on this device and will upload when you're back online."); setStatus("ok", "Synced", ""); }
 function idleStatus() {
   if (!sync.configured) return setStatus("local", "Saved on this device", "Cloud sync isn't set up in this copy of Koti.");
@@ -133,11 +137,12 @@ async function begin() {
       store.meta.owner = uid; store.markAllPending(); // first device: upload what's here
     } else {
       if (store.hasUserData()) { try { localStorage.setItem("koti.beforeSignIn", JSON.stringify(store.model)); } catch {} }
-      store.resetLocal({ version: 3, lists: [], items: [], settings: {} });
+      store.resetLocal({ version: 3, lists: [], items: [], categories: [], transactions: [], settings: {} });
       store.meta.owner = uid; store.persist();
     }
   }
   await pull();
+  store.seedCategoriesIfEmpty();   // first time Money runs for this account
   await flush();
   subscribe();
 }
