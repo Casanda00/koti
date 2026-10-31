@@ -26,7 +26,8 @@ const DEFAULT_ROOMS = { "Kitchen & cooking": "K", "Groceries & pantry": "K", "Li
 const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB" };
 export const DEFAULT_CATEGORIES = [["Groceries", 400], ["Eating out", 120], ["Transport", 70], ["Shopping", 150], ["Health", 50], ["Fun", 100], ["Other", 60]];
 export const HOME_SETUP_CAT = "home-setup";   // derived from checklist purchases, not stored
-export const KINDS = ["lists", "items", "categories", "transactions"];
+export const KINDS = ["lists", "items", "categories", "transactions", "bills", "goals"];
+export const BILLS_CAT = "cat-bills";   // payments of bills, created from Plan
 const EPOCH = new Date(0).toISOString();
 
 export const slug = s => String(s).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "x";
@@ -55,8 +56,20 @@ function cleanTx(t) {
     kind: TX_KINDS.includes(t.kind) ? t.kind : "expense", categoryId: t.categoryId || null,
     payee: t.payee ? String(t.payee).slice(0, 120) : null, note: t.note ? String(t.note).slice(0, 500) : null,
     source: ["manual", "voice", "bank", "receipt"].includes(t.source) ? t.source : "manual",
-    receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, updatedAt: t.updatedAt || EPOCH,
+    receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, billId: t.billId || null, billDue: t.billDue ? String(t.billDue).slice(0, 10) : null, updatedAt: t.updatedAt || EPOCH,
   };
+}
+export const FREQS = ["monthly", "quarterly", "yearly"];
+const num = (v, d = null) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? d : Number(v));
+function cleanBill(b, pos) {
+  return { id: String(b.id || newId("bill")).slice(0, 80), name: String(b.name).slice(0, 80), amount: Math.round(Math.abs(num(b.amount, 0)) * 100) / 100,
+    frequency: FREQS.includes(b.frequency) ? b.frequency : "monthly", dueDay: Math.min(31, Math.max(1, Math.round(num(b.dueDay, 1)))), anchorMonth: Math.min(12, Math.max(1, Math.round(num(b.anchorMonth, 1)))),
+    autopay: !!b.autopay, autoThrough: b.autoThrough ? String(b.autoThrough).slice(0, 10) : null, active: b.active !== false,
+    payee: b.payee ? String(b.payee).slice(0, 120) : null, note: b.note ? String(b.note).slice(0, 500) : null, position: Number.isFinite(b.position) ? b.position : pos, updatedAt: b.updatedAt || EPOCH };
+}
+function cleanGoal(g, pos) {
+  return { id: String(g.id || newId("goal")).slice(0, 80), name: String(g.name).slice(0, 80), target: Math.max(0.01, num(g.target, 1)), saved: Math.max(0, num(g.saved, 0)),
+    targetDate: g.targetDate ? String(g.targetDate).slice(0, 10) : null, monthly: num(g.monthly) == null ? null : Math.max(0, num(g.monthly)), position: Number.isFinite(g.position) ? g.position : pos, updatedAt: g.updatedAt || EPOCH };
 }
 export function seedCategories() { return DEFAULT_CATEGORIES.map(([name, budget], k) => cleanCategory({ id: "cat-" + slug(name), name, budget }, k)); }
 
@@ -67,7 +80,7 @@ export function seedModel() {
     lists.push({ id, name, room, position: li, updatedAt: EPOCH });
     raw.split(";").forEach((x, k) => { const [n, p] = x.split("|"); items.push(cleanItem({ id: slug(name) + "--" + slug(n), name: n, priority: p }, id, k)); });
   });
-  return { version: 3, lists, items, categories: seedCategories(), transactions: [], settings: { ...DEFAULT_SETTINGS, updatedAt: EPOCH } };
+  return { version: 3, lists, items, categories: seedCategories(), transactions: [], bills: [], goals: [], settings: { ...DEFAULT_SETTINGS, updatedAt: EPOCH } };
 }
 
 /* Version 2 (single-file dashboard / Google Sheets): categories with items + roomMap. */
@@ -114,12 +127,14 @@ export function normalizeModel(m) {
   const items = (m.items || []).filter(i => i && i.id && i.name && ids.has(String(i.listId))).map((i, k) => cleanItem(i, i.listId, k));
   const categories = (m.categories || []).filter(c => c && c.id && c.name).map((c, k) => cleanCategory(c, k));
   const transactions = (m.transactions || []).filter(t => t && t.id && t.date && Number(t.amount) > 0).map(cleanTx);
-  return { version: 3, lists, items, categories, transactions, settings: { ...DEFAULT_SETTINGS, ...(m.settings || {}), updatedAt: (m.settings && m.settings.updatedAt) || EPOCH } };
+  const bills = (m.bills || []).filter(b => b && b.id && b.name && Number(b.amount) > 0).map((b, k) => cleanBill(b, k));
+  const goals = (m.goals || []).filter(g => g && g.id && g.name && Number(g.target) > 0).map((g, k) => cleanGoal(g, k));
+  return { version: 3, lists, items, categories, transactions, bills, goals, settings: { ...DEFAULT_SETTINGS, ...(m.settings || {}), updatedAt: (m.settings && m.settings.updatedAt) || EPOCH } };
 }
 
 /* ---------- Store ---------- */
 const MODEL_KEY = "koti.model", META_KEY = "koti.meta";
-const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, categories: {}, transactions: {}, settings: false }, lastSync: { lists: null, items: null, categories: null, transactions: null, settings: null }, tomb: { lists: {}, items: {}, categories: {}, transactions: {} } });
+const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, settings: false }, lastSync: { lists: null, items: null, categories: null, transactions: null, bills: null, goals: null, settings: null }, tomb: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {} } });
 function fixMeta(m) { const e = emptyMeta(); m = Object.assign(e, m || {}); ["pending", "lastSync", "tomb"].forEach(k => { m[k] = Object.assign(emptyMeta()[k], m[k] || {}); }); return m; }
 const listeners = new Set();
 
@@ -135,7 +150,7 @@ function loadInitial() {
   }
   // Earlier versions on this same site
   const v2 = readJSON("kotiTracker_v2");
-  const withMoney = m => ({ ...m, categories: seedCategories().map(c => ({ ...c, updatedAt: now() })), transactions: [] });
+  const withMoney = m => ({ ...m, categories: seedCategories().map(c => ({ ...c, updatedAt: now() })), transactions: [], bills: [], goals: [] });
   if (v2 && Array.isArray(v2.categories)) return { model: normalizeModel(withMoney(fromV2(v2))), migrated: true };
   const v1 = readJSON("newHomeTracker_v1");
   if (v1 && Array.isArray(v1.categories)) return { model: normalizeModel(withMoney(fromV2(v1ToV2(v1)))), migrated: true };
@@ -194,7 +209,7 @@ export const store = {
   /* Generic rows (categories, transactions) */
   put(kind, obj) {
     const arr = this.model[kind], i = arr.findIndex(x => x.id === obj.id);
-    const clean = kind === "transactions" ? cleanTx({ ...obj, updatedAt: now() }) : cleanCategory({ ...obj, updatedAt: now() }, arr.length);
+    const clean = ({ transactions: o => cleanTx(o), categories: o => cleanCategory(o, arr.length), bills: o => cleanBill(o, arr.length), goals: o => cleanGoal(o, arr.length) })[kind]({ ...obj, updatedAt: now() });
     if (i >= 0) arr[i] = clean; else arr.push(clean);
     delete this.meta.tomb[kind][clean.id]; this.touch(kind, clean.id); this.commit(); return clean;
   },
@@ -208,7 +223,7 @@ export const store = {
     const old = this.model; const m = normalizeModel(model); const t = now();
     
     if (!Array.isArray(model.categories)) m.categories = old.categories.map(c => ({ ...c }));       // older backups: keep current categories
-    if (!Array.isArray(model.transactions)) m.transactions = old.transactions.map(x => ({ ...x }));
+    ["transactions", "bills", "goals"].forEach(k => { if (!Array.isArray(model[k])) m[k] = old[k].map(x => ({ ...x })); });
     KINDS.forEach(kind => {
       const keep = new Set(m[kind].map(x => x.id));
       old[kind].forEach(x => { if (!keep.has(x.id)) { this.meta.tomb[kind][x.id] = { ...x, deleted: true, updatedAt: t }; this.touch(kind, x.id); } });
@@ -237,4 +252,4 @@ export function zoneStats() {
   store.model.items.forEach(i => { const s = z[roomOf[i.listId]]; if (!s) return; s.total++; if (i.done) { s.done++; if (i.price > 0) { s.spent += i.price; s.priced++; } } else if (i.priority === "Essential") s.ess++; });
   return z;
 }
-export function backupJSON() { const { version, lists, items, categories, transactions, settings } = store.model; return JSON.stringify({ version, exportedAt: now(), lists, items, categories, transactions, settings }, null, 2); }
+export function backupJSON() { const { version, lists, items, categories, transactions, bills, goals, settings } = store.model; return JSON.stringify({ version, exportedAt: now(), lists, items, categories, transactions, bills, goals, settings }, null, 2); }

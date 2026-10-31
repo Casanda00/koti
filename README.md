@@ -9,7 +9,7 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 | Part | Where |
 |---|---|
 | App (screens, logic) | This repository, served by GitHub Pages. Plain HTML, CSS and JavaScript modules; no build step. |
-| Data | Supabase project `koti` (`dghcrcneikxuaacsyhpy`): tables `lists`, `items`, `settings`, `categories`, `transactions`, each locked to the signed-in user with row level security. |
+| Data | Supabase project `koti` (`dghcrcneikxuaacsyhpy`): tables `lists`, `items`, `settings`, `categories`, `transactions`, `bills`, `goals`, each locked to the signed-in user with row level security. |
 | Database changes | `supabase/migrations/`. Applied through the Supabase connector; the optional `Update database` workflow applies them too if its secrets are set. |
 
 ## Files
@@ -24,6 +24,8 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 | `js/more.js` | Account, month settings, lists and rooms, import, backup, install help |
 | `js/charts.js` | Floor plans and charts |
 | `js/money.js` | Money view: month summary, budgets with pace, spending by month, transactions, add/edit expense, categories |
+| `js/plan.js` | Plan view: bills calendar, paid tracking (a payment is a transaction in the Bills category), autopay, savings goals |
+| `js/ptr.js` | Pull down to refresh |
 | `js/voice.js` | Speech input and the phrase parser (English and Finnish, digits or number words) |
 | `js/config.js` | Supabase URL and publishable key (public by design) |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and home-screen install. Bump `VERSION` in `sw.js` on each release. |
@@ -32,6 +34,6 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 
 1. ~~App shell, sign-in and sync, Home setup~~
 2. ~~Money: add expenses by typing or speaking, budgets, charts~~
-3. Bank CSV import for any bank, category rules
+3. Bank CSV import for any bank, category rules (on hold)
 4. Receipts: scan, store, read total and date
-5. Plan: bills calendar and savings goals
+5. ~~Plan: bills calendar and savings goals~~

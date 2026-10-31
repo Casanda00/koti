@@ -10,18 +10,22 @@ export const sync = { status: "local", text: "Saved on this device", detail: "",
 export function onSync(fn) { listeners.add(fn); fn(sync); return () => listeners.delete(fn); }
 function setStatus(status, text, detail = "") { Object.assign(sync, { status, text, detail }); listeners.forEach(f => f(sync)); }
 
-const TABLES = ["lists", "items", "categories", "transactions", "settings"];
-const ROWS = ["lists", "items", "categories", "transactions"];
+const TABLES = ["lists", "items", "categories", "transactions", "bills", "goals", "settings"];
+const ROWS = ["lists", "items", "categories", "transactions", "bills", "goals"];
 const t = s => (s ? Date.parse(s) : 0);
 const rowOfList = (l, uid) => ({ user_id: uid, id: l.id, name: l.name, room: l.room, position: l.position, deleted: !!l.deleted, updated_at: l.updatedAt });
 const rowOfItem = (i, uid) => ({ user_id: uid, id: i.id, list_id: i.listId, name: i.name, priority: i.priority, done: !!i.done, price: i.price, bought_at: i.boughtAt, position: i.position, deleted: !!i.deleted, updated_at: i.updatedAt });
 const listFromRow = r => ({ id: r.id, name: r.name, room: r.room, position: r.position, updatedAt: r.updated_at });
 const catOfRow = r => ({ id: r.id, name: r.name, budget: r.budget == null ? null : Number(r.budget), position: r.position, updatedAt: r.updated_at });
 const rowOfCat = (c, uid) => ({ user_id: uid, id: c.id, name: c.name, budget: c.budget, position: c.position, deleted: !!c.deleted, updated_at: c.updatedAt });
-const txOfRow = r => ({ id: r.id, date: r.date, amount: Number(r.amount), kind: r.kind, categoryId: r.category_id, payee: r.payee, note: r.note, source: r.source, receiptPath: r.receipt_path, bankRef: r.bank_ref, updatedAt: r.updated_at });
-const rowOfTx = (t, uid) => ({ user_id: uid, id: t.id, date: t.date, amount: t.amount, kind: t.kind, category_id: t.categoryId, payee: t.payee, note: t.note, source: t.source, receipt_path: t.receiptPath, bank_ref: t.bankRef, deleted: !!t.deleted, updated_at: t.updatedAt });
-const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, transactions: rowOfTx };
-const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow };
+const txOfRow = r => ({ id: r.id, date: r.date, amount: Number(r.amount), kind: r.kind, categoryId: r.category_id, payee: r.payee, note: r.note, source: r.source, receiptPath: r.receipt_path, bankRef: r.bank_ref, billId: r.bill_id || null, billDue: r.bill_due || null, updatedAt: r.updated_at });
+const rowOfTx = (t, uid) => ({ user_id: uid, id: t.id, date: t.date, amount: t.amount, kind: t.kind, category_id: t.categoryId, payee: t.payee, note: t.note, source: t.source, receipt_path: t.receiptPath, bank_ref: t.bankRef, bill_id: t.billId || null, bill_due: t.billDue || null, deleted: !!t.deleted, updated_at: t.updatedAt });
+const billOfRow = r => ({ id: r.id, name: r.name, amount: Number(r.amount), frequency: r.frequency, dueDay: r.due_day, anchorMonth: r.anchor_month, autopay: !!r.autopay, autoThrough: r.auto_through, active: r.active !== false, payee: r.payee, note: r.note, position: r.position, updatedAt: r.updated_at });
+const rowOfBill = (b, uid) => ({ user_id: uid, id: b.id, name: b.name, amount: b.amount, frequency: b.frequency, due_day: b.dueDay, anchor_month: b.anchorMonth, autopay: !!b.autopay, auto_through: b.autoThrough, active: b.active !== false, payee: b.payee, note: b.note, position: b.position, deleted: !!b.deleted, updated_at: b.updatedAt });
+const goalOfRow = r => ({ id: r.id, name: r.name, target: Number(r.target), saved: Number(r.saved), targetDate: r.target_date, monthly: r.monthly == null ? null : Number(r.monthly), position: r.position, updatedAt: r.updated_at });
+const rowOfGoal = (g, uid) => ({ user_id: uid, id: g.id, name: g.name, target: g.target, saved: g.saved, target_date: g.targetDate, monthly: g.monthly, position: g.position, deleted: !!g.deleted, updated_at: g.updatedAt });
+const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, transactions: rowOfTx, bills: rowOfBill, goals: rowOfGoal };
+const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow, bills: billOfRow, goals: goalOfRow };
 const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, position: r.position, updatedAt: r.updated_at });
 
 /* ---------- Apply rows from the server ---------- */
@@ -137,7 +141,7 @@ async function begin() {
       store.meta.owner = uid; store.markAllPending(); // first device: upload what's here
     } else {
       if (store.hasUserData()) { try { localStorage.setItem("koti.beforeSignIn", JSON.stringify(store.model)); } catch {} }
-      store.resetLocal({ version: 3, lists: [], items: [], categories: [], transactions: [], settings: {} });
+      store.resetLocal({ version: 3, lists: [], items: [], categories: [], transactions: [], bills: [], goals: [], settings: {} });
       store.meta.owner = uid; store.persist();
     }
   }

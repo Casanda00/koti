@@ -6,14 +6,10 @@ import { mountSetup, renderSetup, renderPlans, renderCharts, openAdd } from "./s
 import { mountMore, renderMore, bindMore, openAuth, openNewPassword } from "./more.js";
 import { mountMoney, renderMoney, openExpense } from "./money.js";
 import { initPullToRefresh } from "./ptr.js";
+import { mountPlan, renderPlanView, openBill, runAutopay } from "./plan.js";
 
 const ROUTES = ["setup", "money", "plan", "more"];
 let current = null;
-
-function soon(view, title, ico, lead, points) {
-  view.innerHTML = `<header class="vh"><div><h1>${title}</h1></div><a class="sync" href="#more" data-sync><span class="dot"></span><span class="t"></span></a></header>
-    <div class="soon"><span class="ico g">${icon(ico)}</span><h2>Coming in the next updates</h2><p>${lead}</p><ul>${points.map(p => `<li>${p}</li>`).join("")}</ul></div>`;
-}
 
 function route() {
   let r = (location.hash || "#setup").slice(1);
@@ -26,6 +22,7 @@ function route() {
   if (r === "setup") { renderPlans(); renderCharts(); }
   if (r === "more") renderMore();
   if (r === "money") renderMoney();
+  if (r === "plan") renderPlanView();
   window.scrollTo(0, 0);
 }
 
@@ -38,19 +35,20 @@ function init() {
   initSheets();
   mountSetup($("#view-setup"));
   mountMoney($("#view-money"));
-  soon($("#view-plan"), "Plan", "plan", "What's coming up and what you're saving for.", ["Bills and subscriptions on a calendar, with monthly and yearly totals", "Savings goals with how much to put aside each month"]);
+  mountPlan($("#view-plan"));
   mountMore($("#view-more")); bindMore();
-  renderSetup(); renderMoney();
+  renderSetup(); renderMoney(); renderPlanView();
+  runAutopay();
 
-  store.on(() => { renderSetup(); renderMoney(); if (current === "more") renderMore(); });
-  onSync((s, ev) => { paintSync(s); if (current === "more") renderMore(); renderSetup(); renderMoney(); if (ev === "recovery") openNewPassword(); });
+  let autoT; store.on(kind => { renderSetup(); renderMoney(); renderPlanView(); if (current === "more") renderMore(); if (kind === "remote") { clearTimeout(autoT); autoT = setTimeout(runAutopay, 400); } });
+  onSync((s, ev) => { paintSync(s); if (current === "more") renderMore(); renderSetup(); renderMoney(); renderPlanView(); if (ev === "recovery") openNewPassword(); });
   initSync();
 
-  document.addEventListener("click", e => { if (e.target.closest("[data-action=add]")) { e.preventDefault(); if (current === "setup") openAdd(); else openExpense(); } });
+  document.addEventListener("click", e => { if (e.target.closest("[data-action=add]")) { e.preventDefault(); if (current === "setup") openAdd(); else if (current === "plan") openBill(); else openExpense(); } });
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "setup") { renderPlans(); renderCharts(); } if (current === "money") renderMoney(); }, 120); });
   route();
-  initPullToRefresh({ onRefreshed: () => { renderSetup(); renderMoney(); if (current === "setup") { renderPlans(); renderCharts(); } if (current === "more") renderMore(); } });
+  initPullToRefresh({ onRefreshed: () => { runAutopay(); renderSetup(); renderMoney(); renderPlanView(); if (current === "setup") { renderPlans(); renderCharts(); } if (current === "more") renderMore(); } });
   const q = new URLSearchParams(location.search);
   if (q.get("add") === "1" || q.get("add") === "item") openAdd();
   if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "speak" ? "speak" : "type" });

@@ -64,7 +64,7 @@ export function renderMore() {
   <div class="grp">
     <button type="button" class="row" data-open="install"><span class="ico g">${icon("phone")}</span><span class="rt">Add Koti to your home screen</span>${chev}</button>
   </div>
-  <p class="note">Koti · step 2 of 5 · your data lives in your own Supabase project.</p>`;
+  <p class="note">Koti · Home setup, Money and Plan · your data lives in your own Supabase project.</p>`;
 
   $$("[data-set]", root).forEach(inp => inp.addEventListener("change", () => {
     const k = inp.dataset.set; let v = inp.value;
