@@ -1,9 +1,9 @@
 // Koti service worker: the app opens offline, and updates arrive on the next launch.
 // Bump VERSION with every release so phones pick up new files.
-const VERSION = "koti-2026-10-31-9";
+const VERSION = "koti-2026-10-31-10";
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
-  "js/config.js", "js/vendor/supabase-2.117.3.js", "js/app.js", "js/data.js", "js/sync.js", "js/ui.js", "js/charts.js", "js/setup.js", "js/more.js", "js/money.js", "js/voice.js", "js/ptr.js", "js/plan.js", "js/receipts.js", "js/income.js", "js/lists.js",
+  "js/config.js", "js/vendor/supabase-2.117.3.js", "js/app.js", "js/data.js", "js/sync.js", "js/ui.js", "js/charts.js", "js/setup.js", "js/more.js", "js/money.js", "js/voice.js", "js/ptr.js", "js/plan.js", "js/receipts.js", "js/income.js", "js/lists.js", "js/version.js",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
@@ -25,6 +25,20 @@ self.addEventListener("fetch", e => {
     e.respondWith(fetch(req).then(r => { const copy = r.clone(); caches.open(VERSION).then(c => c.put("index.html", copy)); return r; }).catch(() => caches.match("index.html")));
     return;
   }
-  // App files: cache first, refresh in the background
-  e.respondWith(caches.match(req).then(hit => { const net = fetch(req).then(r => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return r; }).catch(() => hit); return hit || net; }));
+  // Big versioned libraries (receipt reader, Supabase): cache first, they never change at the same address
+  if (url.pathname.includes("/js/vendor/")) {
+    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(r => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(req, copy)); } return r; })));
+    return;
+  }
+  // App code and styles: always fresh when online, so updates show up on the next open; cached copy when offline or slow
+  e.respondWith(new Promise(resolve => {
+    let done = false;
+    const fromCache = () => caches.match(req).then(hit => { if (!done && hit) { done = true; resolve(hit); } return hit; });
+    const timer = setTimeout(fromCache, 4000);
+    fetch(req, { cache: "no-cache" }).then(r => {
+      clearTimeout(timer);
+      if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
+      if (!done) { done = true; resolve(r); }
+    }).catch(() => { clearTimeout(timer); fromCache().then(hit => { if (!done) { done = true; resolve(hit || Response.error()); } }); });
+  }));
 });

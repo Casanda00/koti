@@ -3,6 +3,7 @@ import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, bac
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount } from "./sync.js";
 import { openCategories, openReceiptsList } from "./money.js";
+import { APP_VERSION } from "./version.js";
 
 let root = null, installPrompt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; });
@@ -64,7 +65,7 @@ export function renderMore() {
   <div class="grp">
     <button type="button" class="row" data-open="install"><span class="ico g">${icon("phone")}</span><span class="rt">Add Koti to your home screen</span>${chev}</button>
   </div>
-  <p class="note">Koti · Home setup, Money and Plan · your data lives in your own Supabase project.</p>`;
+  <p class="note">Koti · version ${APP_VERSION} · your data lives in your own Supabase project.</p>`;
 
   $$("[data-set]", root).forEach(inp => inp.addEventListener("change", () => {
     const k = inp.dataset.set; let v = inp.type === "checkbox" ? inp.checked : inp.value;

@@ -79,7 +79,7 @@ function init() {
   if (q.get("add") === "item") openAddToList();
   if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "scan" ? "scan" : "type" });
 
-  if ("serviceWorker" in navigator && location.protocol === "https:") {
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     navigator.serviceWorker.register("sw.js").then(reg => {
       reg.addEventListener("updatefound", () => { const w = reg.installing; w && w.addEventListener("statechange", () => {
         if (w.state === "installed" && navigator.serviceWorker.controller) toast("A new version of Koti is ready", { label: "Reload", run: () => location.reload() });
