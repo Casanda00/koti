@@ -7,6 +7,9 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, 
 import { parseExpense } from "./voice.js";
 import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
 import { newId } from "./data.js";
+import { monthLedger, startPoint, categoryBudget, ADJUST_CAT, awaitingIncome } from "./ledger.js";
+import { markPaid, setSkipped } from "./plan.js";
+import { receive, setMissed } from "./income.js";
 
 /* ---------- Periods ---------- */
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -29,6 +32,7 @@ export function navHTML(prefix) {
 /* ---------- Totals ---------- */
 export const catName = id => {
   if (id === BILLS_CAT) return "Bills";
+  if (id === ADJUST_CAT) return "Balance correction";
   if (id && id.startsWith("proj:")) return (listOf(id.slice(5)) || {}).name || "Project";
   return (store.model.categories.find(c => c.id === id) || {}).name || "Uncategorised";
 };
@@ -43,6 +47,7 @@ export function totals(p) {
   const byCat = {}, byProject = {}; let spend = 0, incomeLoose = 0, projects = 0;
   const add = (k, v) => { if (k.startsWith("proj:")) { byProject[k.slice(5)] = (byProject[k.slice(5)] || 0) + v; projects += v; } else { byCat[k] = (byCat[k] || 0) + v; spend += v; } };
   tx.forEach(t => {
+    if (t.categoryId === ADJUST_CAT) return;   // corrections change the balance, not spending or income
     if (t.kind === "income") { if (!t.incomeId) incomeLoose += t.amount; return; }
     if (t.kind === "refund") { add(t.categoryId || "none", -t.amount); return; }
     if (t.lines && t.lines.length) {   // a receipt split by line: each line counts in its own category or project
@@ -54,19 +59,148 @@ export function totals(p) {
     add(t.categoryId || "none", t.amount);
   });
   projectEntries(p).forEach(e => { byProject[e.projectId] = (byProject[e.projectId] || 0) + e.amount; projects += e.amount; });
-  const inc = incomeTotals(p), income = (inc.total + incomeLoose) || null;
+  const inc = incomeTotals(p), income = (inc.received + incomeLoose + (p.to >= todayISO() ? inc.pending : 0)) || null;   // past months: only what arrived
   const bills = billTotals(p), billsPaid = byCat[BILLS_CAT] || 0, everyday = spend - billsPaid;
   return { tx, byCat, spend, everyday, projects, byProject, setup: projects, total: spend + projects, income, inc, incomeLoose, bills, billsPaid, billsDue: bills.due };
 }
 export function pace(p) { const now = new Date(), t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()); if (t0 < p.start) return 0; if (t0 > p.end) return 1; const days = Math.round((p.end - p.start) / 864e5) + 1; return (Math.round((t0 - p.start) / 864e5) + 1) / days; }
+
+
+/* ---------- Budgets hero: a waterfall from what was carried in to what's left ---------- */
+const money0 = v => (v < 0 ? "−" : "") + eur0(Math.abs(v));
+let lastSteps = [];   // the bars last drawn, to describe a tapped bar
+function waterfall(steps) {
+  // steps: { label, value, kind: start|in|out|due|total|ghost, info }
+  const W = 340, H = 150, top = 18, bot = 24; let run = 0; const segs = [];
+  steps.forEach(st => { let a, b;
+    if (st.kind === "start") { a = 0; b = st.value; run = st.value; }
+    else if (st.kind === "total") { a = 0; b = run; }
+    else if (st.kind === "ghost") { a = run; b = run + st.value; }
+    else { a = run; b = run + st.value; run += st.value; }
+    segs.push({ ...st, a, b }); });
+  lastSteps = segs;
+  const lo = Math.min(0, ...segs.map(x => Math.min(x.a, x.b))), hi = Math.max(1, ...segs.map(x => Math.max(x.a, x.b)));
+  const y = v => top + (hi - v) / (hi - lo || 1) * (H - top - bot), bw = (W - 8) / segs.length;
+  const fill = { start: "var(--wall)", in: "var(--spruce)", out: "var(--wf-out)", due: "var(--amber)", total: "var(--spruce)" };
+  let out = `<svg class="wf" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(segs.map(x => `${x.label} ${money0(x.value)}`).join(", "))}"><line class="zero" x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>`;
+  let prev = null;
+  segs.forEach((x, i) => {
+    const bx = 4 + i * bw + bw * .17, w = bw * .66, y1 = Math.min(y(x.a), y(x.b)), y2 = Math.max(y(x.a), y(x.b)), h = Math.max(2, y2 - y1);
+    const f = x.kind === "start" && x.value < 0 ? "var(--crit)" : x.kind === "total" && x.value < 0 ? "var(--crit)" : fill[x.kind];
+    if (prev && x.kind !== "total") out += `<line class="conn" x1="${prev.x}" x2="${bx}" y1="${prev.y}" y2="${prev.y}"/>`;
+    out += `<g class="wf-bar" data-wf="${i}" tabindex="0"><rect x="${bx}" y="${y1}" width="${w}" height="${h}" rx="3" ${x.kind === "ghost" ? 'class="ghost"' : `fill="${f}"`}/>`;
+    const below = (x.kind === "out" || x.kind === "due") || (x.value < 0 && (x.kind === "start" || x.kind === "total"));
+    out += `<text class="v${x.kind === "ghost" ? " g" : ""}" x="${bx + w / 2}" y="${below ? Math.min(y2 + 11, H - bot + 2) : y1 - 4}">${(x.kind === "in" || x.kind === "ghost") ? "+" : ""}${money0(x.value)}</text>`;
+    out += `<text class="l" x="${bx + w / 2}" y="${H - 6}">${esc(x.label)}</text><rect x="${4 + i * bw}" y="0" width="${bw}" height="${H}" fill="transparent"/></g>`;
+    prev = { x: bx + w, y: y(x.kind === "ghost" ? x.a : x.b) };
+  });
+  return out + `</svg><p class="wf-info" aria-live="polite">Tap a bar for details.</p>`;
+}
+function heroHTML(L) {
+  const S = store.model.settings, pd = nextPay(), today = todayISO();
+  if (L.kind === "before") return `<h2>Before you started counting</h2><p class="hint" style="font-size:13px;margin-top:6px">Your starting balance is from ${fmtDay(parseDay(startPoint().date))}. Months before that show spending only.</p>`;
+  if (L.kind === "plan") {
+    const steps = [{ label: "Start", value: L.start, kind: "start", info: "Expected start: what's left this month plus income still expected" }];
+    if (L.bills) steps.push({ label: "Bills", value: -L.bills, kind: "out", info: `${L.billList.length} bill${L.billList.length === 1 ? "" : "s"} planned` });
+    if (L.budgets) steps.push({ label: "Budgets", value: -L.budgets, kind: "out", info: "Your category budgets" });
+    if (L.goals) steps.push({ label: "Goals", value: -L.goals, kind: "out", info: "Set aside for savings goals" });
+    steps.push({ label: "Left", value: L.left, kind: "total", info: "Planned left before payday" });
+    if (L.incomeSum) steps.push({ label: "Income", value: L.incomeSum, kind: "ghost", info: `Planned: ${L.income.map(o => `${o.src.name} ${fmtDay(parseDay(o.due))}`).join(", ")}. Not counted until received.` });
+    return `<div class="card-head" style="margin-bottom:2px"><h2>Planned left until payday</h2><span class="chip">Plan</span></div>
+      <div class="big muted-big">${money0(L.left)}</div><div class="hint" style="font-size:13px">If everything arrives and goes as planned</div>${waterfall(steps)}
+      <div class="key wf-key"><span><i class="sw" style="background:var(--wall)"></i>Expected start</span><span><i class="sw" style="background:var(--wf-out)"></i>Planned out</span>${L.incomeSum ? `<span><i class="sw gk"></i>Planned income</span>` : ""}</div>`;
+  }
+  const startLabel = L.startsHere ? "Start" : "Carried";
+  const steps = [{ label: startLabel, value: L.carried, kind: "start", info: L.startsHere ? "Your starting balance" : `Carried from ${periodLabel(shift(L.p, -1), false)}` }];
+  if (L.income) steps.push({ label: "Income", value: L.income, kind: "in", info: "Income received this month" });
+  if (L.spent) steps.push({ label: "Spent", value: -L.spent, kind: L.spent > 0 ? "out" : "in", info: "Everyday spending and projects" });
+  if (L.bills) steps.push({ label: "Bills", value: -L.bills, kind: "out", info: "Bills paid" });
+  if (L.adjust) steps.push({ label: "Fix", value: L.adjust, kind: L.adjust > 0 ? "in" : "out", info: "Corrections from Check with bank" });
+  if (L.kind === "past") {
+    steps.push({ label: "End", value: L.end, kind: "total", info: "Carried into the next month" });
+    return `<div class="card-head" style="margin-bottom:2px"><h2>Month ended with</h2>${L.end < 0 ? `<span class="chip crit">Short</span>` : ""}</div>
+      <div class="big ${L.end < 0 ? "danger" : ""}">${money0(L.end)}</div><div class="hint" style="font-size:13px">Carried into ${periodLabel(shift(L.p, 1), false)}${L.unpaid.length ? ` · ${L.unpaid.length} bill${L.unpaid.length === 1 ? "" : "s"} not paid (now overdue)` : ""}</div>${waterfall(steps)}`;
+  }
+  if (L.due) steps.push({ label: "Due", value: -L.due, kind: "due", info: `${L.dueThisMonth.length + L.overdue.length} bill${L.dueThisMonth.length + L.overdue.length === 1 ? "" : "s"} still to pay${L.overdue.length ? `, ${L.overdue.length} overdue` : ""}` });
+  steps.push({ label: "Left", value: L.left, kind: "total", info: "Left until payday" });
+  if (L.expectedSum) steps.push({ label: "Expected", value: L.expectedSum, kind: "ghost", info: `${L.expected.map(o => `${o.src.name} ${fmtDay(parseDay(o.due))}`).join(", ")}. Not counted until it arrives.` });
+  const days = pd ? Math.max(1, pd.days) : null, perDay = days && L.left > 0 ? L.left / days : 0;
+  const chip = L.left < 0 ? `<span class="chip crit">Over by ${eur0(-L.left)}</span>` : L.carried > 0 && L.left < L.carried * .1 ? `<span class="chip warn">Running low</span>` : `<span class="chip ok">On track</span>`;
+  return `<div class="card-head" style="margin-bottom:2px"><h2>Left until payday</h2>${chip}</div>
+    <div class="big ${L.left < 0 ? "danger" : ""}">${money0(L.left)}</div>
+    <div class="hint" style="font-size:13px">${pd && pd.days === 0 ? "Payday today" : perDay ? `About ${eur0(perDay)} a day for ${days} day${days === 1 ? "" : "s"}` : pd ? `${pd.days} days to payday` : ""}${!startPoint().set ? ` · <button type="button" class="link-inline" data-start>Set your starting balance</button>` : ""}</div>
+    ${waterfall(steps)}
+    <div class="key wf-key"><span><i class="sw" style="background:${L.carried < 0 ? "var(--crit)" : "var(--wall)"}"></i>${L.startsHere ? "Starting balance" : "From last month"}</span><span><i class="sw" style="background:var(--wf-out)"></i>Out</span>${L.due ? `<span><i class="sw" style="background:var(--amber)"></i>Still due${L.overdue.length ? ` (${L.overdue.length} overdue)` : ""}</span>` : ""}${L.expectedSum ? `<span><i class="sw gk"></i>Expected, not counted</span>` : ""}</div>
+    <div class="nowrow"><span>In your account now <b class="num">${money0(L.now)}</b></span><button type="button" class="link" data-checkbank>Check with bank</button></div>`;
+}
+function alertsHTML(L, isCur) {
+  let h = "";
+  const S = store.model.settings, st = startPoint();
+  if (isCur && !st.set && !S.askedStart) h += `<div class="banner"><span class="t"><b>How much do you have right now?</b><small>Koti counts from there and carries what's left into each new month.</small></span><button type="button" class="go" data-start>Set</button><button type="button" class="link" data-start-skip aria-label="Not now">Later</button></div>`;
+  if (L.kind === "current" && L.carried < 0 && !L.startsHere) h += `<div class="banner crit">${icon("alert", "ic")}<span class="t"><b>${esc(periodLabel(shift(L.p, -1), false))} ended ${eur0(-L.carried)} short</b><small>It's taken from this month, so you started at ${money0(L.carried)}.</small></span></div>`;
+  if (isCur) awaitingIncome().slice(0, 2).forEach(o => { h += `<div class="banner ask"><span class="t"><b>Did ${esc(o.src.name.toLowerCase() === "salary" ? "your salary" : o.src.name)} arrive?</b><small>${eur(o.src.amount)} was expected ${fmtDay(parseDay(o.due))}.</small></span><button type="button" class="go" data-inc-got="${esc(o.src.id)}" data-due="${o.due}">It arrived</button><button type="button" class="link" data-inc-miss="${esc(o.src.id)}" data-due="${o.due}">It didn't come</button></div>`; });
+  if (L.kind === "current" && L.overdue.length) h += `<div class="gh"><h2>Overdue</h2><a class="link" href="#bills">Bills</a></div><div class="grp">${L.overdue.map(o => `<div class="row od-row"><span class="ico r">${icon("bill")}</span><span class="rt">${esc(o.bill.name)}<small>Due ${fmtDay(parseDay(o.due))} · ${Math.round((parseDay(todayISO()) - parseDay(o.due)) / 864e5)} days late</small></span><span class="rv danger num">${eur(o.amount)}</span>
+    <span class="od-acts"><button type="button" class="btn sm primary" data-od-paid="${esc(o.bill.id)}" data-due="${o.due}">Mark paid</button><button type="button" class="btn sm" data-od-skip="${esc(o.bill.id)}" data-due="${o.due}">Not owed</button></span></div>`).join("")}</div>`;
+  return h;
+}
+function bindHero() {
+  root.addEventListener("click", e => {
+    const bar = e.target.closest("[data-wf]");
+    if (bar) { const svg = bar.closest("svg"), info = svg.nextElementSibling; $$(".wf-bar", svg).forEach(b => b.classList.toggle("on", b === bar));
+      const lbl = $(".l", bar).textContent, val = $(".v", bar).textContent, st = lastSteps[Number(bar.dataset.wf)];
+      if (info) info.textContent = `${lbl}: ${val}${st && st.info ? " · " + st.info : ""}`; return; }
+    if (e.target.closest("[data-start]")) { openStartBalance(); return; }
+    if (e.target.closest("[data-start-skip]")) { store.updateSettings({ askedStart: true }); return; }
+    if (e.target.closest("[data-checkbank]")) { openCheckBank(); return; }
+    const g = e.target.closest("[data-inc-got]"); if (g) { const src = store.model.income.find(x => x.id === g.dataset.incGot); if (src) { const t = receive({ src, due: g.dataset.due }, src.amount); toast(`${src.name} received · ${eur(t.amount)}`, { label: "Undo", run: () => store.remove("transactions", t.id) }); } return; }
+    const m = e.target.closest("[data-inc-miss]"); if (m) { const src = store.model.income.find(x => x.id === m.dataset.incMiss); if (src) { const o = { src, due: m.dataset.due }; setMissed(o, true); toast(`Marked as not received`, { label: "Undo", run: () => setMissed(o, false) }); } return; }
+    const op = e.target.closest("[data-od-paid]"); if (op) { const b = store.model.bills.find(x => x.id === op.dataset.odPaid); if (b) { const o = { bill: b, due: op.dataset.due, amount: ((b.dues || {})[op.dataset.due] || {}).amount || b.amount }; const t = markPaid(o, todayISO(), true); toast(`${b.name} paid · ${eur(t.amount)}`, { label: "Undo", run: () => store.remove("transactions", t.id) }); } return; }
+    const os = e.target.closest("[data-od-skip]"); if (os) { const b = store.model.bills.find(x => x.id === os.dataset.odSkip); if (b) { const o = { bill: b, due: os.dataset.due }; setSkipped(o, true); toast(`${b.name} marked not owed`, { label: "Undo", run: () => setSkipped(o, false) }); } }
+  });
+}
+
+/* ---------- Starting balance and Check with bank ---------- */
+export function openStartBalance() {
+  const st = startPoint(), today = todayISO();
+  openSheet({ title: "Your money today", right: "Save", body: `
+    <h3 class="lead">How much do you have right now?</h3>
+    <p class="note" style="margin-top:0">Add up your accounts (leave out savings you don't spend from). Koti counts from here and carries the result into each new month.</p>
+    <label class="amount-in"><span class="sr">Amount in euros</span><span aria-hidden="true">€</span><input id="sbAmt" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus value="${st.set ? String(Math.round((st.amount + (st.date <= today ? 0 : 0)) * 100) / 100).replace(".", ",") : ""}"></label>
+    <p class="note">Spending you've already added for today is taken into account.</p>
+    <p class="msg" id="sbMsg" aria-live="polite"></p>`,
+    onRight: B => { const v = parseMoney($("#sbAmt", B).value); if (v == null || Number.isNaN(v)) { $("#sbMsg", B).dataset.state = "error"; $("#sbMsg", B).textContent = "Type the amount, like 1250 or 1 250,50."; return; }
+      const neg = /^\s*-/.test($("#sbAmt", B).value) ? -1 : 1;
+      setBalanceNow(neg * v); closeSheet(); toast("Starting balance saved"); } });
+}
+/* Sets the starting point so that today's balance equals the amount you typed. */
+function setBalanceNow(amount) {
+  const today = todayISO(); let todayNet = 0;
+  store.model.transactions.forEach(t => { if (t.date !== today) return; if (t.categoryId === ADJUST_CAT) todayNet += t.kind === "expense" ? -t.amount : t.amount; else if (t.kind === "income" || t.kind === "refund") todayNet += t.amount; else todayNet -= t.amount; });
+  store.updateSettings({ startDate: today, startBalance: Math.round((amount - todayNet) * 100) / 100, askedStart: true });
+}
+export function openCheckBank() {
+  const L = monthLedger(periodFor(new Date()));
+  openSheet({ title: "Check with bank", right: "Save", body: `
+    <p class="note" style="margin-top:0">Koti thinks you have <b class="num">${money0(L.now)}</b>. Type what your bank shows right now and Koti adds a correction so the numbers match.</p>
+    <label class="amount-in"><span class="sr">Amount in euros</span><span aria-hidden="true">€</span><input id="cbAmt" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus></label>
+    <p class="msg" id="cbMsg" aria-live="polite"></p>`,
+    onRight: B => { const raw = $("#cbAmt", B).value, v0 = parseMoney(raw); if (v0 == null || Number.isNaN(v0)) { $("#cbMsg", B).dataset.state = "error"; $("#cbMsg", B).textContent = "Type the amount from your bank."; return; }
+      const v = /^\s*-/.test(raw) ? -v0 : v0;
+      if (!startPoint().set) { setBalanceNow(v); closeSheet(); toast("Starting balance saved"); return; }
+      const diff = Math.round((v - L.now) * 100) / 100; closeSheet();
+      if (Math.abs(diff) < 0.01) { toast("Already matches your bank"); return; }
+      const t = store.put("transactions", { id: newId("adj"), date: todayISO(), amount: Math.abs(diff), kind: diff > 0 ? "income" : "expense", categoryId: ADJUST_CAT, payee: "Balance correction", note: null, source: "manual" });
+      toast(`Corrected by ${diff > 0 ? "+" : "−"}${eur(Math.abs(diff))}`, { label: "Undo", run: () => store.remove("transactions", t.id) }); } });
+}
 
 /* ---------- Budgets view ---------- */
 let root = null, view = null;
 export function mountMoney(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
-  <header class="vh"><div><h1>Budgets</h1><div class="sub" id="moSub"></div></div><a class="sync" href="#more" data-sync><span class="dot"></span><span class="t"></span></a></header>
+  <header class="vh"><div><h1>Budgets</h1><div class="sub" id="moSub"></div></div><a class="avatar" href="#settings" id="moAvatar" aria-label="Settings and profile"></a></header>
   ${navHTML("shift")}
+  <div id="moAlerts"></div>
   <div class="mo-top">
     <section class="card mo-hero" id="moHero"></section>
     <div class="stats mo-stats"><div class="stat" id="moSpendStat"></div><div class="stat" id="moSetupStat"></div></div>
@@ -77,6 +211,7 @@ export function mountMoney(elm) {
     <section><div class="gh"><h2>Savings goals</h2><button type="button" class="link" data-goal-add>Add</button></div><div id="moGoals"></div>
       <div class="gh"><h2>By month</h2></div><div class="card"><div class="chart" id="moColsWrap"><svg id="moCols" role="img"></svg><div class="tip"></div></div><div class="key" style="margin-top:8px"><span><i class="sw" style="background:var(--spruce)"></i>Spent</span><span id="moIncKey"><i class="ln" style="background:var(--amber)"></i>Income</span></div></div></section>
   </div>`;
+  bindHero();
   root.addEventListener("click", e => {
     const s = e.target.closest("[data-shift]"); if (s) { const n = Number(s.dataset.shift); view = n === 0 ? periodFor(new Date()) : shift(view, n); renderMoney(); return; }
     if (e.target.closest("[data-goal-add]")) { openGoal(); return; }
@@ -84,6 +219,7 @@ export function mountMoney(elm) {
     const c = e.target.closest("[data-cat]"); if (c) openCategories();
   });
 }
+
 
 export function renderMoney() {
   if (!root) return;
@@ -93,32 +229,27 @@ export function renderMoney() {
   $(".mo-today", root).hidden = isCur;
   $("#moSub", root).textContent = isCur ? (pd ? `${pd.days === 0 ? "Payday today" : `${pd.days} day${pd.days === 1 ? "" : "s"} to payday`} · ${fmtDay(pd.date)}` : "") : (isFuture ? "Upcoming month" : "Past month");
 
-  const H = $("#moHero", root);
-  if (T.income) {
-    const left = T.income - T.total - T.billsDue, parts = [["Bills", T.billsPaid + T.billsDue, "var(--wall)"], ["Spending", Math.max(0, T.everyday), "var(--spruce)"], ["Projects", T.projects, "var(--amber)"], ["Left", Math.max(0, left), "var(--spruce-track)"]].filter(p => p[1] > 0);
-    const sum = parts.reduce((a, p) => a + p[1], 0) || 1;
-    const incNote = T.inc.expected > T.inc.received && isCur ? ` (${eur0(T.inc.received)} received so far)` : "";
-    H.innerHTML = `<div class="card-head" style="margin-bottom:4px"><h2>${isCur ? "Left until payday" : isFuture ? "Planned" : "Left at month end"}</h2>${left < 0 ? `<span class="chip crit">Over by ${eur0(-left)}</span>` : left / T.income < .1 && isCur ? `<span class="chip warn">Running low</span>` : `<span class="chip ok">On track</span>`}</div>
-      <div class="big ${left < 0 ? "danger" : ""}">${eur0(left)}</div><div class="hint" style="font-size:13px">of ${eur0(T.income)} income${incNote}${T.total ? `, after ${eur0(T.total)} spent` : ""}${T.billsDue ? ` and ${eur0(T.billsDue)} in bills still due` : ""}</div>
-      <div class="flow" role="img" aria-label="${esc(parts.map(p => `${p[0]} ${eur0(p[1])}`).join(", "))}">${parts.map(p => `<i style="width:${p[1] / sum * 100}%;background:${p[2]}"></i>`).join("")}</div>
-      <div class="key">${parts.map(p => `<span><i class="sw" style="background:${p[2]}"></i>${p[0]} ${eur0(p[1])}</span>`).join("")}</div>`;
-  } else {
-    H.innerHTML = `<h2>${isCur ? "Spent this month" : "Spent"}</h2><div class="big" style="margin-top:6px">${eur0(T.total)}</div>${T.billsDue ? `<div class="hint" style="font-size:13px">${eur0(T.billsDue)} in bills still due</div>` : ""}
-      <p class="hint" style="font-size:13px;margin-top:6px"><a href="#income" class="link-inline">Add your income</a> to see what's left until payday.</p>`;
-  }
+  const S = store.model.settings, nm = (S.name || "").trim();
+  const av = $("#moAvatar", root); av.textContent = nm ? nm[0].toUpperCase() : "";
+  av.innerHTML = nm ? esc(nm[0].toUpperCase()) : icon("user", "ic sm"); av.style.background = S.avatarColor || "";
+  if (isCur && nm) $("#moSub", root).textContent = `Hi ${nm} · ` + $("#moSub", root).textContent;
+  const Lg = monthLedger(view);
+  $("#moHero", root).innerHTML = heroHTML(Lg);
+  $("#moAlerts", root).innerHTML = alertsHTML(Lg, isCur);
   const budgeted = store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0);
   $("#moSpendStat", root).innerHTML = `<div class="k">Everyday spending</div><div class="v">${eur0(T.everyday)}</div><div class="meter"><i style="width:${budgeted ? Math.min(100, T.everyday / budgeted * 100) : 0}%;background:${budgeted && T.everyday > budgeted ? "var(--crit)" : "var(--spruce)"}"></i></div><div class="s">${budgeted ? `of ${eur0(budgeted)} budgeted` : "No budgets set"}</div>`;
   $("#moSetupStat", root).innerHTML = `<div class="k">Bills</div><div class="v">${eur0(T.bills.total)}</div><div class="meter"><i style="width:${T.bills.total ? Math.min(100, T.billsPaid / T.bills.total * 100) : 0}%;background:var(--wall)"></i></div><div class="s">${T.bills.count ? `${T.bills.paidCount} of ${T.bills.count} paid` : "No bills this month"}</div>`;
 
   const pc = isCur ? pace(view) : isFuture ? 0 : 1;
-  const rows = store.model.categories.slice().sort((a, b) => a.position - b.position).map(c => ({ id: c.id, name: c.name, budget: c.budget, spent: T.byCat[c.id] || 0 }));
+  const spentIn = (cid, p) => (totals(p).byCat[cid] || 0);
+  const rows = store.model.categories.slice().sort((a, b) => a.position - b.position).map(c => ({ id: c.id, name: c.name, budget: c.budget == null ? null : (isFuture ? Number(c.budget) : categoryBudget(c, view, spentIn)), base: c.budget, spent: T.byCat[c.id] || 0 }));
   if (T.byCat.none) rows.push({ id: "none", name: "Uncategorised", budget: null, spent: T.byCat.none });
   Object.keys(T.byCat).filter(k => k !== "none" && k !== BILLS_CAT && !store.model.categories.some(c => c.id === k)).forEach(k => rows.push({ id: k, name: "Deleted category", budget: null, spent: T.byCat[k] }));
   $("#moBudgets", root).innerHTML = rows.map(r => {
     const ratio = r.budget ? r.spent / r.budget : 0, over = r.budget != null && r.spent > r.budget;
     const col = over ? "var(--crit)" : ratio >= .9 ? "var(--amber)" : "var(--spruce)";
     const right = r.budget ? (over ? `<span class="danger">${eur0(r.spent - r.budget)} over</span>` : `${eur0(r.budget - r.spent)} left`) : eur0(r.spent);
-    return `<button type="button" class="row r2" data-cat="${esc(r.id)}" aria-label="${esc(r.name)}: ${eur(r.spent)} spent${r.budget ? ` of ${eur(r.budget)}` : ""}"><span class="rt">${esc(r.name)}<small class="num">${r.budget ? `${eur0(r.spent)} of ${eur0(r.budget)}` : "No budget"}</small></span><span class="rv">${right}</span>
+    return `<button type="button" class="row r2" data-cat="${esc(r.id)}" aria-label="${esc(r.name)}: ${eur(r.spent)} spent${r.budget ? ` of ${eur(r.budget)}` : ""}"><span class="rt">${esc(r.name)}<small class="num">${r.budget ? `${eur0(r.spent)} of ${eur0(r.budget)}${r.base != null && Math.abs(r.budget - r.base) >= 0.5 ? ` (${r.budget > r.base ? "+" : "−"}${eur0(Math.abs(r.budget - r.base))} rolled over)` : ""}` : "No budget"}</small></span><span class="rv">${right}</span>
       ${r.budget ? `<span class="bullet"><i style="width:${Math.min(100, ratio * 100)}%;background:${col}"></i>${pc > 0 && pc < 1 ? `<span class="pace" style="left:${pc * 100}%"></span>` : ""}</span>` : ""}</button>`;
   }).join("") || `<div class="row"><span class="rt muted">No categories yet</span></div>`;
   $("#moPaceNote", root).textContent = pc > 0 && pc < 1 ? "The line on each bar marks where you'd be at an even pace through the month." : "";
@@ -168,18 +299,25 @@ export function mountSpending(elm) {
   sroot.innerHTML = `<header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1>All spending</h1><div class="sub" id="spSub"></div></div></header>
     ${navHTML("sshift")}<div id="moTx"></div>`;
   sroot.addEventListener("click", e => {
+    const sf = e.target.closest("[data-sf]"); if (sf) { sfilter = sf.dataset.sf || null; renderSpending(); return; }
     const s = e.target.closest("[data-sshift]"); if (s) { const n = Number(s.dataset.sshift); sview = n === 0 ? periodFor(new Date()) : shift(sview, n); renderSpending(); return; }
     const t = e.target.closest("[data-tx]"); if (t) { const tx = store.model.transactions.find(x => x.id === t.dataset.tx); if (tx && tx.billId) { const b = store.model.bills.find(x => x.id === tx.billId); if (b) { openBill(b); return; } } if (tx && tx.incomeId) { import("./income.js").then(m => m.openSource(store.model.income.find(x => x.id === tx.incomeId))); return; } if (tx) openExpense({ tx }); return; }
     const it = e.target.closest("[data-item]"); if (it) { import("./setup.js").then(m => { const item = store.model.items.find(i => i.id === it.dataset.item); if (item) m.openItem(item); }); }
   });
 }
+let sfilter = null;   // a category (or proj:<id>) to show on its own
+export function setSpendingFilter(k) { sfilter = k || null; }
+const inCat = (t, k) => t.categoryId === k || (t.lines || []).some(l => (l.categoryId || t.categoryId) === k);
 export function renderSpending() {
   if (!sroot) return;
   const T = totals(sview), cur = periodFor(new Date());
   $("[data-period]", sroot).textContent = periodLabel(sview); $(".mo-today", sroot).hidden = sview.from === cur.from;
   $("#spSub", sroot).textContent = `${eur(T.total)} spent${T.inc.received + T.incomeLoose ? ` · ${eur0(T.inc.received + T.incomeLoose)} income` : ""}`;
-  const all = [...T.tx.map(t => ({ ...t })), ...projectEntries(sview)].sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-  if (!all.length) { $("#moTx", sroot).innerHTML = `<div class="empty">Nothing recorded for ${esc(periodLabel(sview))}. Tap <b>+</b> to add an expense or scan a receipt.</div>`; return; }
+  const cats = Object.entries(T.byCat).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).concat(Object.entries(T.byProject).filter(([, v]) => v > 0).map(([k, v]) => ["proj:" + k, v]));
+  if (sfilter && !cats.some(([k]) => k === sfilter)) cats.push([sfilter, 0]);
+  const chips = cats.length ? `<div class="chips sp-chips" role="radiogroup" aria-label="Category"><button type="button" class="fchip" data-sf="" aria-pressed="${!sfilter}">All</button>${cats.map(([k, v]) => `<button type="button" class="fchip" data-sf="${esc(k)}" aria-pressed="${sfilter === k}">${esc(catName(k))} ${eur0(v)}</button>`).join("")}</div>` : "";
+  const all = [...T.tx.map(t => ({ ...t })), ...projectEntries(sview)].filter(t => !sfilter || (t.fromProject ? t.categoryId === sfilter : inCat(t, sfilter))).sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  if (!all.length) { $("#moTx", sroot).innerHTML = chips + `<div class="empty">Nothing recorded for ${esc(periodLabel(sview))}. Tap <b>+</b> to add an expense or scan a receipt.</div>`; return; }
   let html = "", day = null;
   all.forEach(t => {
     if (t.date !== day) { if (day) html += `</div>`; day = t.date; const sum = all.filter(x => x.date === day && x.kind !== "income").reduce((a, x) => a + (x.kind === "refund" ? -x.amount : x.amount), 0); html += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span><span class="num">${eur(sum)}</span></div><div class="grp">`; }
@@ -188,7 +326,7 @@ export function renderSpending() {
     const sub = [t.lines ? `${t.lines.length} item${t.lines.length === 1 ? "" : "s"}` : null, t.payee ? (t.kind === "income" ? "Income" : lineCats ? lineCats.slice(0, 3).join(", ") : catName(t.categoryId)) : null, t.note, t.kind === "refund" ? "Refund" : null].filter(Boolean).join(" · ");
     html += `<button type="button" class="row" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind !== "expense" ? " good" : ""}">${sign}${eur(t.amount)}</span></button>`;
   });
-  $("#moTx", sroot).innerHTML = html + `</div>`;
+  $("#moTx", sroot).innerHTML = chips + html + `</div>`;
 }
 
 /* ---------- Add / edit expense ---------- */

@@ -54,7 +54,7 @@ export function initPullToRefresh({ onRefreshed, beforeRefresh } = {}) {
       ind.classList.remove("spin"); set(0, true); busy = false;
       if (onRefreshed) onRefreshed();
       if (!sync.configured) toast("Saved on this device");
-      else if (!sync.user) toast("Sign in to sync your devices", { label: "Sign in", run: () => { location.hash = "#more"; setTimeout(() => document.querySelector('#view-more [data-open="auth"]')?.click(), 150); } });
+      else if (!sync.user) toast("Sign in to sync your devices", { label: "Sign in", run: () => { location.hash = "#settings"; setTimeout(() => document.querySelector('#view-more [data-open="auth"]')?.click(), 150); } });
       else if (sync.status === "ok") toast("Up to date");
       else toast(sync.detail || sync.text);
     }

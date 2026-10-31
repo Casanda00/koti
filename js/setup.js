@@ -91,7 +91,7 @@ export function renderSetup() {
 
 function renderBanner() {
   const B = $("#suBanner", root);
-  if (sync.configured && !sync.user) B.innerHTML = `<div class="banner"><div class="t"><b>Sync your phone and computer</b><small>Sign in once on each device. Your list stays on this device until then.</small></div><a class="go" href="#more" data-open="auth">Sign in</a></div>`;
+  if (sync.configured && !sync.user) B.innerHTML = `<div class="banner"><div class="t"><b>Sync your phone and computer</b><small>Sign in once on each device. Your list stays on this device until then.</small></div><a class="go" href="#settings" data-open="auth">Sign in</a></div>`;
   else B.innerHTML = "";
 }
 
@@ -223,7 +223,7 @@ export function openItem(it, { focusPrice = false } = {}) {
 /* ---------- Add sheet ---------- */
 export function openAdd() {
   const lists = projLists();
-  if (!lists.length) { toast("Add a list first in More → Lists and rooms"); location.hash = "#more"; return; }
+  if (!lists.length) { toast("Add a room first in Home setup → ⋯ → Rooms"); location.hash = "#list/" + HOME_PROJECT; return; }
   const def = (lastList && lists.some(l => l.id === lastList)) ? lastList : (ui.room !== "all" ? (lists.find(l => l.room === ui.room) || lists[0]).id : lists[0].id);
   openSheet({
     title: "Add item", right: "Add",

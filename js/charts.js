@@ -57,7 +57,7 @@ export function drawFullPlan(svg, wrap, tip, selected, onPick) {
     const bx0 = Math.min(...tb.map(b => b.x)), by0 = Math.min(...tb.map(b => b.y)), bx1 = Math.max(...tb.map(b => b.x + b.width)), by1 = Math.max(...tb.map(b => b.y + b.height));
     Object.entries({ x: bx0 - 8, y: by0 - 6, width: bx1 - bx0 + 16, height: by1 - by0 + 12 }).forEach(([k, v]) => plate.setAttribute(k, v));
     const show = () => { const sc = wrap.getBoundingClientRect().width / 640;
-      const html = s.total ? `<b>${esc(z.name)}</b><br>${esc(s.lists.join(", "))}<br>${s.done} of ${s.total} bought · ${s.ess ? s.ess + " essential" + (s.ess > 1 ? "s" : "") + " left" : "no essentials left"}<br>${eur(s.spent)} spent` : `<b>${esc(z.name)}</b><br>No list yet. Add one in More → Lists and rooms.`;
+      const html = s.total ? `<b>${esc(z.name)}</b><br>${esc(s.lists.join(", "))}<br>${s.done} of ${s.total} bought · ${s.ess ? s.ess + " essential" + (s.ess > 1 ? "s" : "") + " left" : "no essentials left"}<br>${eur(s.spent)} spent` : `<b>${esc(z.name)}</b><br>No list yet. Add one in Home setup → ⋯ → Rooms.`;
       showTip(tip, html, (bx0 + (bx1 - bx0) / 2 - 50) * sc, (by0 - 13) * sc); };
     g.addEventListener("mouseenter", show); g.addEventListener("focus", show);
     g.addEventListener("mouseleave", () => hideTip(tip)); g.addEventListener("blur", () => hideTip(tip));

@@ -1,8 +1,9 @@
-// More view: account, month settings, home setup settings, data tools, install help.
+// Settings: profile, money, scanning, reminders, appearance, data and app. Home setup things live in the project's menu.
 import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO, roomsOf, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount } from "./sync.js";
-import { openCategories, openReceiptsList } from "./money.js";
+import { openCategories, openReceiptsList, openStartBalance } from "./money.js";
+import { startPoint } from "./ledger.js";
 import { APP_VERSION } from "./version.js";
 
 let root = null, installPrompt = null;
@@ -14,83 +15,110 @@ const ord = d => d + (d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12
 
 export function mountMore(el) { root = el; renderMore(); }
 
+const COLOURS = ["#16794f", "#b55334", "#c7841a", "#3a6ea5", "#7a4f9e", "#23302b"];
+const PALETTES = [["koti", "Koti green", "#16794f", "#eef1ee"], ["clay", "Clay", "#b55334", "#faf1e8"]];
 export function renderMore() {
   if (!root) return;
   if (root.contains(document.activeElement) && document.activeElement.matches("input, select, textarea")) return; // don't disturb typing
-  const S = store.model.settings, pend = pendingCount();
-  let account;
-  if (!sync.configured) account = `<div class="row"><span class="ico w">${icon("sync")}</span><span class="rt">Cloud sync is off<small>This copy of Koti saves on this device only.</small></span></div>`;
-  else if (!sync.user) account = `<button type="button" class="row" data-open="auth"><span class="ico g">${icon("user")}</span><span class="rt">Sign in or create account<small>Keep your phone and computer in step</small></span>${chev}</button>`;
-  else account = `<div class="row"><span class="ico g">${icon("user")}</span><span class="rt">${esc(sync.user.email)}<small>Signed in</small></span></div>
-    <button type="button" class="row" data-act="refresh"><span class="ico ${sync.status === "error" ? "r" : "w"}">${icon("sync")}</span><span class="rt">${esc(sync.text)}${sync.lastSync && sync.status === "ok" ? ` · ${relTime(sync.lastSync)}` : ""}<small>${esc(sync.detail || (pend ? `${pend} change${pend === 1 ? "" : "s"} waiting to upload` : "Tap to check for changes now"))}</small></span></button>
-    <button type="button" class="row" data-act="signout"><span class="rt danger">Sign out</span></button>`;
+  const S = store.model.settings, pend = pendingCount(), st = startPoint(), look = window.kotiTheme ? window.kotiTheme.get() : { palette: "koti", mode: "auto" };
+  const name = (S.name || "").trim(), initial = name ? esc(name[0].toUpperCase()) : icon("user", "ic");
+  const syncLine = !sync.configured ? "Saved on this device only" : !sync.user ? "Not signed in" : `${esc(sync.text)}${sync.lastSync && sync.status === "ok" ? ` · ${relTime(sync.lastSync)}` : ""}${pend ? ` · ${pend} waiting` : ""}`;
+  const profile = sync.configured && !sync.user
+    ? `<button type="button" class="prof" data-open="auth"><span class="avatar big"${S.avatarColor ? ` style="background:${esc(S.avatarColor)}"` : ""}>${initial}</span><span class="pt"><b>${name ? esc(name) : "Sign in or create account"}</b><small>Keep your phone and computer in step</small></span>${chev}</button>`
+    : `<button type="button" class="prof" data-open="profile"><span class="avatar big"${S.avatarColor ? ` style="background:${esc(S.avatarColor)}"` : ""}>${initial}</span><span class="pt"><b>${name ? esc(name) : "Add your name"}</b><small>${sync.user ? esc(sync.user.email) : "This device"}</small><span class="okline" data-state="${esc(sync.status || "")}">${syncLine}</span></span>${chev}</button>`;
+  const scanOpts = [["auto", "Let Koti decide"], ["spending", "Everyday spending"], ["bill", "A bill"]];
 
-  const look = window.kotiTheme ? window.kotiTheme.get() : { palette: "koti", mode: "auto" };
   root.innerHTML = `
-  <header class="vh"><div><h1>More</h1></div></header>
-  <div class="gh"><h2>Account</h2></div>
-  <div class="grp">${account}</div>
+  <header class="vh"><div><h1>Settings</h1></div></header>
+  ${profile}
 
-  <div class="gh"><h2>Your month</h2></div>
+  <div class="gh"><h2>Money</h2></div>
   <div class="grp">
-    <label class="row"><span class="rt">Budget month starts</span><select class="inl" data-set="monthStart">${days(S.monthStart)}</select>${chev}</label>
-    <label class="row"><span class="rt">Payday</span><select class="inl" data-set="payday">${days(S.payday, `<option value="last"${S.payday === "last" ? " selected" : ""}>Last day</option>`)}</select>${chev}</label>
-    <a class="row" href="#income"><span class="rt">Income<small>Salary and other sources</small></span>${chev}</a>
-  </div>
-  <p class="note">Budgets uses these to show what's left until payday.</p>
-  <div class="grp" style="margin-top:10px">
-    <button type="button" class="row" data-open="categories"><span class="ico g">${icon("money")}</span><span class="rt">Categories and budgets<small>${store.model.categories.length} categories · ${eur(store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0)).replace(/\.00$/, "")} a month</small></span>${chev}</button>
-    <label class="row"><span class="rt">Keep receipt photos<small>Off: scans are only read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
+    <button type="button" class="row" data-open="start"><span class="ico g">${icon("wallet")}</span><span class="rt">Starting balance<small>${st.set ? `${eur(st.amount)} at the start of ${esc(new Date(st.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }))} · carried each month` : "Not set: counting from €0"}</small></span>${chev}</button>
+    <label class="row"><span class="ico w">${icon("clock")}</span><span class="rt">Budget month starts</span><select class="inl" data-set="monthStart">${days(S.monthStart)}</select>${chev}</label>
+    <button type="button" class="row" data-open="categories"><span class="ico a">${icon("budgets")}</span><span class="rt">Categories and budgets<small>${store.model.categories.length} categories · ${eur(store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0)).replace(/\.00$/, "")} a month</small></span>${chev}</button>
+    <label class="row"><span class="rt">Roll over unspent budgets<small>${S.rollover ? "Unspent money adds to next month; overspending takes from it" : "Off: each category starts fresh each month"}</small></span><input type="checkbox" class="switch" data-set="rollover" ${S.rollover ? "checked" : ""}></label>
   </div>
 
-  <div class="gh"><h2>Home setup</h2></div>
+  <div class="gh"><h2>Scanning</h2></div>
   <div class="grp">
-    <a class="row" href="#list/proj-home-setup"><span class="rt">Budget and spending<small>Set on the Home setup project</small></span>${chev}</a>
-    <label class="row"><span class="rt">Moved in</span><input class="inl" data-set="movedIn" type="date" value="${esc(S.movedIn || "")}"></label>
-    <button type="button" class="row" data-open="lists"><span class="ico g">${icon("list")}</span><span class="rt">Home setup rooms<small>${roomsOf(HOME_PROJECT).length} room lists</small></span>${chev}</button>
-    <button type="button" class="row" data-open="notes"><span class="ico a">${icon("note")}</span><span class="rt">Moving-in notes<small>${S.notes ? esc(S.notes.split("\n")[0].slice(0, 48)) : "Measurements, delivery times…"}</small></span>${chev}</button>
+    <label class="row"><span class="rt">First choice when scanning</span><select class="inl" data-set="scanDefault">${scanOpts.map(([v, t]) => `<option value="${v}"${(S.scanDefault || "auto") === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
+    <label class="row"><span class="rt">Keep receipt photos<small>Off: receipts are read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
+    <label class="row"><span class="rt">Keep bill documents</span><input type="checkbox" class="switch" data-set="keepBills" ${S.keepBills !== false ? "checked" : ""}></label>
+    <div class="row"><span class="rt">AI scans today</span><span class="rv num" id="moAiUse">–</span></div>
   </div>
-  ${S.carriedSpend && (listOf(HOME_PROJECT) || {}).extraSpend ? `<p class="note warn">Your old spending total (${eur(listOf(HOME_PROJECT).extraSpend)}) is in the Home setup project's Other spending. Lower it as you add prices to items, so nothing is counted twice.</p>` : ""}
 
-  <div class="gh"><h2>Data</h2></div>
+  <div id="moReminders"></div>
+
+  <div class="gh"><h2>Appearance</h2></div>
+  <div class="swatches" role="radiogroup" aria-label="Colours">${PALETTES.map(([v, t, a, b]) => `<button type="button" class="swt" role="radio" aria-checked="${look.palette === v}" data-palette="${v}"><span class="sw2" style="background:linear-gradient(135deg,${a} 50%,${b} 50%)"></span><b>${t}</b></button>`).join("")}</div>
+  <div class="seg" id="moMode" aria-label="Light or dark">${[["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]].map(([v, t]) => `<button type="button" data-mode="${v}" aria-pressed="${look.mode === v}">${t}</button>`).join("")}</div>
+
+  <div class="gh"><h2>Your data</h2></div>
   <div class="grp">
-    <button type="button" class="row" data-open="receipts"><span class="ico a">${icon("cam")}</span><span class="rt">Receipts<small>${store.model.transactions.filter(t => t.receiptPath).length} saved</small></span>${chev}</button>
-    <button type="button" class="row" data-open="sheets"><span class="ico g">${icon("table")}</span><span class="rt">Import from Google Sheets<small>Bring in your list from the earlier version</small></span>${chev}</button>
-    <button type="button" class="row" data-act="export"><span class="ico w">${icon("down")}</span><span class="rt">Download backup</span></button>
-    <button type="button" class="row" data-act="import"><span class="ico w">${icon("up")}</span><span class="rt">Restore from backup</span></button>
-    <button type="button" class="row" data-act="reset"><span class="rt danger">Start over</span></button>
+    <button type="button" class="row" data-open="receipts"><span class="rt">Receipts and bills<small>${store.model.transactions.filter(t => t.receiptPath).length + store.model.bills.reduce((a, b) => a + Object.values(b.dues || {}).filter(x => x.docPath).length, 0)} saved</small></span>${chev}</button>
+    <button type="button" class="row" data-act="export"><span class="rt">Download a backup</span>${chev}</button>
+    <button type="button" class="row" data-act="import"><span class="rt">Restore from a backup</span>${chev}</button>
+    <button type="button" class="row" data-open="sheets"><span class="rt">Import from the old Google Sheets version</span>${chev}</button>
   </div>
   <input type="file" id="moFile" accept="application/json,.json" hidden>
 
-  <div class="gh"><h2>Appearance</h2></div>
-  <div class="grp">
-    <label class="row"><span class="rt">Colours</span><select class="inl" data-look="palette">${[["koti", "Koti green"], ["clay", "Clay orange and peach"]].map(([v, t]) => `<option value="${v}"${look.palette === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
-    <label class="row"><span class="rt">Light or dark</span><select class="inl" data-look="mode">${[["auto", "Same as phone"], ["light", "Light"], ["dark", "Dark"]].map(([v, t]) => `<option value="${v}"${look.mode === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
-  </div>
-  <p class="note">Saved on this device.</p>
-
   <div class="gh"><h2>App</h2></div>
   <div class="grp">
-    <button type="button" class="row" data-act="update"><span class="ico w">${icon("sync")}</span><span class="rt">Check for updates<small>You're on version ${APP_VERSION}</small></span></button>
-    <button type="button" class="row" data-open="install"><span class="ico g">${icon("phone")}</span><span class="rt">Add Koti to your home screen</span>${chev}</button>
+    <button type="button" class="row" data-act="update"><span class="rt">Version ${APP_VERSION}<small>Tap to check for updates</small></span><span class="rv lnk">Check</span></button>
+    <button type="button" class="row" data-open="install"><span class="rt">Add Koti to your home screen</span>${chev}</button>
   </div>
-  <p class="note">Koti · version ${APP_VERSION} · your data lives in your own Supabase project.</p>`;
+  ${sync.user ? `<div class="grp" style="margin-top:14px"><button type="button" class="row" data-act="signout"><span class="rt danger">Sign out</span></button></div>` : ""}
+  <p class="note">Koti · your data lives in your own Supabase project.</p>`;
 
-  $$("[data-look]", root).forEach(sel => sel.addEventListener("change", () => window.kotiTheme && window.kotiTheme.set(sel.dataset.look, sel.value)));
   $$("[data-set]", root).forEach(inp => inp.addEventListener("change", () => {
     const k = inp.dataset.set; let v = inp.type === "checkbox" ? inp.checked : inp.value;
-    if (inp.dataset.money !== undefined) { v = parseMoney(v); if (Number.isNaN(v)) { toast("Type a number, like 450 or 24,90"); renderMore(); return; } }
     if (k === "monthStart") v = Number(v);
-    if (k === "payday") v = v === "last" ? "last" : Number(v);
-    if (k === "budget" || k === "extraSpend") v = v ?? 0;
-    const patch = { [k]: v }; if (k === "extraSpend") patch.carriedSpend = false;
-    store.updateSettings(patch);
+    store.updateSettings({ [k]: v });
   }));
+  $$("[data-palette]", root).forEach(b => b.onclick = () => setLook({ palette: b.dataset.palette }));
+  $$("[data-mode]", root).forEach(b => b.onclick = () => setLook({ mode: b.dataset.mode }));
+  aiUse().then(t => { const e = $("#moAiUse", root); if (e && t) e.textContent = t; });
+  import("./push.js").then(m => { const r = $("#moReminders", root); if (r) m.renderReminders(r); }).catch(() => {});
+}
+/* Colours and light/dark: applied on this device right away, and synced so your other devices follow. */
+function setLook(patch) {
+  if (patch.palette) window.kotiTheme && window.kotiTheme.set("palette", patch.palette);
+  if (patch.mode) window.kotiTheme && window.kotiTheme.set("mode", patch.mode);
+  store.updateSettings(patch);
+}
+async function aiUse() {
+  if (!sync.client || !sync.user) return "Sign in to use AI";
+  try { const { data, error } = await sync.client.from("ai_usage").select("count").eq("day", new Date().toISOString().slice(0, 10)); if (error) return null; return `${(data && data[0] && data[0].count) || 0} of 30`; } catch { return null; }
+}
+
+/* ---------- Profile ---------- */
+function openProfile() {
+  const S = store.model.settings;
+  let colour = S.avatarColor || COLOURS[0];
+  openSheet({ title: "Profile", right: "Done", left: "Cancel", body: B => {
+    const paint = () => {
+      const n = $("#prName", B) ? $("#prName", B).value : S.name || "";
+      $("#prAv", B).textContent = n.trim() ? n.trim()[0].toUpperCase() : "?"; $("#prAv", B).style.background = colour;
+      $$("[data-col]", B).forEach(x => x.setAttribute("aria-checked", x.dataset.col === colour));
+    };
+    B.innerHTML = `<div class="avwrap"><span class="avatar huge" id="prAv"></span><div class="avcols" role="radiogroup" aria-label="Colour">${COLOURS.map(c => `<button type="button" role="radio" data-col="${c}" style="background:${c}" aria-label="Colour ${c}"></button>`).join("")}</div></div>
+      <div class="grp">
+        <label class="row"><span class="rt">Name</span><input class="inl" id="prName" value="${esc(S.name || "")}" placeholder="Your first name" maxlength="40" autocomplete="given-name" style="max-width:60%"></label>
+        ${sync.user ? `<div class="row"><span class="rt">Email</span><span class="rv">${esc(sync.user.email)}</span></div>
+        <button type="button" class="row" id="prPw"><span class="rt">Change password</span>${chev}</button>` : ""}
+      </div>
+      <p class="note">Your name is used for the greeting on Budgets and on lists you send. Tap your initial on Budgets to come back here.</p>`;
+    $("#prName", B).addEventListener("input", paint);
+    $(".avcols", B).onclick = e => { const x = e.target.closest("[data-col]"); if (x) { colour = x.dataset.col; paint(); } };
+    const pw = $("#prPw", B); if (pw) pw.onclick = () => { closeSheet(); setTimeout(openNewPassword, 260); };
+    paint();
+  }, onRight: B => { store.updateSettings({ name: $("#prName", B).value.trim().slice(0, 40), avatarColor: colour }); closeSheet(); toast("Saved"); } });
 }
 
 export function bindMore() {
   document.addEventListener("click", e => {
-    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList }[o.dataset.open]; if (f) f(); return; }
+    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList, profile: openProfile, start: openStartBalance }[o.dataset.open]; if (f) f(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
     ({ update: () => import("./update.js").then(m => m.checkForUpdate({ manual: true })), refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
   });
@@ -153,7 +181,7 @@ async function doSignOut() {
 
 /* ---------- Lists and rooms ---------- */
 const roomOptions = sel => ZONE_ORDER.map(k => `<option value="${k}"${k === sel ? " selected" : ""}>${esc(ZONES[k].name)}</option>`).join("");
-function openLists() {
+export function openLists() {
   openSheet({ title: "Home setup rooms", left: "Done", body: B => {
     const draw = () => {
       B.innerHTML = `<p class="note" style="margin-top:0">Choose where each list sits on your floor plan. Tap a name to rename it.</p>
@@ -177,7 +205,7 @@ function openLists() {
 }
 
 /* ---------- Notes ---------- */
-function openNotes() {
+export function openNotes() {
   openSheet({ title: "Moving-in notes", left: "Done", body: `<textarea class="inp" id="noText" placeholder="Measurements, delivery times, things to remember…" aria-label="Moving-in notes">${esc(store.model.settings.notes || "")}</textarea><p class="note">Saved as you type and synced to your other devices.</p>`,
     onClose: () => {} });
   let t; $("#noText").addEventListener("input", e => { clearTimeout(t); const v = e.target.value; t = setTimeout(() => store.updateSettings({ notes: v }), 500); });
@@ -211,7 +239,7 @@ function doExport() {
   const blob = new Blob([backupJSON()], { type: "application/json" }), a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = `koti-backup-${todayISO()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-function doReset() {
+export function doReset() {
   if (!confirm("Start Home setup over with the original checklist? Its ticks, prices, your own items there and your notes are cleared everywhere you're signed in. Other lists, bills, goals, income and expenses stay.")) return;
   const seed = seedModel(), cur = store.model, old = listOf(HOME_PROJECT);
   const homeIds = new Set([HOME_PROJECT, ...roomsOf(HOME_PROJECT).map(r => r.id)]);

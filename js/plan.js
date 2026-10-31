@@ -2,6 +2,7 @@
 import { store, todayISO, BILLS_CAT, FREQS } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { periodFor } from "./money.js";
+import { overdueBills } from "./ledger.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export const FREQ_LABEL = { monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly", once: "Once" };
@@ -15,8 +16,10 @@ function dueIn(b, y, m) { // due date of bill b in month m (0-based) of year y, 
   if (b.frequency === "once") { if (!b.dueDate) return null; const d = parseDay(b.dueDate), t = new Date(y, m, 1); return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() ? d : null; }
   if (b.frequency === "yearly" && mm !== b.anchorMonth - 1) return null;
   if (b.frequency === "quarterly" && ((mm - (b.anchorMonth - 1)) % 3 + 3) % 3 !== 0) return null;
-  const last = new Date(y, m + 1, 0).getDate();
-  return new Date(y, m, Math.min(b.dueDay, last));
+  const last = new Date(y, m + 1, 0).getDate(), d = new Date(y, m, Math.min(b.dueDay, last)), s = iso(d);
+  if (b.startDate && s < b.startDate.slice(0, 8) + "01") return null;   // not started yet
+  if (b.endDate && s > b.endDate) return null;                          // ended
+  return d;
 }
 export function occurrences(p, { includePaused = false } = {}) {
   const out = [];
@@ -24,21 +27,21 @@ export function occurrences(p, { includePaused = false } = {}) {
     for (let k = -1; k <= 1; k++) {
       const d = dueIn(b, p.start.getFullYear(), p.start.getMonth() + k); if (!d) continue;
       const due = iso(d); if (due < p.from || due > p.to) continue;
-      out.push({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null });
+      out.push(occurrenceOf(b, due));
     }
   });
   return out.sort((a, b) => a.due.localeCompare(b.due) || a.bill.name.localeCompare(b.bill.name));
 }
 export function billTotals(p) {
-  const occ = occurrences(p); let total = 0, paid = 0;
+  const occ = occurrences(p).filter(o => !o.skipped || o.paid); let total = 0, paid = 0;
   occ.forEach(o => { total += o.amount; if (o.paid) paid += o.paid.amount; });
   const due = occ.filter(o => !o.paid).reduce((a, o) => a + o.amount, 0);
   return { occ, total, paid, due, count: occ.length, paidCount: occ.filter(o => o.paid).length };
 }
-export const perYear = b => b.amount * ({ monthly: 12, quarterly: 4, yearly: 1, once: 0 }[b.frequency] ?? 12);
+export const perYear = b => (b.endDate && b.endDate < todayISO()) ? 0 : b.amount * ({ monthly: 12, quarterly: 4, yearly: 1, once: 0 }[b.frequency] ?? 12);
 /* The amount for one due date: what that month's bill said, otherwise the usual amount. */
 export const dueAmount = (b, due) => (b.dues && b.dues[due] && b.dues[due].amount) || b.amount;
-export const occurrenceOf = (b, due) => ({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null });
+export const occurrenceOf = (b, due) => ({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null, skipped: !!(b.dues && b.dues[due] && b.dues[due].skipped) });
 export function nextDue(b, from = new Date()) {
   const t = new Date(from.getFullYear(), from.getMonth(), from.getDate());
   for (let k = 0; k < 14; k++) { const d = dueIn(b, t.getFullYear(), t.getMonth() + k); if (d && d >= t) return d; }
@@ -53,9 +56,15 @@ export function alignDue(b, due) {
 }
 
 /* ---------- Paying ---------- */
-export function markPaid(o, date = todayISO()) {
+export function markPaid(o, date = todayISO(), paidNow = false) {   // paidNow: an overdue bill paid today counts today
   const b = o.bill;
-  return store.put("transactions", { id: payId(b.id, o.due), date: o.due < periodFor(new Date()).from ? o.due : date, amount: o.amount ?? dueAmount(b, o.due), receiptPath: (b.dues && b.dues[o.due] && b.dues[o.due].docPath) || null, kind: "expense", categoryId: BILLS_CAT, payee: b.name, note: null, source: "manual", billId: b.id, billDue: o.due });
+  return store.put("transactions", { id: payId(b.id, o.due), date: !paidNow && o.due < periodFor(new Date()).from ? o.due : date, amount: o.amount ?? dueAmount(b, o.due), receiptPath: (b.dues && b.dues[o.due] && b.dues[o.due].docPath) || null, kind: "expense", categoryId: BILLS_CAT, payee: b.name, note: null, source: "manual", billId: b.id, billDue: o.due });
+}
+/* "Not owed": this due date is skipped (cancelled, credited, paid elsewhere). It stops counting as due or overdue. */
+export function setSkipped(o, skipped = true) {
+  const b = store.model.bills.find(x => x.id === o.bill.id); if (!b) return;
+  const prev = (b.dues || {})[o.due] || { amount: null, reference: null, docPath: null };
+  store.put("bills", { ...b, dues: { ...(b.dues || {}), [o.due]: { ...prev, skipped } } });
 }
 export function unmarkPaid(o) { if (o.paid) store.remove("transactions", o.paid.id); }
 
@@ -111,6 +120,9 @@ export function mountPlan(elm) {
     const a = e.target.closest("[data-act]"); if (a) { if (a.dataset.act === "add-bill") openBill(); if (a.dataset.act === "add-goal") openGoal(); return; }
     const q = e.target.closest("[data-quick]"); if (q) { openBill(null, { name: q.dataset.quick }); return; }
     const pay = e.target.closest("[data-pay]"); if (pay) { togglePaid(pay.dataset.pay, pay.dataset.due); return; }
+    const od = e.target.closest("[data-od-paid]"); if (od) { const b = store.model.bills.find(x => x.id === od.dataset.odPaid); if (b) { const t = markPaid(occurrenceOf(b, od.dataset.due), todayISO(), true); toast(`${b.name} paid · ${eur(t.amount)}`, { label: "Undo", run: () => store.remove("transactions", t.id) }); } return; }
+    const sk = e.target.closest("[data-od-skip]"); if (sk) { const b = store.model.bills.find(x => x.id === sk.dataset.odSkip); if (b) { const o = occurrenceOf(b, sk.dataset.due); setSkipped(o, true); toast(`${b.name} marked not owed`, { label: "Undo", run: () => setSkipped(o, false) }); } return; }
+    const us = e.target.closest("[data-unskip]"); if (us) { const b = store.model.bills.find(x => x.id === us.dataset.unskip); if (b) setSkipped(occurrenceOf(b, us.dataset.due), false); return; }
     const bill = e.target.closest("[data-bill]"); if (bill) { const b = store.model.bills.find(x => x.id === bill.dataset.bill); if (b) openBill(b); return; }
     const goal = e.target.closest("[data-goal]"); if (goal) { const g = store.model.goals.find(x => x.id === goal.dataset.goal); if (g) openGoal(g); return; }
     const day = e.target.closest("[data-day]"); if (day) { pickedDay = pickedDay === day.dataset.day ? null : day.dataset.day; renderPlanView(); const r = root.querySelector(`[data-due="${pickedDay}"]`); if (r) r.scrollIntoView({ behavior: "smooth", block: "center" }); }
@@ -132,7 +144,8 @@ export function renderPlanView() {
   $("#plSub", root).textContent = bills.length ? `Bills ${eur0(monthly)} a month · ${eur0(yearly)} a year` : "Bills, subscriptions and savings";
 
   // summary
-  const next = T.occ.find(o => !o.paid && o.due >= today), overdue = T.occ.filter(o => !o.paid && o.due < today);
+  const earlier = isCur ? overdueBills(view.from) : [];
+  const next = T.occ.find(o => !o.paid && o.due >= today), overdue = [...earlier, ...T.occ.filter(o => !o.paid && o.due < today)];
   const rel = d => { const n = Math.round((parseDay(d) - parseDay(today)) / 864e5); return n === 0 ? "today" : n === 1 ? "tomorrow" : n < 0 ? `${-n} days ago` : `in ${n} days`; };
   $("#plSummary", root).innerHTML = T.count ? `
     <div class="card-head" style="margin-bottom:2px"><h2>Bills ${isCur ? "this month" : "in " + esc($("#plPeriod", root).textContent)}</h2>${overdue.length ? `<span class="chip crit">${overdue.length} overdue</span>` : T.due ? `<span class="chip warn">${eur0(T.due)} still due</span>` : `<span class="chip ok">All paid</span>`}</div>
@@ -159,16 +172,19 @@ export function renderPlanView() {
   if (!bills.length) {
     bh = `<div class="empty" style="text-align:left"><b style="color:var(--ink)">Start with your regular bills</b><p style="margin:6px 0 12px">Tap one to add it, or use Add for anything else.</p><div class="chips" style="margin:0;padding:0;flex-wrap:wrap">${["Rent", "Electricity", "Internet", "Phone", "Home insurance", "Streaming", "Gym", "Transport pass"].map(n => `<button type="button" class="fchip" data-quick="${n}">${n}</button>`).join("")}</div></div>`;
   } else {
-    bh = T.occ.length ? `<div class="grp">${T.occ.map(o => {
+    const odActs = o => `<span class="od-acts"><button type="button" class="btn sm primary" data-od-paid="${esc(o.bill.id)}" data-due="${o.due}">Mark paid</button><button type="button" class="btn sm" data-od-skip="${esc(o.bill.id)}" data-due="${o.due}">Not owed</button></span>`;
+    if (earlier.length) bh += `<div class="gh"><h3 class="danger">Overdue from earlier months</h3><span class="num danger">${eur(earlier.reduce((a, o) => a + o.amount, 0))}</span></div><div class="grp">${earlier.map(o => `<div class="row od-row"><span class="ico r">${icon("bill")}</span><button type="button" class="item-name" data-bill="${esc(o.bill.id)}"><span>${esc(o.bill.name)}</span><small>Due ${fmtDay(parseDay(o.due))} · ${Math.round((parseDay(today) - parseDay(o.due)) / 864e5)} days late</small></button><span class="rv danger num">${eur(o.amount)}</span>${odActs(o)}</div>`).join("")}</div><div class="gh"><h3>This month</h3></div>`;
+        bh += occurrences(view).length ? `<div class="grp">${occurrences(view).map(o => {
+      if (o.skipped && !o.paid) return `<div class="row bill-row skipped" data-due="${o.due}"><span class="cb off" aria-hidden="true"></span><button type="button" class="item-name" data-bill="${esc(o.bill.id)}"><span>${esc(o.bill.name)}</span><small>Not owed · ${fmtDay(parseDay(o.due))}</small></button><button type="button" class="link" data-unskip="${esc(o.bill.id)}" data-due="${o.due}">Undo</button></div>`;
       const late = !o.paid && o.due < today, d = parseDay(o.due);
       const status = o.paid ? `Paid ${o.paid.date === o.due ? "" : fmtDay(parseDay(o.paid.date))}`.trim() : late ? "Overdue" : o.due === today ? "Due today" : `Due ${fmtDay(d)}`;
       const sub = [o.bill.payee, FREQ_LABEL[o.bill.frequency], o.bill.autopay ? "Paid automatically" : null].filter(Boolean).join(" · ");
       return `<div class="row bill-row${pickedDay === o.due ? " picked" : ""}" data-due="${o.due}">
         <button type="button" class="cb" role="checkbox" aria-checked="${!!o.paid}" aria-label="${esc(o.bill.name)} paid" data-pay="${esc(o.bill.id)}" data-due="${o.due}">${check}</button>
         <button type="button" class="item-name" data-bill="${esc(o.bill.id)}" aria-label="${esc(o.bill.name)}, ${eur(o.amount)}, ${status}. Edit"><span>${esc(o.bill.name)}</span><small>${esc(sub)}</small></button>
-        <span class="rv bill-amt"><b class="num">${eur(o.amount)}</b><small class="${o.paid ? "good" : late ? "danger" : ""}">${esc(status)}</small></span></div>`;
+        <span class="rv bill-amt"><b class="num">${eur(o.amount)}</b><small class="${o.paid ? "good" : late ? "danger" : ""}">${esc(status)}</small></span>${late ? odActs(o).replace("od-acts", "od-acts in-row") : ""}</div>`;
     }).join("")}</div>` : "";
-    const notThis = bills.filter(b => !T.occ.some(o => o.bill.id === b.id));
+    const notThis = bills.filter(b => !occurrences(view, { includePaused: true }).some(o => o.bill.id === b.id));
     if (notThis.length) bh += `<div class="gh" style="margin-top:14px"><h3>${T.occ.length ? "Not due this month" : "Your bills"}</h3></div><div class="grp">${notThis.map(b => { const n = nextDue(b, view.end > new Date() ? view.start : new Date());
       return `<button type="button" class="row" data-bill="${esc(b.id)}"><span class="rt">${esc(b.name)}${b.active ? "" : " (paused)"}<small>${FREQ_LABEL[b.frequency]}${n && b.active ? ` · next ${fmtDay(n)}${n.getFullYear() !== new Date().getFullYear() ? " " + n.getFullYear() : ""}` : ""}</small></span><span class="rv">${eur(b.amount)}</span></button>`; }).join("")}</div>`;
   }
@@ -204,6 +220,8 @@ export function openBill(bill = null, preset = {}) {
       <div class="grp">
         <label class="row"><span class="rt">Due on day</span><select class="inl" id="biDay">${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === b.dueDay ? " selected" : ""}>${k + 1}${k + 1 >= 29 ? " (or last day)" : ""}</option>`).join("")}</select></label>
         <label class="row" id="biDateRow"><span class="rt">Due date</span><input class="inl" id="biDate" type="date" value="${esc(b.dueDate || todayISO())}"></label>
+        <label class="row" id="biStartRow"><span class="rt">Starts<small>First month this bill is due</small></span><input class="inl" id="biStart" type="month" value="${esc((b.startDate || todayISO()).slice(0, 7))}"></label>
+        <label class="row" id="biEndRow"><span class="rt">Ends<small>Optional, like a contract end</small></span><input class="inl" id="biEnd" type="month" value="${esc((b.endDate || "").slice(0, 7))}"></label>
         <label class="row" id="biMonthRow"><span class="rt" id="biMonthLbl">Month</span><select class="inl" id="biMonth">${MONTHS.map((m, k) => `<option value="${k + 1}"${k + 1 === b.anchorMonth ? " selected" : ""}>${m}</option>`).join("")}</select></label>
         <label class="row"><span class="rt">Paid automatically<small>Direct debit or e-invoice: Koti marks it paid on the due date</small></span><input type="checkbox" id="biAuto" ${b.autopay ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--spruce)"></label>
         <label class="row"><span class="rt">Company</span><input class="inl" id="biPayee" value="${esc(b.payee || "")}" placeholder="Optional" maxlength="120" autocomplete="off" style="max-width:60%"></label>
@@ -219,7 +237,7 @@ export function openBill(bill = null, preset = {}) {
     const docs = bill ? Object.entries(bill.dues || {}).filter(([, x]) => x.docPath).slice(-3).reverse() : [];
     if (docs.length) $("#biMsg", B).insertAdjacentHTML("beforebegin", `<div class="grp">${docs.map(([d, x]) => `<button type="button" class="row" data-doc="${esc(x.docPath)}"><span class="ico r">${icon("bill")}</span><span class="rt">Bill due ${esc(fmtDay(parseDay(d)))}<small>${x.amount ? eur(x.amount) : ""}${x.reference ? " · " + esc(x.reference) : ""}</small></span><span class="link">View</span></button>`).join("")}</div>`);
     $$("[data-doc]", B).forEach(x => x.onclick = () => import("./money.js").then(m => m.openReceipt(x.dataset.doc)));
-    const showMonth = () => { const once = freq === "once"; $("#biMonthRow", B).hidden = freq === "monthly" || once; $("#biDay", B).closest(".row").hidden = once; $("#biDateRow", B).hidden = !once; $("#biMonthLbl", B).textContent = freq === "yearly" ? "Month" : "First month of the cycle"; };
+    const showMonth = () => { const once = freq === "once"; $("#biMonthRow", B).hidden = freq === "monthly" || once; $("#biDay", B).closest(".row").hidden = once; $("#biDateRow", B).hidden = !once; $("#biStartRow", B).hidden = once; $("#biEndRow", B).hidden = once; $("#biMonthLbl", B).textContent = freq === "yearly" ? "Month" : "First month of the cycle"; };
     bindCopy(B);
     showMonth();
     $("#biFreq", B).addEventListener("click", e => { const x = e.target.closest("[data-f]"); if (!x) return; freq = x.dataset.f; $$("#biFreq button", B).forEach(y => y.setAttribute("aria-pressed", y === x)); showMonth(); });
@@ -232,7 +250,10 @@ export function openBill(bill = null, preset = {}) {
     const autopay = $("#biAuto", B).checked, once = freq === "once", dueDate = once ? $("#biDate", B).value : null;
     if (once && !dueDate) return msg("Pick the due date.");
     const dd = once ? parseDay(dueDate) : null;
-    const saved = store.put("bills", { ...(bill || {}), id: bill ? bill.id : undefined, name, amount, frequency: freq, dueDay: once ? dd.getDate() : Number($("#biDay", B).value), anchorMonth: once ? dd.getMonth() + 1 : Number($("#biMonth", B).value), dueDate,
+    const sm = $("#biStart", B).value, em = $("#biEnd", B).value;
+    if (!once && sm && em && em < sm) return msg("The end month is before the start month.");
+    const startDate = once ? null : (sm ? sm + "-01" : null), endDate = once || !em ? null : iso(new Date(Number(em.slice(0, 4)), Number(em.slice(5, 7)), 0));
+    const saved = store.put("bills", { ...(bill || {}), id: bill ? bill.id : undefined, name, amount, frequency: freq, dueDay: once ? dd.getDate() : Number($("#biDay", B).value), anchorMonth: once ? dd.getMonth() + 1 : Number($("#biMonth", B).value), dueDate, startDate, endDate,
       reference: $("#biRef", B).value.trim() || null, iban: $("#biIban", B).value.trim() || null,
       autopay, autoThrough: bill && bill.autopay === autopay ? bill.autoThrough : null, active: bill ? !$("#biPaused", B).checked : true, payee: $("#biPayee", B).value.trim() || null, note: $("#biNote", B).value.trim() || null, position: bill ? bill.position : store.model.bills.length });
     closeSheet(); if (autopay) runAutopay();

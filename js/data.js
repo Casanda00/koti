@@ -24,7 +24,9 @@ const SEED = [
   ["Tools & household", "ET", "Extension cord / power strip|Soon;Light bulbs|Soon;Scissors|Soon;Tape|Later;Screwdriver set|Soon;Measuring tape|Later;Batteries|Later;First aid kit|Soon;Small household bin|Soon;Doormat|Soon"],
 ];
 const DEFAULT_ROOMS = { "Kitchen & cooking": "K", "Groceries & pantry": "K", "Living room": "OH", "Bedroom": "MH", "Bedroom & living": "MH", "Bathroom & personal care": "KPH", "Laundry & cleaning": "ET", "Tools & household": "ET" };
-const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB", keepReceipts: false };
+const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB", keepReceipts: false,
+  name: "", avatarColor: "", startBalance: null, startDate: null, askedStart: false, rollover: false, scanDefault: "auto", keepBills: true, palette: "", mode: "",
+  reminders: { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9 } };
 export const DEFAULT_CATEGORIES = [["Groceries", 400], ["Eating out", 120], ["Transport", 70], ["Shopping", 150], ["Health", 50], ["Fun", 100], ["Other", 60]];
 export const HOME_SETUP_CAT = "home-setup";   // derived from checklist purchases, not stored
 export const KINDS = ["lists", "items", "categories", "transactions", "bills", "goals", "income"];
@@ -54,13 +56,14 @@ function cleanList(l, pos) {
   const kind = LIST_KINDS.includes(l.kind) ? l.kind : "room";
   const budget = l.budget === null || l.budget === undefined || l.budget === "" || isNaN(Number(l.budget)) ? null : Math.max(0, Number(l.budget));
   return { id: String(l.id).slice(0, 80), name: String(l.name).slice(0, 120), room: ZONES[l.room] ? l.room : "OH", kind, parentId: kind === "room" && l.parentId ? String(l.parentId) : null,
-    budget, extraSpend: Math.max(0, Number(l.extraSpend) || 0), plan: l.plan || null, position: Number.isFinite(l.position) ? l.position : pos, updatedAt: l.updatedAt || EPOCH };
+    budget, extraSpend: Math.max(0, Number(l.extraSpend) || 0), plan: l.plan || null, categoryId: l.categoryId ? String(l.categoryId).slice(0, 80) : null, position: Number.isFinite(l.position) ? l.position : pos, updatedAt: l.updatedAt || EPOCH };
 }
 function cleanIncome(x, pos) {
   const amount = x.amount === null || x.amount === undefined || x.amount === "" || isNaN(Number(x.amount)) ? null : Math.max(0, Number(x.amount));
   return { id: String(x.id || newId("inc")).slice(0, 80), name: String(x.name).slice(0, 80), amount, frequency: INCOME_FREQS.includes(x.frequency) ? x.frequency : "monthly",
     payDay: Math.min(31, Math.max(0, Math.round(Number(x.payDay) || 0))), expectedDate: x.expectedDate ? String(x.expectedDate).slice(0, 10) : null,
-    payer: x.payer ? String(x.payer).slice(0, 120) : null, active: x.active !== false, position: Number.isFinite(x.position) ? x.position : pos, updatedAt: x.updatedAt || EPOCH };
+    payer: x.payer ? String(x.payer).slice(0, 120) : null, active: x.active !== false, position: Number.isFinite(x.position) ? x.position : pos,
+    endDate: x.endDate ? String(x.endDate).slice(0, 10) : null, missed: Array.isArray(x.missed) ? [...new Set(x.missed.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort().slice(-120) : [], updatedAt: x.updatedAt || EPOCH };
 }
 
 function cleanCategory(c, pos) {
@@ -85,11 +88,12 @@ export const FREQS = ["monthly", "quarterly", "yearly", "once"];
 const num = (v, d = null) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? d : Number(v));
 function cleanBill(b, pos) {
   if (b.frequency === "once" && !b.dueDate) b = { ...b, frequency: "monthly" };
+  if (b.startDate && b.endDate && b.endDate < b.startDate) b = { ...b, endDate: null };
   return { id: String(b.id || newId("bill")).slice(0, 80), name: String(b.name).slice(0, 80), amount: Math.round(Math.abs(num(b.amount, 0)) * 100) / 100,
     frequency: FREQS.includes(b.frequency) ? b.frequency : "monthly", dueDay: Math.min(31, Math.max(1, Math.round(num(b.dueDay, 1)))), anchorMonth: Math.min(12, Math.max(1, Math.round(num(b.anchorMonth, 1)))),
     autopay: !!b.autopay, autoThrough: b.autoThrough ? String(b.autoThrough).slice(0, 10) : null, active: b.active !== false,
     payee: b.payee ? String(b.payee).slice(0, 120) : null, note: b.note ? String(b.note).slice(0, 500) : null, position: Number.isFinite(b.position) ? b.position : pos,
-    dueDate: b.dueDate ? String(b.dueDate).slice(0, 10) : null, reference: b.reference ? String(b.reference).slice(0, 60) : null, iban: b.iban ? String(b.iban).replace(/\s+/g, " ").trim().slice(0, 40) : null,
+    dueDate: b.dueDate ? String(b.dueDate).slice(0, 10) : null, startDate: b.startDate ? String(b.startDate).slice(0, 10) : null, endDate: b.endDate ? String(b.endDate).slice(0, 10) : null, reference: b.reference ? String(b.reference).slice(0, 60) : null, iban: b.iban ? String(b.iban).replace(/\s+/g, " ").trim().slice(0, 40) : null,
     dues: cleanDues(b.dues), updatedAt: b.updatedAt || EPOCH };
 }
 /* Per due date (YYYY-MM-DD): the amount on that month's bill, its reference and the saved document. */
@@ -97,7 +101,7 @@ function cleanDues(d) {
   const out = {}; if (!d || typeof d !== "object") return out;
   Object.keys(d).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort().slice(-36).forEach(k => { const x = d[k] || {};
     const amount = Number(x.amount) > 0 ? Math.round(Number(x.amount) * 100) / 100 : null;
-    out[k] = { amount, reference: x.reference ? String(x.reference).slice(0, 60) : null, docPath: x.docPath ? String(x.docPath).slice(0, 300) : null }; });
+    out[k] = { amount, reference: x.reference ? String(x.reference).slice(0, 60) : null, docPath: x.docPath ? String(x.docPath).slice(0, 300) : null, skipped: !!x.skipped }; });
   return out;
 }
 function cleanGoal(g, pos) {
@@ -308,6 +312,8 @@ export const paidByReceipt = () => { const s = new Set(); store.model.transactio
 /* A project's spending: its bought items, its other spending, and receipt lines assigned to it. */
 export const projectSpent = pid => { const paid = paidByReceipt(); return projectItems(pid).filter(i => i.done && i.price > 0 && !paid.has(i.id)).reduce((a, i) => a + i.price, 0) + (Number((listOf(pid) || {}).extraSpend) || 0)
   + store.model.transactions.reduce((a, t) => a + (t.lines || []).filter(l => l.categoryId === "proj:" + pid).reduce((b, l) => b + l.price, 0), 0); };
+/* The spending category you chose for a list (in the list's settings). Never set automatically. */
+export const listCategory = l => (l && l.categoryId && store.model.categories.find(c => c.id === l.categoryId)) || null;
 export const itemsOf = listId => store.model.items.filter(i => i.listId === listId).sort((a, b) => a.position - b.position);
 export function zoneStats(pid = HOME_PROJECT) {
   const z = {}; ZONE_ORDER.forEach(k => z[k] = { code: k, lists: [], total: 0, done: 0, ess: 0, spent: 0, priced: 0 });

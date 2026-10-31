@@ -7,3 +7,7 @@ major_version = 17
 [functions.read-receipt]
 # The function checks the signed-in user itself (works with publishable/secret API keys).
 verify_jwt = false
+
+[functions.send-reminders]
+# Called hourly by pg_cron with a token kept in Vault, or by a signed-in user (checked inside).
+verify_jwt = false

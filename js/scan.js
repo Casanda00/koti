@@ -5,14 +5,14 @@
 //   A project:         lines tick off project items or become new items in a room; others go to a category.
 //   A bill:            amount, due date, reference and account; matched to a bill you have, or a new one.
 // Money is counted once: from the receipt or the bill. Items a receipt ticks don't add their price again.
-import { store, todayISO, newId, listOf, topLists, roomsOf, itemsOf, projectItems, projectSpent, projectOf } from "./data.js";
+import { store, todayISO, newId, listCategory, listOf, topLists, roomsOf, itemsOf, projectItems, projectSpent, projectOf } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { prepareFile, readReceipt, attach } from "./receipts.js";
 import { catName } from "./money.js";
 import { alignDue, occurrenceOf, markPaid, runAutopay, bindCopy, FREQ_LABEL } from "./plan.js";
 
 const cats = () => store.model.categories.slice().sort((a, b) => a.position - b.position);
-const keepDefault = kind => (kind === "bill" ? true : !!store.model.settings.keepReceipts);
+const keepDefault = kind => (kind === "bill" ? store.model.settings.keepBills !== false : !!store.model.settings.keepReceipts);
 const destName = d => d.kind === "auto" ? "Let Koti decide" : d.kind === "spending" ? "Everyday spending" : d.kind === "bill" ? "Bill" : (listOf(d.id) || {}).name || "List";
 const same = (a, b) => a && b && a.kind === b.kind && (a.id || null) === (b.id || null);
 const money2 = n => String((Number(n) || 0).toFixed(2)).replace(".", ",");
@@ -41,7 +41,8 @@ function contextDest() {
 
 /* ---------- Step 1: where should this go? ---------- */
 export function openScan({ dest = null } = {}) {
-  const S = { dest: dest || contextDest() || { kind: "auto" }, keep: null, keepTouched: false, file: null, r: null, suggestion: null, lines: null, linesFor: null, edits: {} };
+  const pref = store.model.settings.scanDefault;
+  const S = { dest: dest || contextDest() || { kind: ["spending", "bill"].includes(pref) ? pref : "auto" }, keep: null, keepTouched: false, file: null, r: null, suggestion: null, lines: null, linesFor: null, edits: {} };
   S.keep = keepDefault(S.dest.kind);
   pickSheet(S, false);
 }
@@ -221,7 +222,7 @@ function bucket(d, l) {
   const [k, v] = [l.target.slice(0, l.target.indexOf(":")), l.target.slice(l.target.indexOf(":") + 1)];
   if (k === "proj") return "proj:" + v;
   if (d.kind === "project" && (k === "tick" || k === "new")) return "proj:" + d.id;
-  if (k === "tick") return l.categoryId || "none";
+  if (k === "tick") { const lc = d.kind === "list" ? listCategory(listOf(d.id)) : null; return (lc && lc.id) || l.categoryId || "none"; }
   return v || "none";
 }
 
@@ -326,7 +327,7 @@ async function saveBill(S, B) {
   if (!bill && !W.name.trim()) return msg("Give the bill a name, like Electricity.");
   S.busy = true;
   const due = parseDay(W.due), company = (S.r && S.r.bill && S.r.bill.company) || (S.r && S.r.parsed && S.r.parsed.payee) || null;
-  if (!bill) bill = store.put("bills", { name: W.name.trim().slice(0, 80), amount: W.amount, frequency: W.freq, dueDay: due.getDate(), anchorMonth: due.getMonth() + 1, dueDate: W.freq === "once" ? W.due : null,
+  if (!bill) bill = store.put("bills", { name: W.name.trim().slice(0, 80), amount: W.amount, frequency: W.freq, dueDay: due.getDate(), anchorMonth: due.getMonth() + 1, dueDate: W.freq === "once" ? W.due : null, startDate: W.freq === "once" ? null : W.due.slice(0, 8) + "01",
     autopay: W.autopay, active: true, payee: company, reference: W.reference || null, iban: W.iban || null, position: store.model.bills.length });
   const key = alignDue(bill, W.due), prev = (bill.dues || {})[key] || {};
   let docPath = prev.docPath || null;

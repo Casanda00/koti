@@ -14,9 +14,9 @@ import { initReceipts, uploadPending } from "./receipts.js";
 import { initUpdates, checkForUpdate } from "./update.js";
 import { openScan } from "./scan.js";
 
-const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills" };   // links from earlier versions
-const TAB = { budgets: "budgets", income: "income", expenses: "expenses", spending: "expenses", bills: "expenses", list: "expenses", project: "expenses", more: "more" };
-const TITLE = { budgets: "Budgets", income: "Income", expenses: "Expenses", spending: "All spending", bills: "Bills", more: "More" };
+const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills", more: "settings" };   // links from earlier versions
+const TAB = { budgets: "budgets", income: "income", expenses: "expenses", spending: "expenses", bills: "expenses", list: "expenses", project: "expenses", settings: "settings" };
+const TITLE = { budgets: "Budgets", income: "Income", expenses: "Expenses", spending: "All spending", bills: "Bills", settings: "Settings" };
 let current = null, currentKey = null;
 
 function parse() {
@@ -26,7 +26,7 @@ function parse() {
   return { view: TITLE[h] ? h : "budgets" };
 }
 function renderCurrent() {
-  ({ budgets: renderMoney, income: renderIncome, expenses: renderExpenses, spending: renderSpending, bills: renderPlanView, list: renderList, more: renderMore,
+  ({ budgets: renderMoney, income: renderIncome, expenses: renderExpenses, spending: renderSpending, bills: renderPlanView, list: renderList, settings: renderMore,
      project: () => { renderSetup(); } })[current]?.();
 }
 function route() {
@@ -48,6 +48,12 @@ function paintSync(s) {
   const f = $("#sideFoot"); if (f) f.textContent = s.user ? s.user.email : (s.configured ? "Not signed in" : "Saved on this device");
 }
 
+/* Colours and light/dark follow your account: a change on another device applies here too. */
+function syncLook() {
+  const S = store.model.settings, T = window.kotiTheme; if (!T) return; const cur = T.get();
+  if (S.palette && S.palette !== cur.palette) T.set("palette", S.palette);
+  if (S.mode && S.mode !== cur.mode) T.set("mode", S.mode);
+}
 function init() {
   initSheets();
   mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountExpenses($("#view-expenses")); mountSpending($("#view-spending"));
@@ -56,6 +62,7 @@ function init() {
   runAutopay();
 
   let autoT; store.on(kind => {
+    if (kind === "remote") syncLook();
     if (current === "project" && !listOf(parse().id)) { location.hash = "#expenses"; return; }
     renderCurrent();
     if (kind === "remote") { clearTimeout(autoT); autoT = setTimeout(runAutopay, 400); }
