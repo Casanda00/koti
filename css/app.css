@@ -18,6 +18,21 @@
   --wall:#cdd7d1; --spruce:#2fa774; --spruce-soft:#1d2e26; --spruce-track:#24392f; --amber:#b8790f; --amber-soft:#2f2717;
   --warn:#e0a03a; --crit:#ef7a70; --crit-soft:#3a1f1d; --good:#4cc08c; --on-accent:#0f1a15; color-scheme:dark;}
 
+/* Clay theme: warm orange and peach. Chosen in More → Appearance. */
+:root[data-palette="clay"]{
+  --bg:#faf1e8; --paper:#fffaf5; --ink:#2a1d17; --ink-2:#5a463b; --muted:#7a6555; --line:#eedccd;
+  --wall:#3b271f; --spruce:#b55334; --spruce-soft:#fbe4d6; --spruce-track:#f3cdb7; --amber:#df8a5a; --amber-soft:#fcebdc;
+  --warn:#a3520a; --crit:#b3362e; --crit-soft:#f8e1dd; --good:#3f7d4f; --on-accent:#fff;}
+@media (prefers-color-scheme:dark){:root[data-palette="clay"]:not([data-theme="light"]){
+  --bg:#1c1512; --paper:#261d19; --ink:#f6ebe3; --ink-2:#d6c2b5; --muted:#a8927f; --line:#3a2c25;
+  --wall:#f2dccd; --spruce:#e8875f; --spruce-soft:#3a2219; --spruce-track:#4b2c1f; --amber:#f0b088; --amber-soft:#35261c;
+  --warn:#eba05a; --crit:#ef7a70; --crit-soft:#3a1f1d; --good:#6fbf84; --on-accent:#24110a;}}
+:root[data-palette="clay"][data-theme="dark"]{
+  --bg:#1c1512; --paper:#261d19; --ink:#f6ebe3; --ink-2:#d6c2b5; --muted:#a8927f; --line:#3a2c25;
+  --wall:#f2dccd; --spruce:#e8875f; --spruce-soft:#3a2219; --spruce-track:#4b2c1f; --amber:#f0b088; --amber-soft:#35261c;
+  --warn:#eba05a; --crit:#ef7a70; --crit-soft:#3a1f1d; --good:#6fbf84; --on-accent:#24110a;}
+
+
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}

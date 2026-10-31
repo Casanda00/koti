@@ -25,6 +25,7 @@ export function renderMore() {
     <button type="button" class="row" data-act="refresh"><span class="ico ${sync.status === "error" ? "r" : "w"}">${icon("sync")}</span><span class="rt">${esc(sync.text)}${sync.lastSync && sync.status === "ok" ? ` · ${relTime(sync.lastSync)}` : ""}<small>${esc(sync.detail || (pend ? `${pend} change${pend === 1 ? "" : "s"} waiting to upload` : "Tap to check for changes now"))}</small></span></button>
     <button type="button" class="row" data-act="signout"><span class="rt danger">Sign out</span></button>`;
 
+  const look = window.kotiTheme ? window.kotiTheme.get() : { palette: "koti", mode: "auto" };
   root.innerHTML = `
   <header class="vh"><div><h1>More</h1></div></header>
   <div class="gh"><h2>Account</h2></div>
@@ -61,6 +62,13 @@ export function renderMore() {
   </div>
   <input type="file" id="moFile" accept="application/json,.json" hidden>
 
+  <div class="gh"><h2>Appearance</h2></div>
+  <div class="grp">
+    <label class="row"><span class="rt">Colours</span><select class="inl" data-look="palette">${[["koti", "Koti green"], ["clay", "Clay orange and peach"]].map(([v, t]) => `<option value="${v}"${look.palette === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
+    <label class="row"><span class="rt">Light or dark</span><select class="inl" data-look="mode">${[["auto", "Same as phone"], ["light", "Light"], ["dark", "Dark"]].map(([v, t]) => `<option value="${v}"${look.mode === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
+  </div>
+  <p class="note">Saved on this device.</p>
+
   <div class="gh"><h2>App</h2></div>
   <div class="grp">
     <button type="button" class="row" data-act="update"><span class="ico w">${icon("sync")}</span><span class="rt">Check for updates<small>You're on version ${APP_VERSION}</small></span></button>
@@ -68,6 +76,7 @@ export function renderMore() {
   </div>
   <p class="note">Koti · version ${APP_VERSION} · your data lives in your own Supabase project.</p>`;
 
+  $$("[data-look]", root).forEach(sel => sel.addEventListener("change", () => window.kotiTheme && window.kotiTheme.set(sel.dataset.look, sel.value)));
   $$("[data-set]", root).forEach(inp => inp.addEventListener("change", () => {
     const k = inp.dataset.set; let v = inp.type === "checkbox" ? inp.checked : inp.value;
     if (inp.dataset.money !== undefined) { v = parseMoney(v); if (Number.isNaN(v)) { toast("Type a number, like 450 or 24,90"); renderMore(); return; } }
