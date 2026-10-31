@@ -50,6 +50,12 @@ function paintSync(s) {
 }
 
 /* Colours and light/dark follow your account: a change on another device applies here too. */
+/* One-time change of defaults: documents aren't kept (storage costs), and Koti is light green. */
+function applyDefaults2() {
+  const S = store.model.settings; if (S.defaults2) return;
+  store.updateSettings({ keepBills: false, keepReceipts: false, palette: "koti", mode: "light", defaults2: true });
+  if (window.kotiTheme) { window.kotiTheme.set("palette", "koti"); window.kotiTheme.set("mode", "light"); }
+}
 function syncLook() {
   const S = store.model.settings, T = window.kotiTheme; if (!T) return; const cur = T.get();
   if (S.palette && S.palette !== cur.palette) T.set("palette", S.palette);
@@ -63,12 +69,13 @@ function init() {
   runAutopay();
 
   let autoT; store.on(kind => {
-    if (kind === "remote") syncLook();
+    if (kind === "remote") { applyDefaults2(); syncLook(); }
     if (current === "project" && !listOf(parse().id)) { location.hash = "#expenses"; return; }
     renderCurrent();
     if (kind === "remote") { clearTimeout(autoT); autoT = setTimeout(runAutopay, 400); }
   });
   onSync((s, ev) => { paintSync(s); renderCurrent(); if (ev === "recovery") openNewPassword(); });
+  applyDefaults2();
   initSync();
   initReceipts();
 

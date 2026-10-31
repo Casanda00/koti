@@ -12,7 +12,7 @@ import { catName } from "./money.js";
 import { alignDue, occurrenceOf, markPaid, runAutopay, bindCopy, FREQ_LABEL } from "./plan.js";
 
 const cats = () => store.model.categories.slice().sort((a, b) => a.position - b.position);
-const keepDefault = kind => (kind === "bill" ? store.model.settings.keepBills !== false : !!store.model.settings.keepReceipts);
+const keepDefault = kind => (kind === "bill" ? !!store.model.settings.keepBills : !!store.model.settings.keepReceipts);   // off unless switched on: storage costs
 const destName = d => d.kind === "auto" ? "Let Koti decide" : d.kind === "spending" ? "Everyday spending" : d.kind === "bill" ? "Bill" : (listOf(d.id) || {}).name || "List";
 const same = (a, b) => a && b && a.kind === b.kind && (a.id || null) === (b.id || null);
 const money2 = n => String((Number(n) || 0).toFixed(2)).replace(".", ",");

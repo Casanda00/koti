@@ -468,7 +468,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         try {
           busy = true; S.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="exThumb"></div><div style="flex:1"><b id="exScanLbl">Preparing the photo…</b><div class="meter" style="margin-top:8px"><i id="exScanBar" style="width:4%"></i></div></div></div>`;
           receipt = await prepareFile(file);
-          keep = receipt.type === "application/pdf" ? true : !!store.model.settings.keepReceipts;   // PDFs aren't read, so they're only useful if kept
+          keep = !!store.model.settings.keepReceipts;   // off unless switched on: storage costs
           $("#exThumb", S).innerHTML = receipt.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(receipt.blob)}">`;
           const r = await readReceipt(receipt, (p, label) => { const lb = $("#exScanLbl", S), bar = $("#exScanBar", S); if (lb) lb.textContent = label; if (bar) bar.style.width = Math.round(p * 100) + "%"; });
           const P = r.parsed || {};

@@ -25,7 +25,7 @@ const SEED = [
 ];
 const DEFAULT_ROOMS = { "Kitchen & cooking": "K", "Groceries & pantry": "K", "Living room": "OH", "Bedroom": "MH", "Bedroom & living": "MH", "Bathroom & personal care": "KPH", "Laundry & cleaning": "ET", "Tools & household": "ET" };
 const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB", keepReceipts: false,
-  name: "", avatarColor: "", startBalance: null, startDate: null, askedStart: false, rollover: false, scanDefault: "auto", keepBills: true, palette: "", mode: "",
+  name: "", avatarColor: "", startBalance: null, startDate: null, askedStart: false, rollover: false, scanDefault: "auto", keepBills: false, palette: "", mode: "",
   reminders: { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9 } };
 export const DEFAULT_CATEGORIES = [["Groceries", 400], ["Eating out", 120], ["Transport", 70], ["Shopping", 150], ["Health", 50], ["Fun", 100], ["Other", 60]];
 export const HOME_SETUP_CAT = "home-setup";   // derived from checklist purchases, not stored

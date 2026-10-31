@@ -21,7 +21,7 @@ const PALETTES = [["koti", "Koti green", "#16794f", "#eef1ee"], ["clay", "Clay",
 export function renderMore() {
   if (!root) return;
   if (root.contains(document.activeElement) && document.activeElement.matches("input, select, textarea")) return; // don't disturb typing
-  const S = store.model.settings, pend = pendingCount(), st = startPoint(), look = window.kotiTheme ? window.kotiTheme.get() : { palette: "koti", mode: "auto" };
+  const S = store.model.settings, pend = pendingCount(), st = startPoint(), look = window.kotiTheme ? window.kotiTheme.get() : { palette: "koti", mode: "light" };
   const name = (S.name || "").trim(), initial = name ? esc(name[0].toUpperCase()) : icon("user", "ic");
   const syncLine = !sync.configured ? "Saved on this device only" : !sync.user ? "Not signed in" : `${esc(sync.text)}${sync.lastSync && sync.status === "ok" ? ` · ${relTime(sync.lastSync)}` : ""}${pend ? ` · ${pend} waiting` : ""}`;
   const profile = sync.configured && !sync.user
@@ -38,15 +38,14 @@ export function renderMore() {
   <div class="grp">
     <button type="button" class="row" data-open="start"><span class="ico g">${icon("wallet")}</span><span class="rt">Starting balance<small>${st.set ? `${eur(st.amount)} at the start of ${esc(new Date(st.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }))} · carried each month` : "Not set: counting from €0"}</small></span>${chev}</button>
     <label class="row"><span class="ico w">${icon("clock")}</span><span class="rt">Budget month starts</span><select class="inl" data-set="monthStart">${days(S.monthStart)}</select>${chev}</label>
-    <button type="button" class="row" data-open="categories"><span class="ico a">${icon("budgets")}</span><span class="rt">Categories and budgets<small>${store.model.categories.length} categories · ${eur(store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0)).replace(/\.00$/, "")} a month</small></span>${chev}</button>
-    <label class="row"><span class="rt">Roll over unspent budgets<small>${S.rollover ? "Unspent money adds to next month; overspending takes from it" : "Off: each category starts fresh each month"}</small></span><input type="checkbox" class="switch" data-set="rollover" ${S.rollover ? "checked" : ""}></label>
   </div>
+  <p class="note">Categories, budgets and carry over are in Income → Budgets.</p>
 
   <div class="gh"><h2>Scanning</h2></div>
   <div class="grp">
     <label class="row"><span class="rt">First choice when scanning</span><select class="inl" data-set="scanDefault">${scanOpts.map(([v, t]) => `<option value="${v}"${(S.scanDefault || "auto") === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
     <label class="row"><span class="rt">Keep receipt photos<small>Off: receipts are read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
-    <label class="row"><span class="rt">Keep bill documents</span><input type="checkbox" class="switch" data-set="keepBills" ${S.keepBills !== false ? "checked" : ""}></label>
+    <label class="row"><span class="rt">Keep bill documents<small>Off: bills are read, the document isn't stored</small></span><input type="checkbox" class="switch" data-set="keepBills" ${S.keepBills ? "checked" : ""}></label>
     <div class="row"><span class="rt">AI scans today</span><span class="rv num" id="moAiUse">–</span></div>
   </div>
 
