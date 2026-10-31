@@ -5,7 +5,7 @@ import { toast, reduceMotion } from "./ui.js";
 
 const TRIGGER = 72, MAX = 120;
 
-export function initPullToRefresh({ onRefreshed } = {}) {
+export function initPullToRefresh({ onRefreshed, beforeRefresh } = {}) {
   const ind = document.createElement("div");
   ind.className = "ptr"; ind.setAttribute("aria-hidden", "true");
   ind.innerHTML = `<svg class="ic" viewBox="0 0 24 24"><use href="#i-sync"/></svg>`;
@@ -44,12 +44,13 @@ export function initPullToRefresh({ onRefreshed } = {}) {
     busy = true; set(56, true); ind.classList.add("spin");
     if (navigator.vibrate) navigator.vibrate(10);
     const started = Date.now();
+    let updating = false;
     try {
-      const reg = "serviceWorker" in navigator && await navigator.serviceWorker.getRegistration();
-      if (reg) reg.update().catch(() => {});
-      if (sync.user) await refresh();
+      if (beforeRefresh) updating = (await beforeRefresh()) === "updating";   // a new version: Koti reloads into it
+      if (!updating && sync.user) await refresh();
     } finally {
       await new Promise(r => setTimeout(r, Math.max(0, 600 - (Date.now() - started))));
+      if (updating) return;   // keep the spinner going until the page reloads
       ind.classList.remove("spin"); set(0, true); busy = false;
       if (onRefreshed) onRefreshed();
       if (!sync.configured) toast("Saved on this device");

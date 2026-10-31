@@ -63,6 +63,7 @@ export function renderMore() {
 
   <div class="gh"><h2>App</h2></div>
   <div class="grp">
+    <button type="button" class="row" data-act="update"><span class="ico w">${icon("sync")}</span><span class="rt">Check for updates<small>You're on version ${APP_VERSION}</small></span></button>
     <button type="button" class="row" data-open="install"><span class="ico g">${icon("phone")}</span><span class="rt">Add Koti to your home screen</span>${chev}</button>
   </div>
   <p class="note">Koti · version ${APP_VERSION} · your data lives in your own Supabase project.</p>`;
@@ -82,7 +83,7 @@ export function bindMore() {
   document.addEventListener("click", e => {
     const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList }[o.dataset.open]; if (f) f(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
-    ({ refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
+    ({ update: () => import("./update.js").then(m => m.checkForUpdate({ manual: true })), refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
   });
   document.addEventListener("change", async e => {
     if (e.target.id !== "moFile") return; const f = e.target.files[0]; e.target.value = ""; if (!f) return;

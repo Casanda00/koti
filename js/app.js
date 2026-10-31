@@ -11,6 +11,7 @@ import { mountPlan, renderPlanView, openBill, runAutopay } from "./plan.js";
 import { mountIncome, renderIncome, openSource } from "./income.js";
 import { mountExpenses, renderExpenses, mountList, openList, renderList, openAddMenu, openAddToList, currentList } from "./lists.js";
 import { initReceipts, uploadPending } from "./receipts.js";
+import { initUpdates, checkForUpdate } from "./update.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills" };   // links from earlier versions
 const TAB = { budgets: "budgets", income: "income", expenses: "expenses", spending: "expenses", bills: "expenses", list: "expenses", project: "expenses", more: "more" };
@@ -74,7 +75,8 @@ function init() {
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "project") { renderPlans(); renderCharts(); } else renderCurrent(); }, 120); });
   route();
-  initPullToRefresh({ onRefreshed: () => { runAutopay(); uploadPending(); renderCurrent(); } });
+  initPullToRefresh({ beforeRefresh: () => checkForUpdate(), onRefreshed: () => { runAutopay(); uploadPending(); renderCurrent(); } });
+  initUpdates();
   const q = new URLSearchParams(location.search);
   if (q.get("add") === "item") openAddToList();
   if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "scan" ? "scan" : "type" });
@@ -82,7 +84,7 @@ function init() {
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     navigator.serviceWorker.register("sw.js").then(reg => {
       reg.addEventListener("updatefound", () => { const w = reg.installing; w && w.addEventListener("statechange", () => {
-        if (w.state === "installed" && navigator.serviceWorker.controller) toast("A new version of Koti is ready", { label: "Reload", run: () => location.reload() });
+        if (w.state === "installed" && navigator.serviceWorker.controller) checkForUpdate({ quiet: true });
       }); });
     }).catch(() => {});
   }
