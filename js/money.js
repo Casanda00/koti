@@ -2,7 +2,7 @@
 import { store, todayISO, HOME_SETUP_CAT, TX_KINDS, BILLS_CAT } from "./data.js";
 import { billTotals, openBill } from "./plan.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
-import { parseExpense, speechSupported, listen } from "./voice.js";
+import { parseExpense } from "./voice.js";
 import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
 import { newId } from "./data.js";
 
@@ -151,7 +151,7 @@ function dayLabel(d) {
 function renderTx(T) {
   const all = [...T.tx.map(t => ({ ...t })), ...setupEntries(view)].sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
   $("#moTxCount", root).textContent = all.length ? `${all.length}` : "";
-  if (!all.length) { $("#moTx", root).innerHTML = `<div class="empty">No spending recorded for ${esc(periodLabel(view))}. Tap <b>+</b> to add an expense, by typing or speaking.</div>`; return; }
+  if (!all.length) { $("#moTx", root).innerHTML = `<div class="empty">No spending recorded for ${esc(periodLabel(view))}. Tap <b>+</b> to add an expense, or scan a receipt.</div>`; return; }
   let html = "", day = null;
   all.forEach(t => {
     if (t.date !== day) { if (day) html += `</div>`; day = t.date; const sum = all.filter(x => x.date === day && x.kind !== "income").reduce((a, x) => a + (x.kind === "refund" ? -x.amount : x.amount), 0); html += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span><span class="num">${eur(sum)}</span></div><div class="grp">`; }
@@ -177,7 +177,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
     body: B => {
       B.innerHTML = `
         ${editing ? "" : `<div class="seg" role="tablist" aria-label="What to add"><button type="button" aria-pressed="true">Expense</button><button type="button" data-switch="item">Checklist item</button></div>`}
-        ${editing ? "" : `<div class="seg" id="exMode" aria-label="How to add"><button type="button" data-m="type" aria-pressed="${mode === "type"}">Type</button><button type="button" data-m="speak" aria-pressed="${mode === "speak"}">${icon("mic", "ic xs")} Speak</button><button type="button" data-m="scan" aria-pressed="${mode === "scan"}">${icon("cam", "ic xs")} Scan</button></div>`}
+        ${editing ? "" : `<div class="seg" id="exMode" aria-label="How to add"><button type="button" data-m="type" aria-pressed="${mode === "type"}">Type</button><button type="button" data-m="scan" aria-pressed="${mode === "scan"}">${icon("cam", "ic xs")} Scan</button></div>`}
         <div id="exBody" style="display:grid;gap:12px"></div>
         <p class="msg" id="exMsg" aria-live="polite"></p>
         ${editing ? `<button type="button" class="btn danger" id="exDel">${icon("trash", "ic sm")} Delete expense</button>` : ""}`;
@@ -185,7 +185,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
       const modeSeg = $("#exMode", B);
       if (modeSeg) modeSeg.addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (!b) return; if (stop) { stop(); stop = null; } $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x === b)); paint(b.dataset.m); });
       const del = $("#exDel", B); if (del) del.onclick = () => { closeSheet(); const copy = { ...tx }; store.remove("transactions", tx.id); toast(`Deleted ${eur(tx.amount)}`, { label: "Undo", run: () => store.put("transactions", copy) }); };
-      paint(editing ? "type" : mode);
+      paint(editing || mode !== "scan" ? "type" : "scan");
 
       function msg(t, s = "error") { const m = $("#exMsg", B); m.textContent = t; m.dataset.state = s; }
       function chipsHTML() { return `<div class="chips cat-chips" role="radiogroup" aria-label="Category">${cats().map(c => `<button type="button" class="fchip" role="radio" data-c="${esc(c.id)}" aria-pressed="${c.id === catId}" aria-checked="${c.id === catId}">${esc(c.name)}</button>`).join("")}</div>`; }
@@ -226,36 +226,6 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
           ["dragenter", "dragover"].forEach(ev => B.addEventListener(ev, e => { if (!$("#exDrop", B)) return; e.preventDefault(); Z.classList.add("over"); }));
           B.addEventListener("dragleave", e => { if (e.target === Z) Z.classList.remove("over"); });
           B.addEventListener("drop", e => { if (!$("#exDrop", B)) return; e.preventDefault(); Z.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) scanFile(f, E); });
-        } else {
-          const lang = store.model.settings.voiceLang || "en-GB", can = speechSupported();
-          E.innerHTML = `
-            ${can ? `<div class="talk"><button type="button" class="micbtn" id="exMic" aria-label="Start listening">${icon("mic")}</button><span class="hint" id="exMicHint" style="font-size:13px">Tap and say it, like “12,50 lunch at Savu”</span>
-              <div class="seg" id="exLang" style="width:200px" aria-label="Language"><button type="button" data-l="en-GB" aria-pressed="${lang === "en-GB"}">English</button><button type="button" data-l="fi-FI" aria-pressed="${lang === "fi-FI"}">Suomi</button></div></div>` : ""}
-            <div class="field"><label for="exSaid">${can ? "What you said (you can edit it)" : "Say it with your keyboard's microphone, or type it"}</label><input class="inp" id="exSaid" placeholder="12,50 lunch at Savu yesterday" autocomplete="off" enterkeyhint="done" ${can ? "" : "autofocus"}></div>
-            <div class="grp" id="exParsed"></div>
-            <button type="button" class="btn" id="exFix">Fix something</button>`;
-          let parsed = null;
-          const update = () => {
-            parsed = parseExpense($("#exSaid", E).value, { categories: store.model.categories, history: store.model.transactions.slice().sort((a, b) => a.date.localeCompare(b.date)) });
-            const P = $("#exParsed", E), has = $("#exSaid", E).value.trim();
-            P.innerHTML = has ? [["Amount", parsed.amount != null ? eur(parsed.amount) : "Not heard yet"], ["Category", parsed.categoryId ? catName(parsed.categoryId) : "Choose in Fix something"], ["Where", parsed.payee || "–"], ["Date", parsed.date === todayISO() ? "Today" : fmtDay(parseDay(parsed.date))], ...(parsed.note ? [["Note", parsed.note]] : [])]
-              .map(([k, v]) => `<div class="row"><span class="rt muted">${k}</span><span class="rv">${esc(v)}</span></div>`).join("") : "";
-            catId = parsed.categoryId; d.amount = parsed.amount; d.payee = parsed.payee || ""; d.date = parsed.date; d.note = parsed.note || "";
-          };
-          $("#exSaid", E).addEventListener("input", () => { source = "voice"; update(); });
-          $("#exSaid", E).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
-          $("#exFix", E).onclick = () => { if (stop) { stop(); stop = null; } if (modeSeg) $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x.dataset.m === "type")); paint("type"); };
-          const L = $("#exLang", E); if (L) L.addEventListener("click", e => { const b = e.target.closest("[data-l]"); if (!b) return; store.updateSettings({ voiceLang: b.dataset.l }); $$("#exLang button", E).forEach(x => x.setAttribute("aria-pressed", x === b)); });
-          const mic = $("#exMic", E);
-          if (mic) mic.onclick = () => {
-            if (stop) { stop(); stop = null; return; }
-            mic.classList.add("on"); mic.setAttribute("aria-label", "Stop listening"); $("#exMicHint", E).textContent = "Listening…";
-            stop = listen({ lang: store.model.settings.voiceLang || "en-GB",
-              onText: (t, final) => { $("#exSaid", E).value = t; source = "voice"; update(); if (final) $("#exMicHint", E).textContent = "Check it, then Save"; },
-              onEnd: () => { stop = null; mic.classList.remove("on"); mic.setAttribute("aria-label", "Start listening"); if ($("#exMicHint", E).textContent === "Listening…") $("#exMicHint", E).textContent = "Didn't catch that. Tap to try again."; },
-              onError: err => { $("#exMicHint", E).textContent = err === "not-allowed" ? "Microphone access is off. Allow it in your browser settings, or type below." : "Couldn't listen. Type below instead."; } });
-          };
-          if (draft && draft.said) { $("#exSaid", E).value = draft.said; update(); }
         }
       }
 

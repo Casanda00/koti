@@ -16,7 +16,7 @@
   ],
   "shortcuts": [
     { "name": "Add expense", "url": "./?add=expense#money", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Say an expense", "url": "./?add=expense&mode=speak#money", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Scan a receipt", "url": "./?add=expense&mode=scan#money", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Add checklist item", "url": "./?add=item#setup", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }

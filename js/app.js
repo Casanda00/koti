@@ -53,7 +53,7 @@ function init() {
   initPullToRefresh({ onRefreshed: () => { runAutopay(); uploadPending(); renderSetup(); renderMoney(); renderPlanView(); if (current === "setup") { renderPlans(); renderCharts(); } if (current === "more") renderMore(); } });
   const q = new URLSearchParams(location.search);
   if (q.get("add") === "1" || q.get("add") === "item") openAdd();
-  if (q.get("add") === "expense") openExpense({ mode: ["speak", "scan"].includes(q.get("mode")) ? q.get("mode") : "type" });
+  if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "scan" ? "scan" : "type" });
 
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").then(reg => {

@@ -39,7 +39,6 @@ export function renderMore() {
   <div class="grp" style="margin-top:10px">
     <button type="button" class="row" data-open="categories"><span class="ico g">${icon("money")}</span><span class="rt">Categories and budgets<small>${store.model.categories.length} categories · ${eur(store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0)).replace(/\.00$/, "")} a month</small></span>${chev}</button>
     <label class="row"><span class="rt">Keep receipt photos<small>Off: scans are only read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
-    <label class="row"><span class="rt">Speaking language</span><select class="inl" data-set="voiceLang"><option value="en-GB"${S.voiceLang !== "fi-FI" ? " selected" : ""}>English</option><option value="fi-FI"${S.voiceLang === "fi-FI" ? " selected" : ""}>Suomi</option></select>${chev}</label>
   </div>
 
   <div class="gh"><h2>Home setup</h2></div>
