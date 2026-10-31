@@ -38,6 +38,7 @@ export function renderMore() {
   <p class="note">Money uses these to show what's left until payday.</p>
   <div class="grp" style="margin-top:10px">
     <button type="button" class="row" data-open="categories"><span class="ico g">${icon("money")}</span><span class="rt">Categories and budgets<small>${store.model.categories.length} categories · ${eur(store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0)).replace(/\.00$/, "")} a month</small></span>${chev}</button>
+    <label class="row"><span class="rt">Keep receipt photos<small>Off: scans are only read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
     <label class="row"><span class="rt">Speaking language</span><select class="inl" data-set="voiceLang"><option value="en-GB"${S.voiceLang !== "fi-FI" ? " selected" : ""}>English</option><option value="fi-FI"${S.voiceLang === "fi-FI" ? " selected" : ""}>Suomi</option></select>${chev}</label>
   </div>
 
@@ -68,7 +69,7 @@ export function renderMore() {
   <p class="note">Koti · Home setup, Money and Plan · your data lives in your own Supabase project.</p>`;
 
   $$("[data-set]", root).forEach(inp => inp.addEventListener("change", () => {
-    const k = inp.dataset.set; let v = inp.value;
+    const k = inp.dataset.set; let v = inp.type === "checkbox" ? inp.checked : inp.value;
     if (inp.dataset.money !== undefined) { v = parseMoney(v); if (Number.isNaN(v)) { toast("Type a number, like 450 or 24,90"); renderMore(); return; } }
     if (k === "monthStart") v = Number(v);
     if (k === "payday") v = v === "last" ? "last" : Number(v);

@@ -170,7 +170,7 @@ const payeeCat = payee => { const t = store.model.transactions.filter(x => x.pay
 export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
   const editing = !!tx, d = tx || draft || { amount: null, categoryId: null, payee: "", date: todayISO(), note: "", kind: "expense" };
   let catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
-  let receipt = null, dropExisting = false, busy = false;   // receipt: a newly prepared file; dropExisting: remove the saved one
+  let receipt = null, dropExisting = false, busy = false, keep = false;   // keep: save the new photo with the expense   // receipt: a newly prepared file; dropExisting: remove the saved one
   openSheet({
     title: editing ? "Expense" : "Add expense", right: "Save",
     onClose: () => { if (stop) stop(); },
@@ -215,12 +215,17 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
           E.innerHTML = `
             <div class="scan-btns">
               <label class="btn primary" for="exCam">${icon("cam", "ic sm")} Take photo</label><input type="file" id="exCam" accept="image/*" capture="environment" class="sr">
-              <label class="btn" for="exFile">Choose photo or PDF</label><input type="file" id="exFile" accept="image/*,application/pdf" class="sr">
+              <label class="btn" for="exFile">${icon("up", "ic sm")} Upload a photo or PDF</label><input type="file" id="exFile" accept="image/*,application/pdf" class="sr">
+              <div class="dropzone" id="exDrop">Or drop a receipt here</div>
             </div>
             <div id="exScan"></div>
-            <p class="note">Koti reads the total, date and shop on this phone. The photo is kept privately in your account.</p>`;
+            <p class="note">Koti reads the total, date and shop on this device. ${store.model.settings.keepReceipts ? "The photo is saved with the expense; you can switch that off before saving." : "The photo isn't saved unless you switch on Keep photo."}</p>`;
           const onFile = async e => { const f = e.target.files[0]; e.target.value = ""; if (f) await scanFile(f, E); };
           $("#exCam", E).addEventListener("change", onFile); $("#exFile", E).addEventListener("change", onFile);
+          const Z = $("#exDrop", E);
+          ["dragenter", "dragover"].forEach(ev => B.addEventListener(ev, e => { if (!$("#exDrop", B)) return; e.preventDefault(); Z.classList.add("over"); }));
+          B.addEventListener("dragleave", e => { if (e.target === Z) Z.classList.remove("over"); });
+          B.addEventListener("drop", e => { if (!$("#exDrop", B)) return; e.preventDefault(); Z.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) scanFile(f, E); });
         } else {
           const lang = store.model.settings.voiceLang || "en-GB", can = speechSupported();
           E.innerHTML = `
@@ -259,6 +264,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         try {
           busy = true; S.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="exThumb"></div><div style="flex:1"><b id="exScanLbl">Preparing the photo…</b><div class="meter" style="margin-top:8px"><i id="exScanBar" style="width:4%"></i></div></div></div>`;
           receipt = await prepareFile(file);
+          keep = receipt.type === "application/pdf" ? true : !!store.model.settings.keepReceipts;   // PDFs aren't read, so they're only useful if kept
           $("#exThumb", S).innerHTML = receipt.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(receipt.blob)}">`;
           const r = await readReceipt(receipt, (p, label) => { const lb = $("#exScanLbl", S), bar = $("#exScanBar", S); if (lb) lb.textContent = label; if (bar) bar.style.width = Math.round(p * 100) + "%"; });
           const P = r.parsed || {};
@@ -266,19 +272,23 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
           source = "receipt"; busy = false;
           if (modeSeg) $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x.dataset.m === "type"));
           paint("type");
-          msg(receipt.type === "application/pdf" ? "PDF attached. Fill in the amount and shop." : P.amount != null ? "Read from the receipt. Check it, then Save." : "Couldn't read the total. Type it in, the receipt is still attached.", P.amount != null ? "ok" : "");
+          msg(receipt.type === "application/pdf" ? "PDF attached. Fill in the amount and shop." : P.amount != null ? "Read from the receipt. Check it, then Save." : "Couldn't read the total. Type it in from the photo.", P.amount != null ? "ok" : "");
         } catch (err) { busy = false; S.innerHTML = ""; msg(String(err.message || err)); }
       }
       function paintReceipt(E) {
         const R = $("#exRc", E), path = !dropExisting && tx && tx.receiptPath;
-        if (receipt) R.innerHTML = `<div class="rc-row"><span class="scan-thumb">${receipt.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(receipt.blob)}">`}</span><span class="rt">Receipt attached<small>Saved with this expense</small></span><button type="button" class="link" id="exRcDel">Remove</button></div>`;
+        if (receipt) R.innerHTML = `<div class="rc-row"><span class="scan-thumb">${receipt.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(receipt.blob)}">`}</span>
+          <label class="rt" for="exKeep" style="cursor:pointer">Keep photo<small>${keep ? "Saved privately with this expense" : "Only used for reading. Not saved."}</small></label>
+          <input type="checkbox" class="switch" id="exKeep" ${keep ? "checked" : ""}>
+          <button type="button" class="link" id="exRcDel" aria-label="Discard photo">${icon("trash", "ic sm")}</button></div>`;
         else if (path) { R.innerHTML = `<div class="rc-row"><span class="scan-thumb" id="exRcThumb">${isPdf(path) ? `<span class="pdf">PDF</span>` : ""}</span><span class="rt">Receipt<small>Tap to view</small></span><button type="button" class="link" id="exRcView">View</button><button type="button" class="link danger" id="exRcDel">Remove</button></div>`;
           if (!isPdf(path)) receiptURL(path).then(u => { const t = $("#exRcThumb", E); if (u && t) t.innerHTML = `<img alt="" src="${u}">`; }).catch(() => {});
           $("#exRcView", E).onclick = () => openReceipt(path); }
         else R.innerHTML = `<label class="rc-add" for="exRcFile">${icon("cam", "ic sm")} Attach receipt</label><input type="file" id="exRcFile" accept="image/*,application/pdf" class="sr">`;
         const del = $("#exRcDel", E); if (del) del.onclick = () => { if (receipt) receipt = null; else dropExisting = true; paintReceipt(E); };
+        const kp = $("#exKeep", E); if (kp) kp.onchange = () => { keep = kp.checked; paintReceipt(E); };
         const add = $("#exRcFile", E); if (add) add.addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-          try { receipt = await prepareFile(f); paintReceipt(E); if (!$("#exAmt", E).value) { msg("Reading the receipt…", ""); const r = await readReceipt(receipt); const P = r.parsed || {};
+          try { receipt = await prepareFile(f); keep = true; paintReceipt(E); if (!$("#exAmt", E).value) { msg("Reading the receipt…", ""); const r = await readReceipt(receipt); const P = r.parsed || {};
             if (P.amount != null && !$("#exAmt", E).value) $("#exAmt", E).value = String(P.amount.toFixed(2)).replace(".", ",");
             if (P.payee && !$("#exPayee", E).value) $("#exPayee", E).value = P.payee; if (P.date) $("#exDate", E).value = P.date; msg(""); } } catch (err) { msg(String(err.message || err)); } });
       }
@@ -295,7 +305,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         if (!catId && payee) catId = payeeCat(payee);
         const id = tx ? tx.id : newId("tx");
         let receiptPath = tx && !dropExisting ? tx.receiptPath : null;
-        if (receipt) { busy = true; try { if (tx && tx.receiptPath) await removeReceipt(tx.receiptPath); receiptPath = await attach(id, receipt); } catch (err) { busy = false; return msg("Couldn't keep the receipt on this device: " + (err.message || err)); } }
+        if (receipt && keep) { busy = true; try { if (tx && tx.receiptPath) await removeReceipt(tx.receiptPath); receiptPath = await attach(id, receipt); } catch (err) { busy = false; return msg("Couldn't keep the receipt on this device: " + (err.message || err)); } }
         else if (tx && dropExisting && tx.receiptPath) removeReceipt(tx.receiptPath);
         const saved = store.put("transactions", { ...(tx || {}), id, date, amount, kind, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source, receiptPath });
         closeSheet();

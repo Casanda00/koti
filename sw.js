@@ -1,6 +1,6 @@
 // Koti service worker: the app opens offline, and updates arrive on the next launch.
 // Bump VERSION with every release so phones pick up new files.
-const VERSION = "koti-2026-10-31-5";
+const VERSION = "koti-2026-10-31-6";
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "js/config.js", "js/vendor/supabase-2.117.3.js", "js/app.js", "js/data.js", "js/sync.js", "js/ui.js", "js/charts.js", "js/setup.js", "js/more.js", "js/money.js", "js/voice.js", "js/ptr.js", "js/plan.js", "js/receipts.js",

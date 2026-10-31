@@ -23,7 +23,7 @@ const SEED = [
   ["Tools & household", "ET", "Extension cord / power strip|Soon;Light bulbs|Soon;Scissors|Soon;Tape|Later;Screwdriver set|Soon;Measuring tape|Later;Batteries|Later;First aid kit|Soon;Small household bin|Soon;Doormat|Soon"],
 ];
 const DEFAULT_ROOMS = { "Kitchen & cooking": "K", "Groceries & pantry": "K", "Living room": "OH", "Bedroom": "MH", "Bedroom & living": "MH", "Bathroom & personal care": "KPH", "Laundry & cleaning": "ET", "Tools & household": "ET" };
-const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB" };
+const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB", keepReceipts: false };
 export const DEFAULT_CATEGORIES = [["Groceries", 400], ["Eating out", 120], ["Transport", 70], ["Shopping", 150], ["Health", 50], ["Fun", 100], ["Other", 60]];
 export const HOME_SETUP_CAT = "home-setup";   // derived from checklist purchases, not stored
 export const KINDS = ["lists", "items", "categories", "transactions", "bills", "goals"];
