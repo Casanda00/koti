@@ -62,7 +62,7 @@
 <div class="app">
   <aside class="side" aria-label="Main">
     <div class="brand"><svg class="mark" aria-hidden="true"><use href="#kotiMark"/></svg><b translate="no">Koti</b></div>
-    <a class="side-link" href="#budgets" data-route="budgets"><svg class="ic"><use href="#i-budgets"/></svg>Budgets</a>
+    <a class="side-link" href="#home" data-route="home"><svg class="ic"><use href="#i-home"/></svg>Home</a>
     <a class="side-link" href="#income" data-route="income"><svg class="ic"><use href="#i-income"/></svg>Income</a>
     <a class="side-link" href="#expenses" data-route="expenses"><svg class="ic"><use href="#i-expenses"/></svg>Expenses</a>
     <a class="side-link" href="#settings" data-route="settings"><svg class="ic"><use href="#i-gear"/></svg>Settings</a>
@@ -71,6 +71,7 @@
   </aside>
 
   <main class="views" id="main">
+    <section class="view" id="view-home" data-view="home" hidden></section>
     <section class="view" id="view-budgets" data-view="budgets" hidden></section>
     <section class="view" id="view-income" data-view="income" hidden></section>
     <section class="view" id="view-expenses" data-view="expenses" hidden></section>
@@ -82,7 +83,7 @@
   </main>
 
   <nav class="tabbar" aria-label="Main">
-    <a class="tab" href="#budgets" data-route="budgets"><svg class="ic"><use href="#i-budgets"/></svg>Budgets</a>
+    <a class="tab" href="#home" data-route="home"><svg class="ic"><use href="#i-home"/></svg>Home</a>
     <a class="tab" href="#income" data-route="income"><svg class="ic"><use href="#i-income"/></svg>Income</a>
     <button class="tab-add" type="button" data-action="add" aria-label="Add"><svg class="ic"><use href="#i-plus"/></svg></button>
     <a class="tab" href="#expenses" data-route="expenses"><svg class="ic"><use href="#i-expenses"/></svg>Expenses</a>

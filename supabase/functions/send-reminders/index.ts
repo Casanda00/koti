@@ -105,7 +105,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
         const due = payDue(s, y, m - 1 + k); if (!due) continue;
         const lateBy = Math.round((Date.parse(today) - Date.parse(due)) / 864e5);
         if (lateBy < 1 || lateBy > 3 || got.has(`${s.id}|${due}`) || (s.missed || []).includes(due) || (start && due < start)) continue;
-        out.push({ key: `pay:${s.id}:${due}`, title: `Did your ${String(s.name).toLowerCase() === "salary" ? "salary" : s.name} arrive?`, body: `${eur(Number(s.amount))} was expected ${fmt(due)}. Open Koti to mark it received.`, url: "./#budgets" });
+        out.push({ key: `pay:${s.id}:${due}`, title: `Did your ${String(s.name).toLowerCase() === "salary" ? "salary" : s.name} arrive?`, body: `${eur(Number(s.amount))} was expected ${fmt(due)}. Open Koti to mark it received.`, url: "./#home" });
       }
     }
   }
@@ -127,7 +127,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
   if (R.weekly && now.weekday === "Sun" && now.hour === 19) {
     const from = addDays(today, -6); let s = 0, n = 0;
     for (const t of u.tx) if (t.date >= from && t.date <= today && t.kind === "expense" && !t.bill_id && t.category_id !== "adjust") { s += Number(t.amount); n++; }
-    out.push({ key: `wk:${today}`, title: "Your week in Koti", body: `${eur(s)} spent in ${n} expense${n === 1 ? "" : "s"} this week.`, url: "./#budgets" });
+    out.push({ key: `wk:${today}`, title: "Your week in Koti", body: `${eur(s)} spent in ${n} expense${n === 1 ? "" : "s"} this week.`, url: "./#home" });
   }
   return out;
 }

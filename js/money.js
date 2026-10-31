@@ -138,7 +138,7 @@ function waterfall(steps) {
   });
   return out + `</svg><p class="wf-info" aria-live="polite">Tap a bar for details.</p>`;
 }
-function heroHTML(L) {
+export function heroHTML(L) {
   const S = store.model.settings, pd = nextPay(), today = todayISO();
   if (L.kind === "before") return `<h2>Before you started counting</h2><p class="hint" style="font-size:13px;margin-top:6px">Your starting balance is from ${fmtDay(parseDay(startPoint().date))}. Months before that show spending only.</p>`;
   if (L.kind === "plan") {
@@ -176,7 +176,7 @@ function heroHTML(L) {
     <div class="key wf-key"><span><i class="sw" style="background:${L.carried < 0 ? "var(--crit)" : "var(--wall)"}"></i>${L.startsHere ? "Starting balance" : "From last month"}</span><span><i class="sw" style="background:var(--wf-out)"></i>Out</span>${L.due ? `<span><i class="sw" style="background:var(--amber)"></i>Still due${L.overdue.length ? ` (${L.overdue.length} overdue)` : ""}</span>` : ""}${L.expectedSum ? `<span><i class="sw gk"></i>Expected, not counted</span>` : ""}</div>`}
     <div class="nowrow"><span>In your account now <b class="num">${money0(L.now)}</b></span><button type="button" class="link" data-checkbank>Check with bank</button></div>`;
 }
-function alertsHTML(L, isCur) {
+export function alertsHTML(L, isCur) {
   let h = "";
   const S = store.model.settings, st = startPoint();
   if (isCur && !st.set && !S.askedStart) h += `<div class="banner"><span class="t"><b>How much do you have right now?</b><small>Koti counts from there and carries what's left into each new month.</small></span><button type="button" class="go" data-start>Set</button><button type="button" class="link" data-start-skip aria-label="Not now">Later</button></div>`;
@@ -186,13 +186,14 @@ function alertsHTML(L, isCur) {
     <span class="od-acts"><button type="button" class="btn sm primary" data-od-paid="${esc(o.bill.id)}" data-due="${o.due}">Mark paid</button><button type="button" class="btn sm" data-od-skip="${esc(o.bill.id)}" data-due="${o.due}">Not owed</button></span></div>`).join("")}</div>`;
   return h;
 }
-function bindHero() {
-  root.addEventListener("click", e => {
+/* Clicks inside a hero card and its alerts (Home, and past or future months in Budgets). */
+export function bindHero(el, rerender) {
+  el.addEventListener("click", e => {
     const bar = e.target.closest("[data-wf]");
     if (bar) { const svg = bar.closest("svg"), info = svg.nextElementSibling; $$(".wf-bar", svg).forEach(b => b.classList.toggle("on", b === bar));
       const lbl = $(".l", bar).textContent, val = $(".v", bar).textContent, st = lastSteps[Number(bar.dataset.wf)];
       if (info) info.textContent = `${lbl}: ${val}${st && st.info ? " · " + st.info : ""}`; return; }
-    const hv = e.target.closest("[data-hview]"); if (hv) { try { localStorage.setItem("koti.heroView", hv.dataset.hview); } catch {} renderMoney(); return; }
+    const hv = e.target.closest("[data-hview]"); if (hv) { try { localStorage.setItem("koti.heroView", hv.dataset.hview); } catch {} rerender(); return; }
     const sl = e.target.closest("[data-slice]"); if (sl) { const card = sl.closest(".piewrap"); $$("[data-slice]", card).forEach(x => x.classList.toggle("on", x.dataset.slice === sl.dataset.slice)); return; }
     if (e.target.closest("[data-start]")) { openStartBalance(); return; }
     if (e.target.closest("[data-start-skip]")) { store.updateSettings({ askedStart: true }); return; }
@@ -238,14 +239,15 @@ export function openCheckBank() {
       toast(`Corrected by ${diff > 0 ? "+" : "−"}${eur(Math.abs(diff))}`, { label: "Undo", run: () => store.remove("transactions", t.id) }); } });
 }
 
-/* ---------- Budgets view ---------- */
+/* ---------- Budgets view (under Income) ---------- */
+export const moneySwitch = active => `<nav class="seg seg-links" aria-label="Income or budgets"><a href="#income"${active === "income" ? ' aria-current="page"' : ""}>Income</a><a href="#budgets"${active === "budgets" ? ' aria-current="page"' : ""}>Budgets</a></nav>`;
 let root = null, view = null;
 export function mountMoney(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
-  <header class="vh"><div><h1>Budgets</h1><div class="sub" id="moSub"></div></div><a class="avatar" href="#settings" id="moAvatar" aria-label="Settings and profile"></a></header>
+  <header class="vh"><div><h1>Income</h1><div class="sub" id="moSub"></div></div><a class="sync" href="#settings" data-sync><span class="dot"></span><span class="t"></span></a></header>
+  ${moneySwitch("budgets")}
   ${navHTML("shift")}
-  <div id="moAlerts"></div>
   <div class="mo-top">
     <section class="card mo-hero" id="moHero"></section>
     <div class="stats mo-stats"><div class="stat" id="moSpendStat"></div><div class="stat" id="moSetupStat"></div></div>
@@ -256,7 +258,7 @@ export function mountMoney(elm) {
     <section><div class="gh"><h2>Savings goals</h2><button type="button" class="link" data-goal-add>Add</button></div><div id="moGoals"></div>
       <div class="gh"><h2>By month</h2></div><div class="card"><div class="chart" id="moColsWrap"><svg id="moCols" role="img"></svg><div class="tip"></div></div><div class="key" style="margin-top:8px"><span><i class="sw" style="background:var(--spruce)"></i>Spent</span><span id="moIncKey"><i class="ln" style="background:var(--amber)"></i>Income</span></div></div></section>
   </div>`;
-  bindHero();
+  bindHero(root, () => renderMoney());
   root.addEventListener("click", e => {
     const s = e.target.closest("[data-shift]"); if (s) { const n = Number(s.dataset.shift); view = n === 0 ? periodFor(new Date()) : shift(view, n); renderMoney(); return; }
     if (e.target.closest("[data-goal-add]")) { openGoal(); return; }
@@ -272,15 +274,10 @@ export function renderMoney() {
   const T = totals(view), pd = nextPay();
   $("[data-period]", root).textContent = periodLabel(view);
   $(".mo-today", root).hidden = isCur;
-  $("#moSub", root).textContent = isCur ? (pd ? `${pd.days === 0 ? "Payday today" : `${pd.days} day${pd.days === 1 ? "" : "s"} to payday`} · ${fmtDay(pd.date)}` : "") : (isFuture ? "Upcoming month" : "Past month");
-
-  const S = store.model.settings, nm = (S.name || "").trim();
-  const av = $("#moAvatar", root); av.textContent = nm ? nm[0].toUpperCase() : "";
-  av.innerHTML = nm ? esc(nm[0].toUpperCase()) : icon("user", "ic sm"); av.style.background = S.avatarColor || "";
-  if (isCur && nm) $("#moSub", root).textContent = `Hi ${nm} · ` + $("#moSub", root).textContent;
-  const Lg = monthLedger(view);
-  $("#moHero", root).innerHTML = heroHTML(Lg);
-  $("#moAlerts", root).innerHTML = alertsHTML(Lg, isCur);
+  $("#moSub", root).textContent = `Budgets ${isCur ? "this month" : isFuture ? "planned" : "in a past month"}`;
+  // This month's money picture lives on Home; past and future months show it here.
+  const H = $("#moHero", root); H.hidden = isCur; $(".mo-top", root).classList.toggle("solo", isCur);
+  if (!isCur) H.innerHTML = heroHTML(monthLedger(view));
   const budgeted = store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0);
   $("#moSpendStat", root).innerHTML = `<div class="k">Everyday spending</div><div class="v">${eur0(T.everyday)}</div><div class="meter"><i style="width:${budgeted ? Math.min(100, T.everyday / budgeted * 100) : 0}%;background:${budgeted && T.everyday > budgeted ? "var(--crit)" : "var(--spruce)"}"></i></div><div class="s">${budgeted ? `of ${eur0(budgeted)} budgeted` : "No budgets set"}</div>`;
   $("#moSetupStat", root).innerHTML = `<div class="k">Bills</div><div class="v">${eur0(T.bills.total)}</div><div class="meter"><i style="width:${T.bills.total ? Math.min(100, T.billsPaid / T.bills.total * 100) : 0}%;background:var(--wall)"></i></div><div class="s">${T.bills.count ? `${T.bills.paidCount} of ${T.bills.count} paid` : "No bills this month"}</div>`;

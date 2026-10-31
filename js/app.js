@@ -13,20 +13,21 @@ import { mountExpenses, renderExpenses, mountList, openList, renderList, openAdd
 import { initReceipts, uploadPending } from "./receipts.js";
 import { initUpdates, checkForUpdate } from "./update.js";
 import { openScan } from "./scan.js";
+import { mountHome, renderHome } from "./home.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills", more: "settings" };   // links from earlier versions
-const TAB = { budgets: "budgets", income: "income", expenses: "expenses", spending: "expenses", bills: "expenses", list: "expenses", project: "expenses", settings: "settings" };
-const TITLE = { budgets: "Budgets", income: "Income", expenses: "Expenses", spending: "All spending", bills: "Bills", settings: "Settings" };
+const TAB = { home: "home", budgets: "income", income: "income", expenses: "expenses", spending: "expenses", bills: "expenses", list: "expenses", project: "expenses", settings: "settings" };
+const TITLE = { home: "Home", budgets: "Budgets", income: "Income", expenses: "Expenses", spending: "All spending", bills: "Bills", settings: "Settings" };
 let current = null, currentKey = null;
 
 function parse() {
-  let h = decodeURIComponent((location.hash || "").slice(1)) || "budgets";
+  let h = decodeURIComponent((location.hash || "").slice(1)) || "home";
   if (OLD[h]) { h = OLD[h]; history.replaceState(null, "", "#" + h); }
   if (h.startsWith("list/")) { const id = h.slice(5), l = listOf(id); return { view: l && l.kind === "project" ? "project" : "list", id }; }
-  return { view: TITLE[h] ? h : "budgets" };
+  return { view: TITLE[h] ? h : "home" };
 }
 function renderCurrent() {
-  ({ budgets: renderMoney, income: renderIncome, expenses: renderExpenses, spending: renderSpending, bills: renderPlanView, list: renderList, settings: renderMore,
+  ({ home: renderHome, budgets: renderMoney, income: renderIncome, expenses: renderExpenses, spending: renderSpending, bills: renderPlanView, list: renderList, settings: renderMore,
      project: () => { renderSetup(); } })[current]?.();
 }
 function route() {
@@ -56,7 +57,7 @@ function syncLook() {
 }
 function init() {
   initSheets();
-  mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountExpenses($("#view-expenses")); mountSpending($("#view-spending"));
+  mountHome($("#view-home")); mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountExpenses($("#view-expenses")); mountSpending($("#view-spending"));
   mountPlan($("#view-bills")); mountList($("#view-list")); mountSetup($("#view-project"));
   mountMore($("#view-more")); bindMore();
   runAutopay();

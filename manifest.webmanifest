@@ -3,7 +3,7 @@
   "short_name": "Koti",
   "description": "Set up your new home and plan your money.",
   "id": "./",
-  "start_url": "./#budgets",
+  "start_url": "./#home",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
@@ -32,7 +32,7 @@
   "shortcuts": [
     {
       "name": "Scan a receipt",
-      "url": "./?add=expense&mode=scan#budgets",
+      "url": "./?add=expense&mode=scan#home",
       "icons": [
         {
           "src": "icons/icon-192.png",
@@ -42,7 +42,7 @@
     },
     {
       "name": "Add expense",
-      "url": "./?add=expense#budgets",
+      "url": "./?add=expense#home",
       "icons": [
         {
           "src": "icons/icon-192.png",

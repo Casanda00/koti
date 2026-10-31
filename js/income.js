@@ -2,7 +2,7 @@
 // Receiving income records a transaction (kind "income") linked to the source and pay date, like paying a bill.
 import { store, todayISO, INCOME_FREQS } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
-import { periodFor, shift, periodLabel, navHTML } from "./money.js";
+import { periodFor, shift, periodLabel, navHTML, moneySwitch } from "./money.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const FREQ = { monthly: "Monthly", varies: "Varies each month", once: "One-off" };
@@ -53,6 +53,7 @@ export function mountIncome(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
   <header class="vh"><div><h1>Income</h1><div class="sub" id="inSub"></div></div><a class="sync" href="#settings" data-sync><span class="dot"></span><span class="t"></span></a></header>
+  ${moneySwitch("income")}
   ${navHTML("ishift")}
   <div class="pl-top">
     <section class="card" id="inHero"></section>
