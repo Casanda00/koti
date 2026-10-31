@@ -1,6 +1,6 @@
 // Budgets (what's left until payday, categories, projects, savings goals, spending by month) and All spending.
 // Also the add/edit expense, categories and receipt sheets.
-import { store, todayISO, TX_KINDS, BILLS_CAT, projectOf, listOf, topLists, projectSpent } from "./data.js";
+import { store, todayISO, TX_KINDS, BILLS_CAT, projectOf, listOf, topLists, projectSpent, paidByReceipt } from "./data.js";
 import { billTotals, openBill, goalsHTML, openGoal } from "./plan.js";
 import { incomeTotals, nextPay } from "./income.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
@@ -34,7 +34,8 @@ export const catName = id => {
 };
 /* Purchases ticked in a project (like Home setup) count as spending in the month they were bought. */
 export function projectEntries(p) {
-  return store.model.items.filter(i => i.done && i.price > 0 && i.boughtAt && i.boughtAt >= p.from && i.boughtAt <= p.to).map(i => ({ i, pr: projectOf(i.listId) })).filter(x => x.pr)
+  const paid = paidByReceipt();
+  return store.model.items.filter(i => i.done && i.price > 0 && !paid.has(i.id) && i.boughtAt && i.boughtAt >= p.from && i.boughtAt <= p.to).map(i => ({ i, pr: projectOf(i.listId) })).filter(x => x.pr)
     .map(({ i, pr }) => ({ id: "item:" + i.id, itemId: i.id, date: i.boughtAt, amount: i.price, kind: "expense", categoryId: "proj:" + pr.id, projectId: pr.id, payee: i.name, note: null, fromProject: true }));
 }
 export function totals(p) {

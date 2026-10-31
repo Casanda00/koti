@@ -4,7 +4,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, 
 import { periodFor } from "./money.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const FREQ_LABEL = { monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly" };
+export const FREQ_LABEL = { monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly", once: "Once" };
 const MONTHS = Array.from({ length: 12 }, (_, k) => new Date(2026, k, 1).toLocaleDateString("en-GB", { month: "long" }));
 export const payId = (billId, due) => `bill:${billId}:${due}`;
 const paymentOf = (billId, due) => store.model.transactions.find(t => t.id === payId(billId, due));
@@ -12,6 +12,7 @@ const paymentOf = (billId, due) => store.model.transactions.find(t => t.id === p
 /* ---------- Occurrences and totals ---------- */
 function dueIn(b, y, m) { // due date of bill b in month m (0-based) of year y, or null
   const mm = ((m % 12) + 12) % 12;
+  if (b.frequency === "once") { if (!b.dueDate) return null; const d = parseDay(b.dueDate), t = new Date(y, m, 1); return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() ? d : null; }
   if (b.frequency === "yearly" && mm !== b.anchorMonth - 1) return null;
   if (b.frequency === "quarterly" && ((mm - (b.anchorMonth - 1)) % 3 + 3) % 3 !== 0) return null;
   const last = new Date(y, m + 1, 0).getDate();
@@ -23,28 +24,38 @@ export function occurrences(p, { includePaused = false } = {}) {
     for (let k = -1; k <= 1; k++) {
       const d = dueIn(b, p.start.getFullYear(), p.start.getMonth() + k); if (!d) continue;
       const due = iso(d); if (due < p.from || due > p.to) continue;
-      out.push({ bill: b, due, paid: paymentOf(b.id, due) || null });
+      out.push({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null });
     }
   });
   return out.sort((a, b) => a.due.localeCompare(b.due) || a.bill.name.localeCompare(b.bill.name));
 }
 export function billTotals(p) {
   const occ = occurrences(p); let total = 0, paid = 0;
-  occ.forEach(o => { total += o.bill.amount; if (o.paid) paid += o.paid.amount; });
-  const due = occ.filter(o => !o.paid).reduce((a, o) => a + o.bill.amount, 0);
+  occ.forEach(o => { total += o.amount; if (o.paid) paid += o.paid.amount; });
+  const due = occ.filter(o => !o.paid).reduce((a, o) => a + o.amount, 0);
   return { occ, total, paid, due, count: occ.length, paidCount: occ.filter(o => o.paid).length };
 }
-export const perYear = b => b.amount * ({ monthly: 12, quarterly: 4, yearly: 1 }[b.frequency] || 12);
+export const perYear = b => b.amount * ({ monthly: 12, quarterly: 4, yearly: 1, once: 0 }[b.frequency] ?? 12);
+/* The amount for one due date: what that month's bill said, otherwise the usual amount. */
+export const dueAmount = (b, due) => (b.dues && b.dues[due] && b.dues[due].amount) || b.amount;
+export const occurrenceOf = (b, due) => ({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null });
 export function nextDue(b, from = new Date()) {
   const t = new Date(from.getFullYear(), from.getMonth(), from.getDate());
   for (let k = 0; k < 14; k++) { const d = dueIn(b, t.getFullYear(), t.getMonth() + k); if (d && d >= t) return d; }
   return null;
 }
 
+/* The bill's own due date nearest to a date read from a document (a bill due on the 14th files under the 15th). */
+export function alignDue(b, due) {
+  const d = parseDay(due); let best = null, bd = Infinity;
+  for (let k = -1; k <= 1; k++) { const x = dueIn(b, d.getFullYear(), d.getMonth() + k); if (x) { const diff = Math.abs(x - d); if (diff < bd) { bd = diff; best = x; } } }
+  return best && bd <= 20 * 864e5 ? iso(best) : due;
+}
+
 /* ---------- Paying ---------- */
 export function markPaid(o, date = todayISO()) {
   const b = o.bill;
-  return store.put("transactions", { id: payId(b.id, o.due), date: o.due < periodFor(new Date()).from ? o.due : date, amount: b.amount, kind: "expense", categoryId: BILLS_CAT, payee: b.name, note: null, source: "manual", billId: b.id, billDue: o.due });
+  return store.put("transactions", { id: payId(b.id, o.due), date: o.due < periodFor(new Date()).from ? o.due : date, amount: o.amount ?? dueAmount(b, o.due), receiptPath: (b.dues && b.dues[o.due] && b.dues[o.due].docPath) || null, kind: "expense", categoryId: BILLS_CAT, payee: b.name, note: null, source: "manual", billId: b.id, billDue: o.due });
 }
 export function unmarkPaid(o) { if (o.paid) store.remove("transactions", o.paid.id); }
 
@@ -56,7 +67,7 @@ export function runAutopay() {
     const from = b.autoThrough && b.autoThrough >= cur.from ? b.autoThrough : null;
     let latest = b.autoThrough;
     occurrences(cur).filter(o => o.bill.id === b.id && o.due <= today && (!from || o.due > from)).forEach(o => {
-      if (!o.paid && !(store.meta.tomb.transactions[payId(b.id, o.due)])) { store.put("transactions", { id: payId(b.id, o.due), date: o.due, amount: b.amount, kind: "expense", categoryId: BILLS_CAT, payee: b.name, source: "manual", billId: b.id, billDue: o.due }); changed++; }
+      if (!o.paid && !(store.meta.tomb.transactions[payId(b.id, o.due)])) { store.put("transactions", { id: payId(b.id, o.due), date: o.due, amount: o.amount, kind: "expense", categoryId: BILLS_CAT, payee: b.name, source: "manual", billId: b.id, billDue: o.due }); changed++; }
       if (!latest || o.due > latest) latest = o.due;
     });
     if (latest && latest !== b.autoThrough) { store.put("bills", { ...b, autoThrough: latest }); changed++; }
@@ -108,7 +119,7 @@ export function mountPlan(elm) {
 function togglePaid(billId, due) {
   const o = occurrences(view, { includePaused: true }).find(x => x.bill.id === billId && x.due === due); if (!o) return;
   if (o.paid) { unmarkPaid(o); toast(`${o.bill.name} marked not paid`); }
-  else { markPaid(o); if (navigator.vibrate) navigator.vibrate(8); toast(`${o.bill.name} paid · ${eur(o.bill.amount)}`, { label: "Undo", run: () => { const p = paymentOf(billId, due); if (p) store.remove("transactions", p.id); } }); }
+  else { markPaid(o); if (navigator.vibrate) navigator.vibrate(8); toast(`${o.bill.name} paid · ${eur(o.amount)}`, { label: "Undo", run: () => { const p = paymentOf(billId, due); if (p) store.remove("transactions", p.id); } }); }
 }
 
 export function renderPlanView() {
@@ -128,7 +139,7 @@ export function renderPlanView() {
     <div class="big">${eur0(T.total)}</div>
     <div class="meter" style="margin:12px 0 8px" role="img" aria-label="${T.paidCount} of ${T.count} bills paid"><i style="width:${T.total ? T.paid / T.total * 100 : 0}%"></i></div>
     <div class="hint" style="font-size:13px">${T.paidCount} of ${T.count} paid${T.due ? ` · ${eur(T.due)} to go` : ""}</div>
-    ${next ? `<div class="next-due"><span class="date"><b>${parseDay(next.due).getDate()}</b>${parseDay(next.due).toLocaleDateString("en-GB", { month: "short" })}</span><span class="rt">Next: ${esc(next.bill.name)}<small>${eur(next.bill.amount)} · due ${rel(next.due)}${next.bill.autopay ? " · paid automatically" : ""}</small></span></div>` : ""}`
+    ${next ? `<div class="next-due"><span class="date"><b>${parseDay(next.due).getDate()}</b>${parseDay(next.due).toLocaleDateString("en-GB", { month: "short" })}</span><span class="rt">Next: ${esc(next.bill.name)}<small>${eur(next.amount)} · due ${rel(next.due)}${next.bill.autopay ? " · paid automatically" : ""}</small></span></div>` : ""}`
     : `<h2>No bills ${isCur ? "this month" : "in this month"}</h2><p class="hint" style="font-size:13px;margin-top:6px">Add rent, electricity, phone and subscriptions. They show up here on their due dates and count in Money's "Left until payday".</p>`;
 
   // calendar
@@ -137,7 +148,7 @@ export function renderPlanView() {
   for (let k = 0; k < days; k++) {
     const d = new Date(view.start.getFullYear(), view.start.getMonth(), view.start.getDate() + k), s = iso(d), occ = T.occ.filter(o => o.due === s);
     const st = !occ.length ? "" : occ.every(o => o.paid) ? "paid" : occ.some(o => !o.paid && s < today) ? "late" : "due";
-    const label = `${d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}${occ.length ? ": " + occ.map(o => `${o.bill.name} ${eur(o.bill.amount)}${o.paid ? " paid" : ""}`).join(", ") : ""}`;
+    const label = `${d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}${occ.length ? ": " + occ.map(o => `${o.bill.name} ${eur(o.amount)}${o.paid ? " paid" : ""}`).join(", ") : ""}`;
     cal += `<button type="button" class="${[s === today ? "today" : "", st, pickedDay === s ? "picked" : ""].join(" ")}" data-day="${s}" aria-label="${esc(label)}" ${occ.length ? "" : "tabindex=\"-1\""}>${d.getDate()}${d.getDate() === 1 && k > 0 ? `<small>${d.toLocaleDateString("en-GB", { month: "short" })}</small>` : ""}</button>`;
   }
   $("#plCal", root).innerHTML = cal;
@@ -154,8 +165,8 @@ export function renderPlanView() {
       const sub = [o.bill.payee, FREQ_LABEL[o.bill.frequency], o.bill.autopay ? "Paid automatically" : null].filter(Boolean).join(" · ");
       return `<div class="row bill-row${pickedDay === o.due ? " picked" : ""}" data-due="${o.due}">
         <button type="button" class="cb" role="checkbox" aria-checked="${!!o.paid}" aria-label="${esc(o.bill.name)} paid" data-pay="${esc(o.bill.id)}" data-due="${o.due}">${check}</button>
-        <button type="button" class="item-name" data-bill="${esc(o.bill.id)}" aria-label="${esc(o.bill.name)}, ${eur(o.bill.amount)}, ${status}. Edit"><span>${esc(o.bill.name)}</span><small>${esc(sub)}</small></button>
-        <span class="rv bill-amt"><b class="num">${eur(o.bill.amount)}</b><small class="${o.paid ? "good" : late ? "danger" : ""}">${esc(status)}</small></span></div>`;
+        <button type="button" class="item-name" data-bill="${esc(o.bill.id)}" aria-label="${esc(o.bill.name)}, ${eur(o.amount)}, ${status}. Edit"><span>${esc(o.bill.name)}</span><small>${esc(sub)}</small></button>
+        <span class="rv bill-amt"><b class="num">${eur(o.amount)}</b><small class="${o.paid ? "good" : late ? "danger" : ""}">${esc(status)}</small></span></div>`;
     }).join("")}</div>` : "";
     const notThis = bills.filter(b => !T.occ.some(o => o.bill.id === b.id));
     if (notThis.length) bh += `<div class="gh" style="margin-top:14px"><h3>${T.occ.length ? "Not due this month" : "Your bills"}</h3></div><div class="grp">${notThis.map(b => { const n = nextDue(b, view.end > new Date() ? view.start : new Date());
@@ -176,25 +187,40 @@ export function goalsHTML() {
 }
 
 /* ---------- Bill sheet ---------- */
+/* Copy buttons for references and account numbers: Koti doesn't pay, you paste these into your bank app. */
+export function bindCopy(scope) {
+  scope.addEventListener("click", async e => { const c = e.target.closest("[data-copy]"); if (!c) return; e.preventDefault();
+    try { await navigator.clipboard.writeText(c.dataset.copy); toast("Copied"); } catch { prompt("Copy this:", c.dataset.copy); } });
+}
 export function openBill(bill = null, preset = {}) {
-  const b = bill || { name: preset.name || "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "" };
+  const b = bill || { name: preset.name || "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "", dueDate: null, reference: "", iban: "" };
   let freq = b.frequency;
   openSheet({ title: bill ? "Bill" : "Add bill", right: "Save", body: B => {
     B.innerHTML = `
+      ${bill ? "" : `<button type="button" class="rc-add" id="biScan">${icon("cam", "ic sm")} Scan or upload the bill instead</button>`}
       <div class="field"><label for="biName">Name</label><input class="inp" id="biName" value="${esc(b.name)}" placeholder="e.g. Rent…" maxlength="80" autocomplete="off" ${bill ? "" : "autofocus"}></div>
       <div class="field"><label for="biAmt">Amount</label><input class="inp" id="biAmt" inputmode="decimal" placeholder="€0,00" value="${moneyField(b.amount)}" autocomplete="off"></div>
       <div class="field"><span class="flabel">How often</span><div class="seg" id="biFreq">${FREQS.map(f => `<button type="button" data-f="${f}" aria-pressed="${f === freq}">${FREQ_LABEL[f]}</button>`).join("")}</div></div>
       <div class="grp">
         <label class="row"><span class="rt">Due on day</span><select class="inl" id="biDay">${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === b.dueDay ? " selected" : ""}>${k + 1}${k + 1 >= 29 ? " (or last day)" : ""}</option>`).join("")}</select></label>
+        <label class="row" id="biDateRow"><span class="rt">Due date</span><input class="inl" id="biDate" type="date" value="${esc(b.dueDate || todayISO())}"></label>
         <label class="row" id="biMonthRow"><span class="rt" id="biMonthLbl">Month</span><select class="inl" id="biMonth">${MONTHS.map((m, k) => `<option value="${k + 1}"${k + 1 === b.anchorMonth ? " selected" : ""}>${m}</option>`).join("")}</select></label>
         <label class="row"><span class="rt">Paid automatically<small>Direct debit or e-invoice: Koti marks it paid on the due date</small></span><input type="checkbox" id="biAuto" ${b.autopay ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--spruce)"></label>
         <label class="row"><span class="rt">Company</span><input class="inl" id="biPayee" value="${esc(b.payee || "")}" placeholder="Optional" maxlength="120" autocomplete="off" style="max-width:60%"></label>
+        <label class="row"><span class="rt">Reference</span><input class="inl mono" id="biRef" value="${esc(b.reference || "")}" placeholder="Optional" maxlength="60" autocomplete="off" style="max-width:55%"></label>
+        <label class="row"><span class="rt">Pay to (IBAN)</span><input class="inl mono" id="biIban" value="${esc(b.iban || "")}" placeholder="Optional" maxlength="40" autocomplete="off" style="max-width:55%"></label>
+        ${b.reference || b.iban ? `<div class="row copy-row">${b.reference ? `<button type="button" class="link" data-copy="${esc(b.reference)}">${icon("copy", "ic xs")} Copy reference</button>` : ""}${b.iban ? `<button type="button" class="link" data-copy="${esc(b.iban.replace(/\s+/g, ""))}">${icon("copy", "ic xs")} Copy IBAN</button>` : ""}</div>` : ""}
         <label class="row"><span class="rt">Note</span><input class="inl" id="biNote" value="${esc(b.note || "")}" placeholder="Optional" maxlength="500" autocomplete="off" style="max-width:60%"></label>
         ${bill ? `<label class="row"><span class="rt">Paused<small>Hidden from the calendar and totals</small></span><input type="checkbox" id="biPaused" ${b.active ? "" : "checked"} style="width:22px;height:22px;accent-color:var(--spruce)"></label>` : ""}
       </div>
       <p class="msg" id="biMsg" aria-live="polite"></p>
       ${bill ? `<p class="note" style="margin-top:0">${eur(perYear(b))} a year. Past payments stay in Money if you delete this bill.</p><button type="button" class="btn danger" id="biDel">${icon("trash", "ic sm")} Delete bill</button>` : ""}`;
-    const showMonth = () => { $("#biMonthRow", B).hidden = freq === "monthly"; $("#biMonthLbl", B).textContent = freq === "yearly" ? "Month" : "First month of the cycle"; };
+    const sc = $("#biScan", B); if (sc) sc.onclick = () => import("./scan.js").then(m => m.openScan({ dest: { kind: "bill" } }));
+    const docs = bill ? Object.entries(bill.dues || {}).filter(([, x]) => x.docPath).slice(-3).reverse() : [];
+    if (docs.length) $("#biMsg", B).insertAdjacentHTML("beforebegin", `<div class="grp">${docs.map(([d, x]) => `<button type="button" class="row" data-doc="${esc(x.docPath)}"><span class="ico r">${icon("bill")}</span><span class="rt">Bill due ${esc(fmtDay(parseDay(d)))}<small>${x.amount ? eur(x.amount) : ""}${x.reference ? " · " + esc(x.reference) : ""}</small></span><span class="link">View</span></button>`).join("")}</div>`);
+    $$("[data-doc]", B).forEach(x => x.onclick = () => import("./money.js").then(m => m.openReceipt(x.dataset.doc)));
+    const showMonth = () => { const once = freq === "once"; $("#biMonthRow", B).hidden = freq === "monthly" || once; $("#biDay", B).closest(".row").hidden = once; $("#biDateRow", B).hidden = !once; $("#biMonthLbl", B).textContent = freq === "yearly" ? "Month" : "First month of the cycle"; };
+    bindCopy(B);
     showMonth();
     $("#biFreq", B).addEventListener("click", e => { const x = e.target.closest("[data-f]"); if (!x) return; freq = x.dataset.f; $$("#biFreq button", B).forEach(y => y.setAttribute("aria-pressed", y === x)); showMonth(); });
     const del = $("#biDel", B); if (del) del.onclick = () => { if (!confirm(`Delete "${b.name}"? Its past payments stay in Money.`)) return; closeSheet(); const copy = { ...bill }; store.remove("bills", bill.id); toast(`Deleted ${bill.name}`, { label: "Undo", run: () => store.put("bills", copy) }); };
@@ -203,8 +229,11 @@ export function openBill(bill = null, preset = {}) {
     const name = $("#biName", B).value.trim(), amount = parseMoney($("#biAmt", B).value);
     if (!name) return msg("Give the bill a name.");
     if (!amount || Number.isNaN(amount)) return msg("Type the amount, like 890 or 29,90.");
-    const autopay = $("#biAuto", B).checked;
-    const saved = store.put("bills", { ...(bill || {}), id: bill ? bill.id : undefined, name, amount, frequency: freq, dueDay: Number($("#biDay", B).value), anchorMonth: Number($("#biMonth", B).value),
+    const autopay = $("#biAuto", B).checked, once = freq === "once", dueDate = once ? $("#biDate", B).value : null;
+    if (once && !dueDate) return msg("Pick the due date.");
+    const dd = once ? parseDay(dueDate) : null;
+    const saved = store.put("bills", { ...(bill || {}), id: bill ? bill.id : undefined, name, amount, frequency: freq, dueDay: once ? dd.getDate() : Number($("#biDay", B).value), anchorMonth: once ? dd.getMonth() + 1 : Number($("#biMonth", B).value), dueDate,
+      reference: $("#biRef", B).value.trim() || null, iban: $("#biIban", B).value.trim() || null,
       autopay, autoThrough: bill && bill.autopay === autopay ? bill.autoThrough : null, active: bill ? !$("#biPaused", B).checked : true, payee: $("#biPayee", B).value.trim() || null, note: $("#biNote", B).value.trim() || null, position: bill ? bill.position : store.model.bills.length });
     closeSheet(); if (autopay) runAutopay();
     toast(bill ? "Saved" : `Added ${saved.name}`);

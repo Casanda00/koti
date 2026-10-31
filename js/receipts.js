@@ -55,10 +55,10 @@ function openItems() {
   return out;
 }
 export const aiPossible = () => !!(sync.client && sync.user && navigator.onLine && sync.client.functions);
-async function readWithAI(prepared) {
+async function readWithAI(prepared, hint) {
   const image = await blobToDataURL(prepared.blob);
   const cats = store.model.categories, open = openItems();
-  const { data, error } = await sync.client.functions.invoke("read-receipt", { body: { image, categories: cats.map(c => c.name), listItems: [...new Set(open.map(i => i.name))] } });
+  const { data, error } = await sync.client.functions.invoke("read-receipt", { body: { image, hint, categories: cats.map(c => c.name), listItems: [...new Set(open.map(i => i.name))], bills: store.model.bills.map(b => b.name) } });
   if (error) {
     let info = {}; try { info = error.context && error.context.json ? await error.context.json() : {}; } catch {}
     const e = new Error(info.error || (/Failed to fetch|network/i.test(error.message) ? "Couldn't reach the receipt reader." : error.message)); e.code = info.code || "network"; throw e;
@@ -73,16 +73,17 @@ async function readWithAI(prepared) {
   const sums = {}; lines.forEach(l => { if (l.categoryId) sums[l.categoryId] = (sums[l.categoryId] || 0) + l.price; });
   let main = Object.entries(sums).sort((a, b) => b[1] - a[1])[0];
   const fromShop = R.shop ? parseExpense(R.shop, { categories: cats, history: store.model.transactions }).categoryId : null;
-  return { text: "", ai: true, used: data.used, limit: data.limit, parsed: { amount: R.total, date: R.date, payee: R.shop, categoryId: main ? main[0] : fromShop, lines } };
+  return { text: "", ai: true, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, parsed: { amount: R.total, date: R.date, payee: R.shop, categoryId: main ? main[0] : fromShop, lines } };
 }
 
-export async function readReceipt(prepared, onProgress) {
-  if (prepared.type === "application/pdf") return { text: "", parsed: {} };
+/* hint: "receipt" or "bill" when you already chose where it goes. PDFs are read by AI only. */
+export async function readReceipt(prepared, onProgress, hint = null) {
   let aiError = null;
   if (aiPossible()) {
-    try { if (onProgress) onProgress(0.25, "Reading every line with AI…"); const r = await readWithAI(prepared); if (onProgress) onProgress(1, "Done"); return r; }
+    try { if (onProgress) onProgress(0.25, hint === "bill" ? "Reading the bill with AI…" : "Reading every line with AI…"); const r = await readWithAI(prepared, hint); if (onProgress) onProgress(1, "Done"); return r; }
     catch (e) { aiError = e; if (e.code === "not_receipt") throw e; }
   }
+  if (prepared.type === "application/pdf") return { text: "", parsed: {}, aiError };
   const local = await readOnDevice(prepared, onProgress);
   return { ...local, aiError };
 }
@@ -155,6 +156,8 @@ export async function uploadPending() {
         await delFile(path);
         const t = store.model.transactions.find(x => x.id === rec.txId);
         if (t && t.receiptPath === path) store.put("transactions", { ...t, receiptPath: target });
+        store.model.bills.forEach(b => { const k = Object.keys(b.dues || {}).find(d => b.dues[d].docPath === path); if (k) store.put("bills", { ...b, dues: { ...b.dues, [k]: { ...b.dues[k], docPath: target } } }); });
+        store.model.transactions.filter(x => x.receiptPath === path).forEach(x => store.put("transactions", { ...x, receiptPath: target }));
       }
     }
   } finally { uploading = false; }

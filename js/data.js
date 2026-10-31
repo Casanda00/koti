@@ -81,13 +81,24 @@ function cleanTx(t) {
     updatedAt: t.updatedAt || EPOCH,
   };
 }
-export const FREQS = ["monthly", "quarterly", "yearly"];
+export const FREQS = ["monthly", "quarterly", "yearly", "once"];
 const num = (v, d = null) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? d : Number(v));
 function cleanBill(b, pos) {
+  if (b.frequency === "once" && !b.dueDate) b = { ...b, frequency: "monthly" };
   return { id: String(b.id || newId("bill")).slice(0, 80), name: String(b.name).slice(0, 80), amount: Math.round(Math.abs(num(b.amount, 0)) * 100) / 100,
     frequency: FREQS.includes(b.frequency) ? b.frequency : "monthly", dueDay: Math.min(31, Math.max(1, Math.round(num(b.dueDay, 1)))), anchorMonth: Math.min(12, Math.max(1, Math.round(num(b.anchorMonth, 1)))),
     autopay: !!b.autopay, autoThrough: b.autoThrough ? String(b.autoThrough).slice(0, 10) : null, active: b.active !== false,
-    payee: b.payee ? String(b.payee).slice(0, 120) : null, note: b.note ? String(b.note).slice(0, 500) : null, position: Number.isFinite(b.position) ? b.position : pos, updatedAt: b.updatedAt || EPOCH };
+    payee: b.payee ? String(b.payee).slice(0, 120) : null, note: b.note ? String(b.note).slice(0, 500) : null, position: Number.isFinite(b.position) ? b.position : pos,
+    dueDate: b.dueDate ? String(b.dueDate).slice(0, 10) : null, reference: b.reference ? String(b.reference).slice(0, 60) : null, iban: b.iban ? String(b.iban).replace(/\s+/g, " ").trim().slice(0, 40) : null,
+    dues: cleanDues(b.dues), updatedAt: b.updatedAt || EPOCH };
+}
+/* Per due date (YYYY-MM-DD): the amount on that month's bill, its reference and the saved document. */
+function cleanDues(d) {
+  const out = {}; if (!d || typeof d !== "object") return out;
+  Object.keys(d).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort().slice(-36).forEach(k => { const x = d[k] || {};
+    const amount = Number(x.amount) > 0 ? Math.round(Number(x.amount) * 100) / 100 : null;
+    out[k] = { amount, reference: x.reference ? String(x.reference).slice(0, 60) : null, docPath: x.docPath ? String(x.docPath).slice(0, 300) : null }; });
+  return out;
 }
 function cleanGoal(g, pos) {
   return { id: String(g.id || newId("goal")).slice(0, 80), name: String(g.name).slice(0, 80), target: Math.max(0.01, num(g.target, 1)), saved: Math.max(0, num(g.saved, 0)),
@@ -292,9 +303,11 @@ export const topLists = () => store.model.lists.filter(l => l.kind !== "room").s
 export const roomsOf = pid => store.model.lists.filter(l => l.parentId === pid).sort(byPos);
 export const projectOf = listId => { const l = listOf(listId); if (!l) return null; return l.kind === "project" ? l : l.parentId ? listOf(l.parentId) : null; };
 export const projectItems = pid => { const ids = new Set([pid, ...roomsOf(pid).map(r => r.id)]); return store.model.items.filter(i => ids.has(i.listId)); };
+/* Items a receipt line paid for. Their cost is counted once, from the receipt, so the item's own price is skipped. */
+export const paidByReceipt = () => { const s = new Set(); store.model.transactions.forEach(t => (t.lines || []).forEach(l => { if (l.itemId) s.add(l.itemId); })); return s; };
 /* A project's spending: its bought items, its other spending, and receipt lines assigned to it. */
-export const projectSpent = pid => projectItems(pid).filter(i => i.done && i.price > 0).reduce((a, i) => a + i.price, 0) + (Number((listOf(pid) || {}).extraSpend) || 0)
-  + store.model.transactions.reduce((a, t) => a + (t.lines || []).filter(l => l.categoryId === "proj:" + pid).reduce((b, l) => b + l.price, 0), 0);
+export const projectSpent = pid => { const paid = paidByReceipt(); return projectItems(pid).filter(i => i.done && i.price > 0 && !paid.has(i.id)).reduce((a, i) => a + i.price, 0) + (Number((listOf(pid) || {}).extraSpend) || 0)
+  + store.model.transactions.reduce((a, t) => a + (t.lines || []).filter(l => l.categoryId === "proj:" + pid).reduce((b, l) => b + l.price, 0), 0); };
 export const itemsOf = listId => store.model.items.filter(i => i.listId === listId).sort((a, b) => a.position - b.position);
 export function zoneStats(pid = HOME_PROJECT) {
   const z = {}; ZONE_ORDER.forEach(k => z[k] = { code: k, lists: [], total: 0, done: 0, ess: 0, spent: 0, priced: 0 });

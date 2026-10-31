@@ -3,6 +3,7 @@ import { store, topLists, roomsOf, itemsOf, listOf, projectItems, projectSpent, 
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { periodFor, totals, periodLabel, openExpense } from "./money.js";
 import { occurrences, nextDue, perYear } from "./plan.js";
+import { openScan } from "./scan.js";
 
 const est = items => items.reduce((a, i) => a + (i.price > 0 ? i.price * (i.qty || 1) : 0), 0);
 const qtyText = q => (q && q !== 1 ? `${String(q).replace(".", ",")} ×` : "");
@@ -31,7 +32,7 @@ export function renderExpenses() {
   const strip = Array.from({ length: days }, (_, k) => { const d = new Date(p.start.getFullYear(), p.start.getMonth(), p.start.getDate() + k), s = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; const o = occ.filter(x => x.due === s);
     return `<i class="${!o.length ? "" : o.every(x => x.paid) ? "p" : s < today ? "l" : "d"}${s === today ? " t" : ""}"></i>`; }).join("");
   $("#exBills", eroot).innerHTML = store.model.bills.length ? `<div class="card-head" style="margin:0"><span class="k">Bills · ${eur0(monthly)} a month</span><span class="go">${late ? `<span class="chip crit">${late} overdue</span>` : ""} ${icon("chev", "ic xs")}</span></div>
-    <b style="font:700 20px var(--display)">${occ.length ? `${paid} of ${occ.length} paid` : "None due this month"}</b><span class="s">${next ? `Next: ${esc(next.bill.name)} ${eur(next.bill.amount)} · ${fmtDay(parseDay(next.due))}` : occ.length ? "All paid this month" : ""}</span>
+    <b style="font:700 20px var(--display)">${occ.length ? `${paid} of ${occ.length} paid` : "None due this month"}</b><span class="s">${next ? `Next: ${esc(next.bill.name)} ${eur(next.amount)} · ${fmtDay(parseDay(next.due))}` : occ.length ? "All paid this month" : ""}</span>
     <span class="strip" aria-hidden="true">${strip}</span>`
     : `<div class="card-head" style="margin:0"><span class="k">Bills</span><span class="go">${icon("chev", "ic xs")}</span></div><b style="font:700 18px var(--display)">Add your bills</b><span class="s">Rent, electricity, phone, subscriptions</span>`;
 
@@ -90,7 +91,7 @@ export function renderList() {
   const sugs = suggestions(l.id).filter(n => !its.some(i => i.name.toLowerCase() === n.toLowerCase())).slice(0, 8);
   lroot.innerHTML = `
     <header class="vh"><div><a class="back" href="#${parent ? "list/" + encodeURIComponent(parent.id) : "expenses"}">${icon("chev", "ic sm flip")} ${esc(parent ? parent.name : "Expenses")}</a><h1>${esc(l.name)}</h1><div class="sub">${todo.length ? `${todo.length} to buy${e ? ` · about ${eur(e)}` : ""}` : its.length ? "Everything's bought" : "Empty list"}</div></div>
-      <div class="hbtns"><button type="button" class="hbtn" data-share aria-label="Send this list">${icon("share", "ic")}</button><button type="button" class="hbtn" data-list-settings aria-label="List settings">${icon("more", "ic")}</button></div></header>
+      <div class="hbtns"><button type="button" class="hbtn" data-scan aria-label="Scan a receipt for this list">${icon("cam", "ic")}</button><button type="button" class="hbtn" data-share aria-label="Send this list">${icon("share", "ic")}</button><button type="button" class="hbtn" data-list-settings aria-label="List settings">${icon("more", "ic")}</button></div></header>
     <div class="add-line"><label for="liAdd" class="sr">Add items</label><input id="liAdd" placeholder="Add items: milk, eggs, 2 × yogurt" autocomplete="off" enterkeyhint="done" value="${esc(keepVal)}"><button type="button" class="add-btn" data-add-items aria-label="Add">${icon("plus", "ic sm")}</button></div>
     ${sugs.length ? `<div class="chips sugs" aria-label="Add again">${sugs.map(n => `<button type="button" class="fchip" data-sug="${esc(n)}">+ ${esc(n)}</button>`).join("")}</div>` : ""}
     ${todo.length ? `<div class="gh"><h2>To buy</h2><span class="num">${todo.length}</span></div><div class="grp">${todo.map(row).join("")}</div>` : its.length ? "" : `<div class="empty">Nothing here yet. Type items above, separated by commas.</div>`}
@@ -195,12 +196,12 @@ export function openListSettings(l) {
 export function openAddMenu() {
   openSheet({ title: "Add", left: "Close", body: B => {
     B.innerHTML = `<div class="acts">
-      <button type="button" class="act-big g" data-a="scan">${icon("cam")}<b>Scan receipt</b><small>Total, date and shop</small></button>
+      <button type="button" class="act-big g" data-a="scan">${icon("cam")}<b>Scan or upload</b><small>Receipt or bill</small></button>
       <button type="button" class="act-big" data-a="expense">${icon("money")}<b>Expense</b><small>Type an amount</small></button>
       <button type="button" class="act-big" data-a="income">${icon("up")}<b>Income</b><small>Salary, refund, side job</small></button>
       <button type="button" class="act-big" data-a="list">${icon("list")}<b>To a list</b><small>Groceries, Home setup…</small></button></div>`;
     B.addEventListener("click", e => { const b = e.target.closest("[data-a]"); if (!b) return; closeSheet();
-      setTimeout(() => ({ scan: () => openExpense({ mode: "scan" }), expense: () => openExpense(), income: () => openExpense({ draft: { kind: "income", date: todayISO(), amount: null, payee: "", note: "" } }), list: () => openAddToList() })[b.dataset.a](), 260); });
+      setTimeout(() => ({ scan: () => openScan(), expense: () => openExpense(), income: () => openExpense({ draft: { kind: "income", date: todayISO(), amount: null, payee: "", note: "" } }), list: () => openAddToList() })[b.dataset.a](), 260); });
   } });
 }
 export function openAddToList(preselect) {

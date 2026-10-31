@@ -12,6 +12,7 @@ import { mountIncome, renderIncome, openSource } from "./income.js";
 import { mountExpenses, renderExpenses, mountList, openList, renderList, openAddMenu, openAddToList, currentList } from "./lists.js";
 import { initReceipts, uploadPending } from "./receipts.js";
 import { initUpdates, checkForUpdate } from "./update.js";
+import { openScan } from "./scan.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills" };   // links from earlier versions
 const TAB = { budgets: "budgets", income: "income", expenses: "expenses", spending: "expenses", bills: "expenses", list: "expenses", project: "expenses", more: "more" };
@@ -64,6 +65,7 @@ function init() {
   initReceipts();
 
   document.addEventListener("click", e => {
+    if (e.target.closest("[data-scan]")) { e.preventDefault(); openScan(); return; }
     if (!e.target.closest("[data-action=add]")) return;
     e.preventDefault();
     if (current === "project") openAdd();
@@ -79,7 +81,8 @@ function init() {
   initUpdates();
   const q = new URLSearchParams(location.search);
   if (q.get("add") === "item") openAddToList();
-  if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "scan" ? "scan" : "type" });
+  if (q.get("add") === "expense") { if (q.get("mode") === "scan") openScan(); else openExpense(); }
+  if (q.get("add") === "scan") openScan();
 
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     navigator.serviceWorker.register("sw.js").then(reg => {
