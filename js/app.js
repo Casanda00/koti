@@ -7,6 +7,7 @@ import { mountMore, renderMore, bindMore, openAuth, openNewPassword } from "./mo
 import { mountMoney, renderMoney, openExpense } from "./money.js";
 import { initPullToRefresh } from "./ptr.js";
 import { mountPlan, renderPlanView, openBill, runAutopay } from "./plan.js";
+import { initReceipts, uploadPending } from "./receipts.js";
 
 const ROUTES = ["setup", "money", "plan", "more"];
 let current = null;
@@ -43,15 +44,16 @@ function init() {
   let autoT; store.on(kind => { renderSetup(); renderMoney(); renderPlanView(); if (current === "more") renderMore(); if (kind === "remote") { clearTimeout(autoT); autoT = setTimeout(runAutopay, 400); } });
   onSync((s, ev) => { paintSync(s); if (current === "more") renderMore(); renderSetup(); renderMoney(); renderPlanView(); if (ev === "recovery") openNewPassword(); });
   initSync();
+  initReceipts();
 
   document.addEventListener("click", e => { if (e.target.closest("[data-action=add]")) { e.preventDefault(); if (current === "setup") openAdd(); else if (current === "plan") openBill(); else openExpense(); } });
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "setup") { renderPlans(); renderCharts(); } if (current === "money") renderMoney(); }, 120); });
   route();
-  initPullToRefresh({ onRefreshed: () => { runAutopay(); renderSetup(); renderMoney(); renderPlanView(); if (current === "setup") { renderPlans(); renderCharts(); } if (current === "more") renderMore(); } });
+  initPullToRefresh({ onRefreshed: () => { runAutopay(); uploadPending(); renderSetup(); renderMoney(); renderPlanView(); if (current === "setup") { renderPlans(); renderCharts(); } if (current === "more") renderMore(); } });
   const q = new URLSearchParams(location.search);
   if (q.get("add") === "1" || q.get("add") === "item") openAdd();
-  if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "speak" ? "speak" : "type" });
+  if (q.get("add") === "expense") openExpense({ mode: ["speak", "scan"].includes(q.get("mode")) ? q.get("mode") : "type" });
 
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").then(reg => {

@@ -87,7 +87,7 @@ const KEYWORDS = {
   "Health": ["pharmacy", "medicine", "doctor", "dentist", "apteekki", "apteekista", "lääke", "lääkäri", "hammaslääkäri", "terveystalo", "mehiläinen"],
   "Fun": ["cinema", "movie", "movies", "concert", "game", "games", "bar", "beer", "drinks", "museum", "elokuva", "leffa", "keikka", "konsertti", "olut", "kalja", "baari", "museo", "finnkino"],
 };
-const KNOWN_PLACES = [["K-Market", "Groceries", /k[\s-]?market/i], ["K-Supermarket", "Groceries", /k[\s-]?supermarket/i], ["K-Citymarket", "Groceries", /k[\s-]?citymarket|citymarket/i],
+export const KNOWN_PLACES = [["K-Market", "Groceries", /k[\s-]?market/i], ["K-Supermarket", "Groceries", /k[\s-]?supermarket/i], ["K-Citymarket", "Groceries", /k[\s-]?citymarket|citymarket/i],
   ["S-Market", "Groceries", /s[\s-]?market/i], ["Prisma", "Groceries", /prisma/i], ["Alepa", "Groceries", /alepa/i], ["Sale", "Groceries", /\bsale\b/i], ["Lidl", "Groceries", /lidl/i], ["Tokmanni", "Shopping", /tokmanni/i],
   ["Alko", "Groceries", /\balko\b/i], ["R-Kioski", "Other", /r[\s-]?kioski/i], ["HSL", "Transport", /\bhsl\b/i], ["VR", "Transport", /\bvr\b/i], ["IKEA", "Shopping", /ikea/i], ["Clas Ohlson", "Shopping", /clas\s?ohlson/i],
   ["Jysk", "Shopping", /jysk/i], ["H&M", "Shopping", /h\s?(&|and|ja)\s?m\b/i], ["Gigantti", "Shopping", /gigantti/i], ["Verkkokauppa", "Shopping", /verkkokauppa/i], ["Wolt", "Eating out", /wolt/i], ["Foodora", "Eating out", /foodora/i],

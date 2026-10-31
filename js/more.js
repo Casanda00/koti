@@ -2,7 +2,7 @@
 import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount } from "./sync.js";
-import { openCategories } from "./money.js";
+import { openCategories, openReceiptsList } from "./money.js";
 
 let root = null, installPrompt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; });
@@ -53,6 +53,7 @@ export function renderMore() {
 
   <div class="gh"><h2>Data</h2></div>
   <div class="grp">
+    <button type="button" class="row" data-open="receipts"><span class="ico a">${icon("cam")}</span><span class="rt">Receipts<small>${store.model.transactions.filter(t => t.receiptPath).length} saved</small></span>${chev}</button>
     <button type="button" class="row" data-open="sheets"><span class="ico g">${icon("table")}</span><span class="rt">Import from Google Sheets<small>Bring in your list from the earlier version</small></span>${chev}</button>
     <button type="button" class="row" data-act="export"><span class="ico w">${icon("down")}</span><span class="rt">Download backup</span></button>
     <button type="button" class="row" data-act="import"><span class="ico w">${icon("up")}</span><span class="rt">Restore from backup</span></button>
@@ -79,7 +80,7 @@ export function renderMore() {
 
 export function bindMore() {
   document.addEventListener("click", e => {
-    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories }[o.dataset.open]; if (f) f(); return; }
+    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList }[o.dataset.open]; if (f) f(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
     ({ refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
   });

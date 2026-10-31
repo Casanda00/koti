@@ -3,6 +3,8 @@ import { store, todayISO, HOME_SETUP_CAT, TX_KINDS, BILLS_CAT } from "./data.js"
 import { billTotals, openBill } from "./plan.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
 import { parseExpense, speechSupported, listen } from "./voice.js";
+import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
+import { newId } from "./data.js";
 
 /* ---------- Periods ---------- */
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -155,7 +157,7 @@ function renderTx(T) {
     if (t.date !== day) { if (day) html += `</div>`; day = t.date; const sum = all.filter(x => x.date === day && x.kind !== "income").reduce((a, x) => a + (x.kind === "refund" ? -x.amount : x.amount), 0); html += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span><span class="num">${eur(sum)}</span></div><div class="grp">`; }
     const sign = t.kind === "expense" ? "" : "+", title = t.payee || catName(t.categoryId);
     const sub = [t.payee ? catName(t.categoryId) : null, t.note, t.kind !== "expense" ? (t.kind === "income" ? "Income" : "Refund") : null, t.source === "voice" ? "Spoken" : null].filter(Boolean).join(" · ");
-    html += `<button type="button" class="row" ${t.fromSetup ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="rv${t.kind !== "expense" ? " good" : ""}">${sign}${eur(t.amount)}</span></button>`;
+    html += `<button type="button" class="row" ${t.fromSetup ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind !== "expense" ? " good" : ""}">${sign}${eur(t.amount)}</span></button>`;
   });
   $("#moTx", root).innerHTML = html + `</div>`;
 }
@@ -168,19 +170,20 @@ const payeeCat = payee => { const t = store.model.transactions.filter(x => x.pay
 export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
   const editing = !!tx, d = tx || draft || { amount: null, categoryId: null, payee: "", date: todayISO(), note: "", kind: "expense" };
   let catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
+  let receipt = null, dropExisting = false, busy = false;   // receipt: a newly prepared file; dropExisting: remove the saved one
   openSheet({
     title: editing ? "Expense" : "Add expense", right: "Save",
     onClose: () => { if (stop) stop(); },
     body: B => {
       B.innerHTML = `
         ${editing ? "" : `<div class="seg" role="tablist" aria-label="What to add"><button type="button" aria-pressed="true">Expense</button><button type="button" data-switch="item">Checklist item</button></div>`}
-        ${editing ? "" : `<div class="seg" id="exMode" aria-label="How to add"><button type="button" data-m="type" aria-pressed="${mode === "type"}">Type</button><button type="button" data-m="speak" aria-pressed="${mode === "speak"}">${icon("mic", "ic xs")} Speak</button><button type="button" data-m="scan" aria-pressed="false" title="Coming with receipts">Scan</button></div>`}
+        ${editing ? "" : `<div class="seg" id="exMode" aria-label="How to add"><button type="button" data-m="type" aria-pressed="${mode === "type"}">Type</button><button type="button" data-m="speak" aria-pressed="${mode === "speak"}">${icon("mic", "ic xs")} Speak</button><button type="button" data-m="scan" aria-pressed="${mode === "scan"}">${icon("cam", "ic xs")} Scan</button></div>`}
         <div id="exBody" style="display:grid;gap:12px"></div>
         <p class="msg" id="exMsg" aria-live="polite"></p>
         ${editing ? `<button type="button" class="btn danger" id="exDel">${icon("trash", "ic sm")} Delete expense</button>` : ""}`;
       const sw = $("[data-switch=item]", B); if (sw) sw.onclick = () => { closeSheet(); setTimeout(() => import("./setup.js").then(m => m.openAdd()), 260); };
       const modeSeg = $("#exMode", B);
-      if (modeSeg) modeSeg.addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (!b) return; if (b.dataset.m === "scan") { msg("Receipt scanning arrives in a later update.", ""); return; } if (stop) { stop(); stop = null; } $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x === b)); paint(b.dataset.m); });
+      if (modeSeg) modeSeg.addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (!b) return; if (stop) { stop(); stop = null; } $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x === b)); paint(b.dataset.m); });
       const del = $("#exDel", B); if (del) del.onclick = () => { closeSheet(); const copy = { ...tx }; store.remove("transactions", tx.id); toast(`Deleted ${eur(tx.amount)}`, { label: "Undo", run: () => store.put("transactions", copy) }); };
       paint(editing ? "type" : mode);
 
@@ -192,6 +195,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         const E = $("#exBody", B);
         if (m === "type") {
           E.innerHTML = `
+            <div id="exRc"></div>
             <label class="amount-in"><span class="sr">Amount in euros</span><span aria-hidden="true">€</span><input id="exAmt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${d.amount != null ? String(d.amount.toFixed(2)).replace(".", ",") : ""}" ${editing ? "" : "autofocus"}></label>
             ${chipsHTML()}
             <div class="grp">
@@ -205,7 +209,18 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
           $("#exPayee", E).addEventListener("change", e => { if (!catId) { const c = payeeCat(e.target.value); if (c) { catId = c; $$(".cat-chips [data-c]", E).forEach(x => x.setAttribute("aria-pressed", x.dataset.c === catId)); } } });
           $("#exKind", E).addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (!b) return; kind = b.dataset.k; $$("#exKind button", E).forEach(x => x.setAttribute("aria-pressed", x === b)); });
           $("#exAmt", E).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
-          setTimeout(() => !editing && $("#exAmt", E) && $("#exAmt", E).focus(), 80);
+          paintReceipt(E);
+          setTimeout(() => !editing && !receipt && $("#exAmt", E) && $("#exAmt", E).focus(), 80);
+        } else if (m === "scan") {
+          E.innerHTML = `
+            <div class="scan-btns">
+              <label class="btn primary" for="exCam">${icon("cam", "ic sm")} Take photo</label><input type="file" id="exCam" accept="image/*" capture="environment" class="sr">
+              <label class="btn" for="exFile">Choose photo or PDF</label><input type="file" id="exFile" accept="image/*,application/pdf" class="sr">
+            </div>
+            <div id="exScan"></div>
+            <p class="note">Koti reads the total, date and shop on this phone. The photo is kept privately in your account.</p>`;
+          const onFile = async e => { const f = e.target.files[0]; e.target.value = ""; if (f) await scanFile(f, E); };
+          $("#exCam", E).addEventListener("change", onFile); $("#exFile", E).addEventListener("change", onFile);
         } else {
           const lang = store.model.settings.voiceLang || "en-GB", can = speechSupported();
           E.innerHTML = `
@@ -239,7 +254,37 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         }
       }
 
-      function save() {
+      async function scanFile(file, E) {
+        const S = $("#exScan", E);
+        try {
+          busy = true; S.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="exThumb"></div><div style="flex:1"><b id="exScanLbl">Preparing the photo…</b><div class="meter" style="margin-top:8px"><i id="exScanBar" style="width:4%"></i></div></div></div>`;
+          receipt = await prepareFile(file);
+          $("#exThumb", S).innerHTML = receipt.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(receipt.blob)}">`;
+          const r = await readReceipt(receipt, (p, label) => { const lb = $("#exScanLbl", S), bar = $("#exScanBar", S); if (lb) lb.textContent = label; if (bar) bar.style.width = Math.round(p * 100) + "%"; });
+          const P = r.parsed || {};
+          if (P.amount != null) d.amount = P.amount; if (P.date) d.date = P.date; if (P.payee) d.payee = P.payee; if (P.categoryId) catId = P.categoryId;
+          source = "receipt"; busy = false;
+          if (modeSeg) $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x.dataset.m === "type"));
+          paint("type");
+          msg(receipt.type === "application/pdf" ? "PDF attached. Fill in the amount and shop." : P.amount != null ? "Read from the receipt. Check it, then Save." : "Couldn't read the total. Type it in, the receipt is still attached.", P.amount != null ? "ok" : "");
+        } catch (err) { busy = false; S.innerHTML = ""; msg(String(err.message || err)); }
+      }
+      function paintReceipt(E) {
+        const R = $("#exRc", E), path = !dropExisting && tx && tx.receiptPath;
+        if (receipt) R.innerHTML = `<div class="rc-row"><span class="scan-thumb">${receipt.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(receipt.blob)}">`}</span><span class="rt">Receipt attached<small>Saved with this expense</small></span><button type="button" class="link" id="exRcDel">Remove</button></div>`;
+        else if (path) { R.innerHTML = `<div class="rc-row"><span class="scan-thumb" id="exRcThumb">${isPdf(path) ? `<span class="pdf">PDF</span>` : ""}</span><span class="rt">Receipt<small>Tap to view</small></span><button type="button" class="link" id="exRcView">View</button><button type="button" class="link danger" id="exRcDel">Remove</button></div>`;
+          if (!isPdf(path)) receiptURL(path).then(u => { const t = $("#exRcThumb", E); if (u && t) t.innerHTML = `<img alt="" src="${u}">`; }).catch(() => {});
+          $("#exRcView", E).onclick = () => openReceipt(path); }
+        else R.innerHTML = `<label class="rc-add" for="exRcFile">${icon("cam", "ic sm")} Attach receipt</label><input type="file" id="exRcFile" accept="image/*,application/pdf" class="sr">`;
+        const del = $("#exRcDel", E); if (del) del.onclick = () => { if (receipt) receipt = null; else dropExisting = true; paintReceipt(E); };
+        const add = $("#exRcFile", E); if (add) add.addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+          try { receipt = await prepareFile(f); paintReceipt(E); if (!$("#exAmt", E).value) { msg("Reading the receipt…", ""); const r = await readReceipt(receipt); const P = r.parsed || {};
+            if (P.amount != null && !$("#exAmt", E).value) $("#exAmt", E).value = String(P.amount.toFixed(2)).replace(".", ",");
+            if (P.payee && !$("#exPayee", E).value) $("#exPayee", E).value = P.payee; if (P.date) $("#exDate", E).value = P.date; msg(""); } } catch (err) { msg(String(err.message || err)); } });
+      }
+
+      async function save() {
+        if (busy) return;
         const E = $("#exBody", B), typed = $("#exAmt", E);
         let amount = d.amount, payee = d.payee, date = d.date, note = d.note;
         if (typed) {
@@ -248,7 +293,11 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         }
         if (!amount || amount <= 0) return msg(typed ? "Type how much it was." : "Say or type the amount, like 12,50.");
         if (!catId && payee) catId = payeeCat(payee);
-        const saved = store.put("transactions", { ...(tx || {}), id: tx ? tx.id : undefined, date, amount, kind, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source });
+        const id = tx ? tx.id : newId("tx");
+        let receiptPath = tx && !dropExisting ? tx.receiptPath : null;
+        if (receipt) { busy = true; try { if (tx && tx.receiptPath) await removeReceipt(tx.receiptPath); receiptPath = await attach(id, receipt); } catch (err) { busy = false; return msg("Couldn't keep the receipt on this device: " + (err.message || err)); } }
+        else if (tx && dropExisting && tx.receiptPath) removeReceipt(tx.receiptPath);
+        const saved = store.put("transactions", { ...(tx || {}), id, date, amount, kind, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source, receiptPath });
         closeSheet();
         if (editing) toast("Saved");
         else toast(`Saved ${eur(saved.amount)}${catId ? ` · ${catName(catId)}` : ""}`, { label: "Undo", run: () => store.remove("transactions", saved.id) });
@@ -281,5 +330,24 @@ export function openCategories() {
         const b = parseMoney($("#ncBudget", B).value); store.put("categories", { id: "cat-" + Date.now().toString(36), name: n, budget: Number.isNaN(b) ? null : b, position: store.model.categories.length }); draw(); };
     };
     draw();
+  } });
+}
+
+/* ---------- Receipts: view one, list all ---------- */
+export async function openReceipt(path) {
+  openSheet({ title: "Receipt", left: "Close", body: B => {
+    B.innerHTML = `<div class="rc-view" id="rcView"><p class="hint">Loading…</p></div>`;
+    receiptURL(path).then(u => {
+      const V = $("#rcView", B); if (!u) { V.innerHTML = `<p class="msg">Sign in to see receipts saved on your other devices.</p>`; return; }
+      V.innerHTML = isPdf(path) ? `<a class="btn primary" href="${u}" target="_blank" rel="noopener">Open the PDF</a>` : `<img src="${u}" alt="Receipt photo"><a class="btn" href="${u}" target="_blank" rel="noopener" style="margin-top:10px">Open full size</a>`;
+    }).catch(err => { $("#rcView", B).innerHTML = `<p class="msg" data-state="error">${esc(err.message || err)}</p>`; });
+  } });
+}
+export function openReceiptsList() {
+  const list = store.model.transactions.filter(t => t.receiptPath).sort((a, b) => b.date.localeCompare(a.date));
+  openSheet({ title: "Receipts", left: "Done", body: B => {
+    B.innerHTML = list.length ? `<p class="note" style="margin-top:0">${list.length} receipt${list.length === 1 ? "" : "s"}, newest first. Handy for returns and warranties.</p><div class="grp">${list.map(t => `<button type="button" class="row" data-rc="${esc(t.id)}"><span class="rt">${esc(t.payee || catName(t.categoryId))}<small>${fmtDay(parseDay(t.date))} ${parseDay(t.date).getFullYear()} · ${esc(catName(t.categoryId))}</small></span><span class="rv">${eur(t.amount)}</span></button>`).join("")}</div>`
+      : `<p class="msg">No receipts yet. In Add expense, choose Scan to photograph one.</p>`;
+    B.addEventListener("click", e => { const r = e.target.closest("[data-rc]"); if (!r) return; const t = store.model.transactions.find(x => x.id === r.dataset.rc); if (t) { closeSheet(); setTimeout(() => openExpense({ tx: t }), 260); } });
   } });
 }
