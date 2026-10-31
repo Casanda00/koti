@@ -15,6 +15,7 @@ const ord = d => d + (d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12
 
 export function mountMore(el) { root = el; renderMore(); }
 
+let lastReminders = "";   // shown straight away on redraw, so the page keeps its height
 const COLOURS = ["#16794f", "#b55334", "#c7841a", "#3a6ea5", "#7a4f9e", "#23302b"];
 const PALETTES = [["koti", "Koti green", "#16794f", "#eef1ee"], ["clay", "Clay", "#b55334", "#faf1e8"]];
 export function renderMore() {
@@ -28,6 +29,7 @@ export function renderMore() {
     : `<button type="button" class="prof" data-open="profile"><span class="avatar big"${S.avatarColor ? ` style="background:${esc(S.avatarColor)}"` : ""}>${initial}</span><span class="pt"><b>${name ? esc(name) : "Add your name"}</b><small>${sync.user ? esc(sync.user.email) : "This device"}</small><span class="okline" data-state="${esc(sync.status || "")}">${syncLine}</span></span>${chev}</button>`;
   const scanOpts = [["auto", "Let Koti decide"], ["spending", "Everyday spending"], ["bill", "A bill"]];
 
+  const keepY = window.scrollY;   // redraws must not move the page
   root.innerHTML = `
   <header class="vh"><div><h1>Settings</h1></div></header>
   ${profile}
@@ -48,7 +50,7 @@ export function renderMore() {
     <div class="row"><span class="rt">AI scans today</span><span class="rv num" id="moAiUse">–</span></div>
   </div>
 
-  <div id="moReminders"></div>
+  <div id="moReminders">${lastReminders}</div>
 
   <div class="gh"><h2>Appearance</h2></div>
   <div class="swatches" role="radiogroup" aria-label="Colours">${PALETTES.map(([v, t, a, b]) => `<button type="button" class="swt" role="radio" aria-checked="${look.palette === v}" data-palette="${v}"><span class="sw2" style="background:linear-gradient(135deg,${a} 50%,${b} 50%)"></span><b>${t}</b></button>`).join("")}</div>
@@ -79,13 +81,14 @@ export function renderMore() {
   $$("[data-palette]", root).forEach(b => b.onclick = () => setLook({ palette: b.dataset.palette }));
   $$("[data-mode]", root).forEach(b => b.onclick = () => setLook({ mode: b.dataset.mode }));
   aiUse().then(t => { const e = $("#moAiUse", root); if (e && t) e.textContent = t; });
-  import("./push.js").then(m => { const r = $("#moReminders", root); if (r) m.renderReminders(r); }).catch(() => {});
+  if (keepY && !root.hidden) window.scrollTo(0, keepY);
+  import("./push.js").then(m => { const r = $("#moReminders", root); if (r) m.renderReminders(r).then(() => { lastReminders = r.innerHTML; }); }).catch(() => {});
 }
 /* Colours and light/dark: applied on this device right away, and synced so your other devices follow. */
 function setLook(patch) {
-  if (patch.palette) window.kotiTheme && window.kotiTheme.set("palette", patch.palette);
-  if (patch.mode) window.kotiTheme && window.kotiTheme.set("mode", patch.mode);
-  store.updateSettings(patch);
+  if (patch.palette) { window.kotiTheme && window.kotiTheme.set("palette", patch.palette); $$("[data-palette]", root).forEach(b => b.setAttribute("aria-checked", b.dataset.palette === patch.palette)); }
+  if (patch.mode) { window.kotiTheme && window.kotiTheme.set("mode", patch.mode); $$("[data-mode]", root).forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === patch.mode)); }
+  const y = window.scrollY; store.updateSettings(patch); requestAnimationFrame(() => window.scrollTo(0, y));
 }
 async function aiUse() {
   if (!sync.client || !sync.user) return "Sign in to use AI";

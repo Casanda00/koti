@@ -66,6 +66,48 @@ export function totals(p) {
 export function pace(p) { const now = new Date(), t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()); if (t0 < p.start) return 0; if (t0 > p.end) return 1; const days = Math.round((p.end - p.start) / 864e5) + 1; return (Math.round((t0 - p.start) / 864e5) + 1) / days; }
 
 
+
+/* ---------- Category colours and the pie view ---------- */
+const CAT_COLORS = ["#1f8a5a", "#e07a3f", "#3a6ea5", "#8e5bb5", "#d14d72", "#d9a520", "#2a9d8f", "#7c6f64", "#5c6bc0", "#b5651d"];
+export function catColor(id) {
+  const cs = store.model.categories.slice().sort((a, b) => a.position - b.position), i = cs.findIndex(c => c.id === id);
+  return i < 0 ? "#8a958f" : CAT_COLORS[i % CAT_COLORS.length];
+}
+const heroView = () => { try { return localStorage.getItem("koti.heroView") || "bars"; } catch { return "bars"; } };
+const viewToggle = () => `<span class="vt" role="group" aria-label="Chart type"><button type="button" data-hview="bars" aria-pressed="${heroView() === "bars"}" aria-label="Waterfall chart">${icon("budgets", "ic xs")}</button><button type="button" data-hview="pie" aria-pressed="${heroView() === "pie"}" aria-label="Pie chart">${icon("pie", "ic xs")}</button></span>`;
+function pieParts(L) {
+  const parts = [];
+  if (L.kind === "plan") {
+    if (L.bills) parts.push(["Bills", L.bills, "var(--wall)"]);
+    store.model.categories.slice().sort((a, b) => a.position - b.position).forEach(c => { if (Number(c.budget) > 0) parts.push([c.name, Number(c.budget), catColor(c.id)]); });
+    if (L.goals) parts.push(["Goals", L.goals, "var(--amber)"]);
+    if (L.left > 0) parts.push(["Left", L.left, "var(--pie-left)"]);
+    return parts;
+  }
+  const T = totals(L.p);
+  Object.entries(T.byCat).filter(([k, v]) => k !== BILLS_CAT && v > 0).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => parts.push([k === "none" ? "No category" : catName(k), v, k === "none" ? "#9aa59f" : catColor(k)]));
+  if (T.projects > 0) parts.push(["Projects", T.projects, "var(--amber)"]);
+  if (L.bills > 0) parts.push(["Bills paid", L.bills, "var(--wall)"]);
+  if (L.kind === "current" && L.due > 0) parts.push(["Still due", L.due, "#b5651d"]);
+  const rest = L.kind === "current" ? L.left : L.end;
+  if (rest > 0) parts.push([L.kind === "current" ? "Left" : "End", rest, "var(--pie-left)"]);
+  return parts;
+}
+function pieHTML(parts, center, sub) {
+  const tot = parts.reduce((a, p) => a + p[1], 0);
+  if (!tot) return `<p class="hint" style="margin:14px 0 4px">Nothing to show yet.</p>`;
+  let a = -Math.PI / 2, svg = `<svg class="pie" viewBox="0 0 140 140" role="img" aria-label="${esc(parts.map(p => `${p[0]} ${eur0(p[1])}`).join(", "))}">`;
+  const R = 62, r = 40, P = (ang, rad) => [70 + rad * Math.cos(ang), 70 + rad * Math.sin(ang)];
+  parts.forEach(([, v, c], i) => {
+    let b = a + 2 * Math.PI * v / tot; if (parts.length === 1) b = a + 2 * Math.PI - 0.0001;
+    const lg = b - a > Math.PI ? 1 : 0, [x1, y1] = P(a, R), [x2, y2] = P(b, R), [x3, y3] = P(b, r), [x4, y4] = P(a, r);
+    svg += `<path data-slice="${i}" d="M${x1.toFixed(2)} ${y1.toFixed(2)}A${R} ${R} 0 ${lg} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}L${x3.toFixed(2)} ${y3.toFixed(2)}A${r} ${r} 0 ${lg} 0 ${x4.toFixed(2)} ${y4.toFixed(2)}Z" fill="${c}"/>`;
+    a = b;
+  });
+  svg += `<text x="70" y="70" class="pc">${esc(center)}</text><text x="70" y="85" class="ps">${esc(sub)}</text></svg>`;
+  return `<div class="piewrap">${svg}<div class="plegend">${parts.map(([l, v, c], i) => `<button type="button" data-slice="${i}"><i style="background:${c}"></i><span>${esc(l)}</span><b class="num">${eur0(v)}</b></button>`).join("")}</div></div>`;
+}
+
 /* ---------- Budgets hero: a waterfall from what was carried in to what's left ---------- */
 const money0 = v => (v < 0 ? "−" : "") + eur0(Math.abs(v));
 let lastSteps = [];   // the bars last drawn, to describe a tapped bar
@@ -106,9 +148,10 @@ function heroHTML(L) {
     if (L.goals) steps.push({ label: "Goals", value: -L.goals, kind: "out", info: "Set aside for savings goals" });
     steps.push({ label: "Left", value: L.left, kind: "total", info: "Planned left before payday" });
     if (L.incomeSum) steps.push({ label: "Income", value: L.incomeSum, kind: "ghost", info: `Planned: ${L.income.map(o => `${o.src.name} ${fmtDay(parseDay(o.due))}`).join(", ")}. Not counted until received.` });
-    return `<div class="card-head" style="margin-bottom:2px"><h2>Planned left until payday</h2><span class="chip">Plan</span></div>
-      <div class="big muted-big">${money0(L.left)}</div><div class="hint" style="font-size:13px">If everything arrives and goes as planned</div>${waterfall(steps)}
-      <div class="key wf-key"><span><i class="sw" style="background:var(--wall)"></i>Expected start</span><span><i class="sw" style="background:var(--wf-out)"></i>Planned out</span>${L.incomeSum ? `<span><i class="sw gk"></i>Planned income</span>` : ""}</div>`;
+    return `<div class="card-head" style="margin-bottom:2px"><h2>Planned left until payday</h2><span class="hr">${viewToggle()}<span class="chip">Plan</span></span></div>
+      <div class="big muted-big">${money0(L.left)}</div><div class="hint" style="font-size:13px">If everything arrives and goes as planned</div>
+      ${heroView() === "pie" ? pieHTML(pieParts(L), money0(L.left), "planned left") : `${waterfall(steps)}
+      <div class="key wf-key"><span><i class="sw" style="background:var(--wall)"></i>Expected start</span><span><i class="sw" style="background:var(--wf-out)"></i>Planned out</span>${L.incomeSum ? `<span><i class="sw gk"></i>Planned income</span>` : ""}</div>`}`;
   }
   const startLabel = L.startsHere ? "Start" : "Carried";
   const steps = [{ label: startLabel, value: L.carried, kind: "start", info: L.startsHere ? "Your starting balance" : `Carried from ${periodLabel(shift(L.p, -1), false)}` }];
@@ -118,19 +161,19 @@ function heroHTML(L) {
   if (L.adjust) steps.push({ label: "Fix", value: L.adjust, kind: L.adjust > 0 ? "in" : "out", info: "Corrections from Check with bank" });
   if (L.kind === "past") {
     steps.push({ label: "End", value: L.end, kind: "total", info: "Carried into the next month" });
-    return `<div class="card-head" style="margin-bottom:2px"><h2>Month ended with</h2>${L.end < 0 ? `<span class="chip crit">Short</span>` : ""}</div>
-      <div class="big ${L.end < 0 ? "danger" : ""}">${money0(L.end)}</div><div class="hint" style="font-size:13px">Carried into ${periodLabel(shift(L.p, 1), false)}${L.unpaid.length ? ` · ${L.unpaid.length} bill${L.unpaid.length === 1 ? "" : "s"} not paid (now overdue)` : ""}</div>${waterfall(steps)}`;
+    return `<div class="card-head" style="margin-bottom:2px"><h2>Month ended with</h2><span class="hr">${viewToggle()}${L.end < 0 ? `<span class="chip crit">Short</span>` : ""}</span></div>
+      <div class="big ${L.end < 0 ? "danger" : ""}">${money0(L.end)}</div><div class="hint" style="font-size:13px">Carried into ${periodLabel(shift(L.p, 1), false)}${L.unpaid.length ? ` · ${L.unpaid.length} bill${L.unpaid.length === 1 ? "" : "s"} not paid (now overdue)` : ""}</div>${heroView() === "pie" ? pieHTML(pieParts(L), money0(L.end), "at month end") : waterfall(steps)}`;
   }
   if (L.due) steps.push({ label: "Due", value: -L.due, kind: "due", info: `${L.dueThisMonth.length + L.overdue.length} bill${L.dueThisMonth.length + L.overdue.length === 1 ? "" : "s"} still to pay${L.overdue.length ? `, ${L.overdue.length} overdue` : ""}` });
   steps.push({ label: "Left", value: L.left, kind: "total", info: "Left until payday" });
   if (L.expectedSum) steps.push({ label: "Expected", value: L.expectedSum, kind: "ghost", info: `${L.expected.map(o => `${o.src.name} ${fmtDay(parseDay(o.due))}`).join(", ")}. Not counted until it arrives.` });
   const days = pd ? Math.max(1, pd.days) : null, perDay = days && L.left > 0 ? L.left / days : 0;
   const chip = L.left < 0 ? `<span class="chip crit">Over by ${eur0(-L.left)}</span>` : L.carried > 0 && L.left < L.carried * .1 ? `<span class="chip warn">Running low</span>` : `<span class="chip ok">On track</span>`;
-  return `<div class="card-head" style="margin-bottom:2px"><h2>Left until payday</h2>${chip}</div>
+  return `<div class="card-head" style="margin-bottom:2px"><h2>Left until payday</h2><span class="hr">${viewToggle()}${chip}</span></div>
     <div class="big ${L.left < 0 ? "danger" : ""}">${money0(L.left)}</div>
     <div class="hint" style="font-size:13px">${pd && pd.days === 0 ? "Payday today" : perDay ? `About ${eur0(perDay)} a day for ${days} day${days === 1 ? "" : "s"}` : pd ? `${pd.days} days to payday` : ""}${!startPoint().set ? ` · <button type="button" class="link-inline" data-start>Set your starting balance</button>` : ""}</div>
-    ${waterfall(steps)}
-    <div class="key wf-key"><span><i class="sw" style="background:${L.carried < 0 ? "var(--crit)" : "var(--wall)"}"></i>${L.startsHere ? "Starting balance" : "From last month"}</span><span><i class="sw" style="background:var(--wf-out)"></i>Out</span>${L.due ? `<span><i class="sw" style="background:var(--amber)"></i>Still due${L.overdue.length ? ` (${L.overdue.length} overdue)` : ""}</span>` : ""}${L.expectedSum ? `<span><i class="sw gk"></i>Expected, not counted</span>` : ""}</div>
+    ${heroView() === "pie" ? pieHTML(pieParts(L), money0(Math.max(0, L.left)), `left of ${money0(L.carried + L.income + L.adjust)}`) + (L.expectedSum ? `<p class="expect-note">${icon("clock", "ic xs")} ${esc(L.expected.map(o => `${o.src.name} ${eur0(Number(o.src.amount) || 0)} expected ${fmtDay(parseDay(o.due))}`).join(", "))} · not counted until it arrives</p>` : "") : `${waterfall(steps)}
+    <div class="key wf-key"><span><i class="sw" style="background:${L.carried < 0 ? "var(--crit)" : "var(--wall)"}"></i>${L.startsHere ? "Starting balance" : "From last month"}</span><span><i class="sw" style="background:var(--wf-out)"></i>Out</span>${L.due ? `<span><i class="sw" style="background:var(--amber)"></i>Still due${L.overdue.length ? ` (${L.overdue.length} overdue)` : ""}</span>` : ""}${L.expectedSum ? `<span><i class="sw gk"></i>Expected, not counted</span>` : ""}</div>`}
     <div class="nowrow"><span>In your account now <b class="num">${money0(L.now)}</b></span><button type="button" class="link" data-checkbank>Check with bank</button></div>`;
 }
 function alertsHTML(L, isCur) {
@@ -149,6 +192,8 @@ function bindHero() {
     if (bar) { const svg = bar.closest("svg"), info = svg.nextElementSibling; $$(".wf-bar", svg).forEach(b => b.classList.toggle("on", b === bar));
       const lbl = $(".l", bar).textContent, val = $(".v", bar).textContent, st = lastSteps[Number(bar.dataset.wf)];
       if (info) info.textContent = `${lbl}: ${val}${st && st.info ? " · " + st.info : ""}`; return; }
+    const hv = e.target.closest("[data-hview]"); if (hv) { try { localStorage.setItem("koti.heroView", hv.dataset.hview); } catch {} renderMoney(); return; }
+    const sl = e.target.closest("[data-slice]"); if (sl) { const card = sl.closest(".piewrap"); $$("[data-slice]", card).forEach(x => x.classList.toggle("on", x.dataset.slice === sl.dataset.slice)); return; }
     if (e.target.closest("[data-start]")) { openStartBalance(); return; }
     if (e.target.closest("[data-start-skip]")) { store.updateSettings({ askedStart: true }); return; }
     if (e.target.closest("[data-checkbank]")) { openCheckBank(); return; }
@@ -247,9 +292,9 @@ export function renderMoney() {
   Object.keys(T.byCat).filter(k => k !== "none" && k !== BILLS_CAT && !store.model.categories.some(c => c.id === k)).forEach(k => rows.push({ id: k, name: "Deleted category", budget: null, spent: T.byCat[k] }));
   $("#moBudgets", root).innerHTML = rows.map(r => {
     const ratio = r.budget ? r.spent / r.budget : 0, over = r.budget != null && r.spent > r.budget;
-    const col = over ? "var(--crit)" : ratio >= .9 ? "var(--amber)" : "var(--spruce)";
+    const col = over ? "var(--crit)" : catColor(r.id);
     const right = r.budget ? (over ? `<span class="danger">${eur0(r.spent - r.budget)} over</span>` : `${eur0(r.budget - r.spent)} left`) : eur0(r.spent);
-    return `<button type="button" class="row r2" data-cat="${esc(r.id)}" aria-label="${esc(r.name)}: ${eur(r.spent)} spent${r.budget ? ` of ${eur(r.budget)}` : ""}"><span class="rt">${esc(r.name)}<small class="num">${r.budget ? `${eur0(r.spent)} of ${eur0(r.budget)}${r.base != null && Math.abs(r.budget - r.base) >= 0.5 ? ` (${r.budget > r.base ? "+" : "−"}${eur0(Math.abs(r.budget - r.base))} rolled over)` : ""}` : "No budget"}</small></span><span class="rv">${right}</span>
+    return `<button type="button" class="row r2" data-cat="${esc(r.id)}" aria-label="${esc(r.name)}: ${eur(r.spent)} spent${r.budget ? ` of ${eur(r.budget)}` : ""}"><span class="rt"><span><i class="cdot" style="background:${catColor(r.id)}"></i>${esc(r.name)}</span><small class="num">${r.budget ? `${eur0(r.spent)} of ${eur0(r.budget)}${r.base != null && Math.abs(r.budget - r.base) >= 0.5 ? ` (${r.budget > r.base ? "+" : "−"}${eur0(Math.abs(r.budget - r.base))} rolled over)` : ""}` : "No budget"}</small></span><span class="rv">${right}</span>
       ${r.budget ? `<span class="bullet"><i style="width:${Math.min(100, ratio * 100)}%;background:${col}"></i>${pc > 0 && pc < 1 ? `<span class="pace" style="left:${pc * 100}%"></span>` : ""}</span>` : ""}</button>`;
   }).join("") || `<div class="row"><span class="rt muted">No categories yet</span></div>`;
   $("#moPaceNote", root).textContent = pc > 0 && pc < 1 ? "The line on each bar marks where you'd be at an even pace through the month." : "";
