@@ -39,15 +39,20 @@ export function projectEntries(p) {
 }
 export function totals(p) {
   const tx = store.model.transactions.filter(t => t.date >= p.from && t.date <= p.to);
-  const byCat = {}; let spend = 0, incomeLoose = 0;
+  const byCat = {}, byProject = {}; let spend = 0, incomeLoose = 0, projects = 0;
+  const add = (k, v) => { if (k.startsWith("proj:")) { byProject[k.slice(5)] = (byProject[k.slice(5)] || 0) + v; projects += v; } else { byCat[k] = (byCat[k] || 0) + v; spend += v; } };
   tx.forEach(t => {
     if (t.kind === "income") { if (!t.incomeId) incomeLoose += t.amount; return; }
-    const v = t.kind === "refund" ? -t.amount : t.amount, k = t.categoryId || "none";
-    byCat[k] = (byCat[k] || 0) + v; spend += v;
+    if (t.kind === "refund") { add(t.categoryId || "none", -t.amount); return; }
+    if (t.lines && t.lines.length) {   // a receipt split by line: each line counts in its own category or project
+      let rest = t.amount;
+      t.lines.forEach(l => { add(l.categoryId || t.categoryId || "none", l.price); rest -= l.price; });
+      if (Math.abs(rest) >= 0.005) add(t.categoryId || "none", rest);   // rounding, deposits or anything not itemised
+      return;
+    }
+    add(t.categoryId || "none", t.amount);
   });
-  const pe = projectEntries(p), byProject = {};
-  pe.forEach(e => { byProject[e.projectId] = (byProject[e.projectId] || 0) + e.amount; });
-  const projects = pe.reduce((a, e) => a + e.amount, 0);
+  projectEntries(p).forEach(e => { byProject[e.projectId] = (byProject[e.projectId] || 0) + e.amount; projects += e.amount; });
   const inc = incomeTotals(p), income = (inc.total + incomeLoose) || null;
   const bills = billTotals(p), billsPaid = byCat[BILLS_CAT] || 0, everyday = spend - billsPaid;
   return { tx, byCat, spend, everyday, projects, byProject, setup: projects, total: spend + projects, income, inc, incomeLoose, bills, billsPaid, billsDue: bills.due };
@@ -178,7 +183,8 @@ export function renderSpending() {
   all.forEach(t => {
     if (t.date !== day) { if (day) html += `</div>`; day = t.date; const sum = all.filter(x => x.date === day && x.kind !== "income").reduce((a, x) => a + (x.kind === "refund" ? -x.amount : x.amount), 0); html += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span><span class="num">${eur(sum)}</span></div><div class="grp">`; }
     const sign = t.kind === "expense" ? "" : "+", title = t.payee || catName(t.categoryId);
-    const sub = [t.payee ? (t.kind === "income" ? "Income" : catName(t.categoryId)) : null, t.note, t.kind === "refund" ? "Refund" : null].filter(Boolean).join(" · ");
+    const lineCats = t.lines ? [...new Set(t.lines.map(l => catName(l.categoryId || t.categoryId)))] : null;
+    const sub = [t.lines ? `${t.lines.length} item${t.lines.length === 1 ? "" : "s"}` : null, t.payee ? (t.kind === "income" ? "Income" : lineCats ? lineCats.slice(0, 3).join(", ") : catName(t.categoryId)) : null, t.note, t.kind === "refund" ? "Refund" : null].filter(Boolean).join(" · ");
     html += `<button type="button" class="row" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind !== "expense" ? " good" : ""}">${sign}${eur(t.amount)}</span></button>`;
   });
   $("#moTx", sroot).innerHTML = html + `</div>`;
@@ -192,6 +198,7 @@ const payeeCat = payee => { const t = store.model.transactions.filter(x => x.pay
 export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
   const editing = !!tx, d = tx || draft || { amount: null, categoryId: null, payee: "", date: todayISO(), note: "", kind: "expense" };
   let catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
+  let lines = d.lines ? d.lines.map(l => ({ ...l })) : null, aiNote = "";   // receipt lines, each with its own category or project
   let receipt = null, dropExisting = false, busy = false, keep = false;   // keep: save the new photo with the expense   // receipt: a newly prepared file; dropExisting: remove the saved one
   openSheet({
     title: editing ? "Expense" : "Add expense", right: "Save",
@@ -211,7 +218,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
 
       function msg(t, s = "error") { const m = $("#exMsg", B); m.textContent = t; m.dataset.state = s; }
       function chipsHTML() { return `<div class="chips cat-chips" role="radiogroup" aria-label="Category">${cats().map(c => `<button type="button" class="fchip" role="radio" data-c="${esc(c.id)}" aria-pressed="${c.id === catId}" aria-checked="${c.id === catId}">${esc(c.name)}</button>`).join("")}</div>`; }
-      function bindChips(scope) { $(".cat-chips", scope).addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; catId = catId === b.dataset.c ? null : b.dataset.c; $$(".cat-chips [data-c]", scope).forEach(x => { x.setAttribute("aria-pressed", x.dataset.c === catId); x.setAttribute("aria-checked", x.dataset.c === catId); }); }); }
+      function bindChips(scope) { $(".cat-chips", scope).addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; catId = catId === b.dataset.c ? null : b.dataset.c; $$(".cat-chips [data-c]", scope).forEach(x => { x.setAttribute("aria-pressed", x.dataset.c === catId); x.setAttribute("aria-checked", x.dataset.c === catId); }); paintLines(scope); }); }
 
       function paint(m) {
         const E = $("#exBody", B);
@@ -220,6 +227,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
             <div id="exRc"></div>
             <label class="amount-in"><span class="sr">Amount in euros</span><span aria-hidden="true">€</span><input id="exAmt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${d.amount != null ? String(d.amount.toFixed(2)).replace(".", ",") : ""}" ${editing ? "" : "autofocus"}></label>
             ${chipsHTML()}
+            <div id="exLines"></div>
             <div class="grp">
               <label class="row"><span class="rt">Where</span><input class="inl" id="exPayee" list="exPayees" placeholder="Shop or place" autocomplete="off" maxlength="120" value="${esc(d.payee || "")}" style="max-width:60%"></label>
               <label class="row"><span class="rt">Date</span><input class="inl" id="exDate" type="date" value="${esc(d.date || todayISO())}"></label>
@@ -231,7 +239,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
           $("#exPayee", E).addEventListener("change", e => { if (!catId) { const c = payeeCat(e.target.value); if (c) { catId = c; $$(".cat-chips [data-c]", E).forEach(x => x.setAttribute("aria-pressed", x.dataset.c === catId)); } } });
           $("#exKind", E).addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (!b) return; kind = b.dataset.k; $$("#exKind button", E).forEach(x => x.setAttribute("aria-pressed", x === b)); });
           $("#exAmt", E).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
-          paintReceipt(E);
+          paintReceipt(E); paintLines(E);
           setTimeout(() => !editing && !receipt && $("#exAmt", E) && $("#exAmt", E).focus(), 80);
         } else if (m === "scan") {
           E.innerHTML = `
@@ -251,6 +259,27 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         }
       }
 
+      /* Receipt lines: each with a category or project; matched shopping-list items get ticked on save. */
+      function lineTargets(sel) {
+        const opts = [["", "Same as the expense"], ...cats().map(c => [c.id, c.name]), ...topLists().filter(l => l.kind === "project").map(pr => ["proj:" + pr.id, `${pr.name} (project)`])];
+        return opts.map(([v, n]) => `<option value="${esc(v)}"${(sel || "") === v ? " selected" : ""}>${esc(n)}</option>`).join("");
+      }
+      function paintLines(E) {
+        const L = $("#exLines", E); if (!L) return;
+        if (!lines || !lines.length) { L.innerHTML = aiNote ? `<p class="note ai-note">${esc(aiNote)}</p>` : ""; return; }
+        const sum = lines.reduce((a, l) => a + l.price, 0), by = {};
+        lines.forEach(l => { const k = l.categoryId || catId || "none"; by[k] = (by[k] || 0) + l.price; });
+        const ticks = lines.filter(l => l.itemId && store.model.items.some(i => i.id === l.itemId && !i.done)).length;
+        L.innerHTML = `${aiNote ? `<p class="note ai-note">${icon("check", "ic xs")} ${esc(aiNote)}${ticks ? ` · ${ticks} list item${ticks === 1 ? "" : "s"} will be ticked off` : ""}</p>` : ""}
+          <div class="gh" style="margin-top:4px"><h3>${lines.length} line${lines.length === 1 ? "" : "s"}</h3><span class="num">${eur(sum)}</span></div>
+          <div class="grp lines">${lines.map((l, k) => `<div class="row li" data-line="${k}"><span class="rt">${esc(l.name)}<small>${[l.qty && l.qty !== 1 ? `${String(l.qty).replace(".", ",")} ×` : "", l.itemId ? "✓ on your list" : ""].filter(Boolean).join(" · ")}</small>
+            <select class="line-cat" aria-label="Category for ${esc(l.name)}">${lineTargets(l.categoryId)}</select></span><span class="rv">${eur(l.price)}</span><button type="button" class="x" data-del-line aria-label="Remove ${esc(l.name)}">×</button></div>`).join("")}</div>
+          <div class="splits">${Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span>${esc(k === "none" ? "Uncategorised" : catName(k))} <b class="num">${eur(v)}</b></span>`).join("")}</div>`;
+        $$("[data-line]", L).forEach(row => { const k = Number(row.dataset.line);
+          $(".line-cat", row).onchange = e => { lines[k].categoryId = e.target.value || null; paintLines(E); };
+          $("[data-del-line]", row).onclick = () => { lines.splice(k, 1); paintLines(E); }; });
+      }
+
       async function scanFile(file, E) {
         const S = $("#exScan", E);
         try {
@@ -261,10 +290,12 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
           const r = await readReceipt(receipt, (p, label) => { const lb = $("#exScanLbl", S), bar = $("#exScanBar", S); if (lb) lb.textContent = label; if (bar) bar.style.width = Math.round(p * 100) + "%"; });
           const P = r.parsed || {};
           if (P.amount != null) d.amount = P.amount; if (P.date) d.date = P.date; if (P.payee) d.payee = P.payee; if (P.categoryId) catId = P.categoryId;
+          lines = P.lines && P.lines.length ? P.lines : null;
+          aiNote = r.ai ? `Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}` : r.aiError ? `Read on this device: total only. AI: ${r.aiError.message}` : "";
           source = "receipt"; busy = false;
           if (modeSeg) $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x.dataset.m === "type"));
           paint("type");
-          msg(receipt.type === "application/pdf" ? "PDF attached. Fill in the amount and shop." : P.amount != null ? "Read from the receipt. Check it, then Save." : "Couldn't read the total. Type it in from the photo.", P.amount != null ? "ok" : "");
+          msg(receipt.type === "application/pdf" ? "PDF attached. Fill in the amount and shop." : P.amount != null ? (lines ? `Read ${lines.length} lines. Check the categories, then Save.` : "Read from the receipt. Check it, then Save.") : "Couldn't read the total. Type it in from the photo.", P.amount != null ? "ok" : "");
         } catch (err) { busy = false; S.innerHTML = ""; msg(String(err.message || err)); }
       }
       function paintReceipt(E) {
@@ -282,7 +313,8 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         const add = $("#exRcFile", E); if (add) add.addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return;
           try { receipt = await prepareFile(f); keep = true; paintReceipt(E); if (!$("#exAmt", E).value) { msg("Reading the receipt…", ""); const r = await readReceipt(receipt); const P = r.parsed || {};
             if (P.amount != null && !$("#exAmt", E).value) $("#exAmt", E).value = String(P.amount.toFixed(2)).replace(".", ",");
-            if (P.payee && !$("#exPayee", E).value) $("#exPayee", E).value = P.payee; if (P.date) $("#exDate", E).value = P.date; msg(""); } } catch (err) { msg(String(err.message || err)); } });
+            if (P.payee && !$("#exPayee", E).value) $("#exPayee", E).value = P.payee; if (P.date) $("#exDate", E).value = P.date; msg("");
+            if (P.lines && P.lines.length) { lines = P.lines; if (!catId && P.categoryId) catId = P.categoryId; aiNote = r.ai ? "Read by AI" : ""; paintLines(E); } } } catch (err) { msg(String(err.message || err)); } });
       }
 
       async function save() {
@@ -299,10 +331,13 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         let receiptPath = tx && !dropExisting ? tx.receiptPath : null;
         if (receipt && keep) { busy = true; try { if (tx && tx.receiptPath) await removeReceipt(tx.receiptPath); receiptPath = await attach(id, receipt); } catch (err) { busy = false; return msg("Couldn't keep the receipt on this device: " + (err.message || err)); } }
         else if (tx && dropExisting && tx.receiptPath) removeReceipt(tx.receiptPath);
-        const saved = store.put("transactions", { ...(tx || {}), id, date, amount, kind, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source, receiptPath });
+        const saved = store.put("transactions", { ...(tx || {}), id, date, amount, kind, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source, receiptPath, lines: lines && lines.length ? lines : null });
+        // Tick the shopping-list items this receipt covers, remembering what each cost.
+        let ticked = 0;
+        (lines || []).forEach(l => { const it = l.itemId && store.model.items.find(i => i.id === l.itemId); if (it && !it.done) { store.updateItem(it.id, { done: true, price: Math.round(l.price / (l.qty && l.qty > 0 ? l.qty : 1) * 100) / 100, boughtAt: date }); ticked++; } });
         closeSheet();
         if (editing) toast("Saved");
-        else toast(`Saved ${eur(saved.amount)}${catId ? ` · ${catName(catId)}` : ""}`, { label: "Undo", run: () => store.remove("transactions", saved.id) });
+        else toast(`Saved ${eur(saved.amount)}${ticked ? ` · ${ticked} list item${ticked === 1 ? "" : "s"} ticked` : catId ? ` · ${catName(catId)}` : ""}`, { label: "Undo", run: () => store.remove("transactions", saved.id) });
         if (location.hash !== "#money" && !editing) { /* stay where you are */ }
       }
       $("#sheet .sh-head .r").onclick = save;

@@ -3,3 +3,7 @@ project_id = "koti"
 
 [db]
 major_version = 17
+
+[functions.read-receipt]
+# The function checks the signed-in user itself (works with publishable/secret API keys).
+verify_jwt = false

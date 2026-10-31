@@ -75,7 +75,10 @@ function cleanTx(t) {
     payee: t.payee ? String(t.payee).slice(0, 120) : null, note: t.note ? String(t.note).slice(0, 500) : null,
     source: ["manual", "voice", "bank", "receipt"].includes(t.source) ? t.source : "manual",
     receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, billId: t.billId || null, billDue: t.billDue ? String(t.billDue).slice(0, 10) : null,
-    incomeId: t.incomeId || null, incomeDue: t.incomeDue ? String(t.incomeDue).slice(0, 10) : null, updatedAt: t.updatedAt || EPOCH,
+    incomeId: t.incomeId || null, incomeDue: t.incomeDue ? String(t.incomeDue).slice(0, 10) : null,
+    lines: Array.isArray(t.lines) && t.lines.length ? t.lines.slice(0, 150).map(l => ({ name: String(l.name || "Item").slice(0, 120), qty: Number(l.qty) > 0 ? Math.round(Number(l.qty) * 1000) / 1000 : null,
+      price: Math.round((Number(l.price) || 0) * 100) / 100, categoryId: l.categoryId || null, itemId: l.itemId || null })) : null,
+    updatedAt: t.updatedAt || EPOCH,
   };
 }
 export const FREQS = ["monthly", "quarterly", "yearly"];
@@ -289,7 +292,9 @@ export const topLists = () => store.model.lists.filter(l => l.kind !== "room").s
 export const roomsOf = pid => store.model.lists.filter(l => l.parentId === pid).sort(byPos);
 export const projectOf = listId => { const l = listOf(listId); if (!l) return null; return l.kind === "project" ? l : l.parentId ? listOf(l.parentId) : null; };
 export const projectItems = pid => { const ids = new Set([pid, ...roomsOf(pid).map(r => r.id)]); return store.model.items.filter(i => ids.has(i.listId)); };
-export const projectSpent = pid => projectItems(pid).filter(i => i.done && i.price > 0).reduce((a, i) => a + i.price, 0) + (Number((listOf(pid) || {}).extraSpend) || 0);
+/* A project's spending: its bought items, its other spending, and receipt lines assigned to it. */
+export const projectSpent = pid => projectItems(pid).filter(i => i.done && i.price > 0).reduce((a, i) => a + i.price, 0) + (Number((listOf(pid) || {}).extraSpend) || 0)
+  + store.model.transactions.reduce((a, t) => a + (t.lines || []).filter(l => l.categoryId === "proj:" + pid).reduce((b, l) => b + l.price, 0), 0);
 export const itemsOf = listId => store.model.items.filter(i => i.listId === listId).sort((a, b) => a.position - b.position);
 export function zoneStats(pid = HOME_PROJECT) {
   const z = {}; ZONE_ORDER.forEach(k => z[k] = { code: k, lists: [], total: 0, done: 0, ess: 0, spent: 0, priced: 0 });

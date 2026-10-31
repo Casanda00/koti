@@ -1,6 +1,6 @@
 // Receipts: shrink the photo, read it on the device (Tesseract, English + Finnish), keep it on the device
 // until it's uploaded to the private "receipts" bucket, and show it again later.
-import { store } from "./data.js";
+import { store, topLists, roomsOf, itemsOf } from "./data.js";
 import { sync, onSync } from "./sync.js";
 import { KNOWN_PLACES, parseExpense } from "./voice.js";
 
@@ -47,8 +47,46 @@ async function worker(onProgress) {
   workerP.progress = m => onProgress && onProgress(m);
   return workerP;
 }
+/* ---------- Read with AI (Edge Function read-receipt), falling back to the on-device reader ---------- */
+const blobToDataURL = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+/* Items still to buy on any list, for matching receipt lines to them. */
+function openItems() {
+  const out = []; topLists().forEach(l => { (l.kind === "project" ? [l, ...roomsOf(l.id)] : [l]).forEach(x => itemsOf(x.id).filter(i => !i.done).forEach(i => out.push(i))); });
+  return out;
+}
+export const aiPossible = () => !!(sync.client && sync.user && navigator.onLine && sync.client.functions);
+async function readWithAI(prepared) {
+  const image = await blobToDataURL(prepared.blob);
+  const cats = store.model.categories, open = openItems();
+  const { data, error } = await sync.client.functions.invoke("read-receipt", { body: { image, categories: cats.map(c => c.name), listItems: [...new Set(open.map(i => i.name))] } });
+  if (error) {
+    let info = {}; try { info = error.context && error.context.json ? await error.context.json() : {}; } catch {}
+    const e = new Error(info.error || (/Failed to fetch|network/i.test(error.message) ? "Couldn't reach the receipt reader." : error.message)); e.code = info.code || "network"; throw e;
+  }
+  const R = data.receipt, catId = name => (cats.find(c => c.name.toLowerCase() === String(name || "").toLowerCase()) || {}).id || null;
+  const used = new Set();
+  const lines = (R.items || []).map(x => {
+    let itemId = null;
+    if (x.list_item) { const hit = open.find(i => !used.has(i.id) && i.name.toLowerCase() === x.list_item.toLowerCase()); if (hit) { itemId = hit.id; used.add(hit.id); } }
+    return { name: x.name, qty: x.qty, price: x.price, categoryId: catId(x.category), itemId };
+  });
+  const sums = {}; lines.forEach(l => { if (l.categoryId) sums[l.categoryId] = (sums[l.categoryId] || 0) + l.price; });
+  let main = Object.entries(sums).sort((a, b) => b[1] - a[1])[0];
+  const fromShop = R.shop ? parseExpense(R.shop, { categories: cats, history: store.model.transactions }).categoryId : null;
+  return { text: "", ai: true, used: data.used, limit: data.limit, parsed: { amount: R.total, date: R.date, payee: R.shop, categoryId: main ? main[0] : fromShop, lines } };
+}
+
 export async function readReceipt(prepared, onProgress) {
   if (prepared.type === "application/pdf") return { text: "", parsed: {} };
+  let aiError = null;
+  if (aiPossible()) {
+    try { if (onProgress) onProgress(0.25, "Reading every line with AI…"); const r = await readWithAI(prepared); if (onProgress) onProgress(1, "Done"); return r; }
+    catch (e) { aiError = e; if (e.code === "not_receipt") throw e; }
+  }
+  const local = await readOnDevice(prepared, onProgress);
+  return { ...local, aiError };
+}
+async function readOnDevice(prepared, onProgress) {
   const w = await worker(m => { if (!onProgress) return;
     if (m.status === "recognizing text") onProgress(0.35 + m.progress * 0.65, "Reading the receipt…");
     else onProgress(Math.min(0.35, (m.progress || 0) * 0.35), m.status && /load|init/i.test(m.status) ? "Getting the reader ready (first time only)…" : "Reading the receipt…"); });
