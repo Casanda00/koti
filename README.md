@@ -9,7 +9,7 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 | Part | Where |
 |---|---|
 | App (screens, logic) | This repository, served by GitHub Pages. Plain HTML, CSS and JavaScript modules; no build step. |
-| Data | Supabase project `koti` (`dghcrcneikxuaacsyhpy`): tables `lists`, `items`, `settings`, `categories`, `transactions`, `bills`, `goals`, each locked to the signed-in user with row level security. |
+| Data | Supabase project `koti` (`dghcrcneikxuaacsyhpy`): tables `lists` (shopping lists, projects and their room lists), `items`, `settings`, `categories`, `transactions`, `bills`, `goals`, `income_sources`, each locked to the signed-in user with row level security. |
 | Receipts | Private Storage bucket `receipts`; each user can only reach `{user id}/…`. Read on the device with Tesseract (English + Finnish), bundled in `js/vendor/tesseract-7.0.0/` and loaded only when scanning. |
 | Database changes | `supabase/migrations/`. Applied through the Supabase connector; the optional `Update database` workflow applies them too if its secrets are set. |
 
@@ -21,11 +21,13 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 | `css/app.css` | Design tokens, light and dark themes, phone and desktop layouts |
 | `js/data.js` | Data model, migrations from earlier versions, local store and change queue |
 | `js/sync.js` | Sign-in and sync with Supabase: offline queue, pulls by server timestamp, live updates |
-| `js/setup.js` | Home setup view: floor plan, progress, lists, swipe actions, item and add sheets |
+| `js/lists.js` | Expenses screen (spending, bills, list cards), an opened list, sending a list, the + menu |
+| `js/income.js` | Income sources, expected vs received, paydays |
+| `js/setup.js` | Project view (Home setup with its floor plan, other projects), item and add sheets |
 | `js/more.js` | Account, month settings, lists and rooms, import, backup, install help |
 | `js/charts.js` | Floor plans and charts |
-| `js/money.js` | Money view: month summary, budgets with pace, spending by month, transactions, add/edit expense, categories |
-| `js/plan.js` | Plan view: bills calendar, paid tracking (a payment is a transaction in the Bills category), autopay, savings goals |
+| `js/money.js` | Budgets screen, All spending screen, add/edit expense, categories, receipts list |
+| `js/plan.js` | Bills screen (calendar, paid tracking, autopay) and savings goals |
 | `js/receipts.js` | Receipts: shrink photos, read total/date/shop, keep on the device until uploaded, private viewing links |
 | `js/ptr.js` | Pull down to refresh |
 | `js/voice.js` | Speech input and the phrase parser (English and Finnish, digits or number words) |
