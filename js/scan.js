@@ -130,14 +130,14 @@ function saveEdits(S) {
 
 /* ---------- Receipt review (spending, a list or a project) ---------- */
 const openOf = ids => store.model.items.filter(i => ids.has(i.listId) && !i.done);
-const nameHit = (line, item) => { const a = low(line.name), b = low(item.name); return b.length > 2 && (a.includes(b) || b.includes(a.split(" ")[0]) && a.split(" ")[0].length > 2); };
+const nameHit = (line, item) => [line.name, line.nameFi].filter(Boolean).some(n => { const a = low(n), b = low(item.name); return b.length > 2 && (a.includes(b) || b.includes(a.split(" ")[0]) && a.split(" ")[0].length > 2); });
 function scopeIds(d) { return d.kind === "project" ? new Set([d.id, ...roomsOf(d.id).map(r => r.id)]) : d.kind === "list" ? new Set([d.id]) : new Set(); }
 function roomsFor(pid) { const r = roomsOf(pid); return r.length ? r : [listOf(pid)]; }
 
 /* Each line gets a target: "tick:<item>", "new:<room>", "cat:<category>" or "proj:<project>". */
 function makeLines(d, src) {
   const scope = scopeIds(d), open = openOf(scope), used = new Set();
-  const lines = (src || []).map(l => ({ name: l.name, qty: l.qty, price: l.price, categoryId: l.categoryId && !String(l.categoryId).startsWith("proj:") ? l.categoryId : null, aiItem: l.itemId, target: null }));
+  const lines = (src || []).map(l => ({ name: l.name, nameFi: l.nameFi || null, qty: l.qty, price: l.price, categoryId: l.categoryId && !String(l.categoryId).startsWith("proj:") ? l.categoryId : null, aiItem: l.itemId, target: null }));
   if (d.kind === "spending") { lines.forEach(l => l.target = "cat:" + (l.categoryId || "")); return lines; }
   lines.forEach(l => {   // matched by AI, then by name
     let it = l.aiItem && open.find(i => i.id === l.aiItem && !used.has(i.id));
@@ -209,7 +209,7 @@ function paintLines(S, B) {
   const pr = d.kind === "project" ? listOf(d.id) : null;
   L.innerHTML = `<p class="note ai-note">${icon("check", "ic xs")} ${esc(note)}</p>
     <div class="gh" style="margin-top:4px"><h3>${lines.length} line${lines.length === 1 ? "" : "s"}</h3><span class="num">${eur(lines.reduce((a, l) => a + l.price, 0))}</span></div>
-    <div class="grp lines">${lines.map((l, k) => `<div class="row li" data-line="${k}"><span class="rt">${esc(l.name)}<small>${esc(lineSub(d, l))}</small>
+    <div class="grp lines">${lines.map((l, k) => `<div class="row li" data-line="${k}"><span class="rt">${esc(l.name)}<small>${l.nameFi && low(l.nameFi) !== low(l.name) ? `<i class="fi" lang="fi">${esc(l.nameFi)}</i> · ` : ""}${esc(lineSub(d, l))}</small>
       <select class="line-cat" aria-label="Where ${esc(l.name)} goes">${targetOptions(d, l, lines)}</select></span><span class="rv">${eur(l.price)}</span><button type="button" class="x" data-del-line aria-label="Remove ${esc(l.name)}">×</button></div>`).join("")}</div>
     <div class="splits">${Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span><i style="background:var(${k.startsWith("proj:") ? "--amber" : "--spruce"})"></i>${esc(k === "none" ? "No category" : catName(k))} <b class="num">${eur(v)}</b>${pr && k === "proj:" + pr.id && pr.budget ? ` · ${eur0(pr.budget - projectSpent(pr.id) - v)} left` : ""}</span>`).join("")}</div>`;
   $$("[data-line]", L).forEach(row => { const k = Number(row.dataset.line);
@@ -240,7 +240,7 @@ async function saveReceipt(S, B) {
     if (k === "tick") { const it = store.model.items.find(i => i.id === v); if (it && !before.some(b => b.id === it.id)) { before.push({ ...it }); store.updateItem(it.id, { done: true, price: unit(l), boughtAt: date }); itemId = it.id; } }
     if (k === "new" && listOf(v)) { const it = store.addItem(v, l.name, "Soon", { qty: Number.isInteger(l.qty) && l.qty > 1 ? l.qty : null, done: true, price: unit(l), boughtAt: date }); created.push(it.id); itemId = it.id; }
     const b = bucket(d, l);
-    txLines.push({ name: l.name, qty: l.qty, price: l.price, categoryId: b === "none" ? null : b, itemId });
+    txLines.push({ name: l.name, nameFi: l.nameFi, qty: l.qty, price: l.price, categoryId: b === "none" ? null : b, itemId });
   }
   const sums = {}; txLines.forEach(l => { const c = l.categoryId || "none"; sums[c] = (sums[c] || 0) + l.price; });
   const main = (Object.entries(sums).filter(([c]) => c !== "none").sort((a, b) => b[1] - a[1])[0] || [])[0]

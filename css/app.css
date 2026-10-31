@@ -444,3 +444,4 @@ label.btn:focus-within{outline:2px solid var(--spruce);outline-offset:2px}
 button.rc-add{width:100%}
 .lines .rt{min-width:0}.lines .line-cat{width:100%;text-overflow:ellipsis}
 .billcard~.grp .mono{font-size:12.5px}
+.lines .fi{font-style:normal;color:var(--ink-2)}

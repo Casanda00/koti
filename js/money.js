@@ -273,7 +273,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         const ticks = lines.filter(l => l.itemId && store.model.items.some(i => i.id === l.itemId && !i.done)).length;
         L.innerHTML = `${aiNote ? `<p class="note ai-note">${icon("check", "ic xs")} ${esc(aiNote)}${ticks ? ` · ${ticks} list item${ticks === 1 ? "" : "s"} will be ticked off` : ""}</p>` : ""}
           <div class="gh" style="margin-top:4px"><h3>${lines.length} line${lines.length === 1 ? "" : "s"}</h3><span class="num">${eur(sum)}</span></div>
-          <div class="grp lines">${lines.map((l, k) => `<div class="row li" data-line="${k}"><span class="rt">${esc(l.name)}<small>${[l.qty && l.qty !== 1 ? `${String(l.qty).replace(".", ",")} ×` : "", l.itemId ? "✓ on your list" : ""].filter(Boolean).join(" · ")}</small>
+          <div class="grp lines">${lines.map((l, k) => `<div class="row li" data-line="${k}"><span class="rt">${esc(l.name)}<small>${[l.nameFi && l.nameFi.toLowerCase() !== l.name.toLowerCase() ? l.nameFi : "", l.qty && l.qty !== 1 ? `${String(l.qty).replace(".", ",")} ×` : "", l.itemId ? "✓ on your list" : ""].filter(Boolean).map(esc).join(" · ")}</small>
             <select class="line-cat" aria-label="Category for ${esc(l.name)}">${lineTargets(l.categoryId)}</select></span><span class="rv">${eur(l.price)}</span><button type="button" class="x" data-del-line aria-label="Remove ${esc(l.name)}">×</button></div>`).join("")}</div>
           <div class="splits">${Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span>${esc(k === "none" ? "Uncategorised" : catName(k))} <b class="num">${eur(v)}</b></span>`).join("")}</div>`;
         $$("[data-line]", L).forEach(row => { const k = Number(row.dataset.line);

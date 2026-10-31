@@ -33,13 +33,17 @@ Receipt fields:
 - items: every purchased product line, in order. Leave out totals, subtotals, VAT/ALV lines, payment lines (KORTTI, VISA, MAKSETTU), change and loyalty points.
 - Apply a discount (ALENNUS, ETU, Plussa-etu, -30 %) to the product it belongs to, so price is what was actually paid for that line. A discount that applies to the whole receipt becomes its own line with a negative price.
 - A bottle deposit (PANTTI) is its own line called "Bottle deposit"; returned deposits are negative.
-- name: a short, readable product name in English, translated from Finnish when the meaning is clear (MAITO 1L → "Milk 1 l", KAURAHIUTALE → "Oat flakes"). Keep a brand when it helps.
+- name_fi: the product name in Finnish, as on the receipt but readable: normal capitalisation and abbreviations written out (KEV.MAITO 1L → "Kevytmaito 1 l", RUISLP → "Ruisleipä"). If the receipt is in Swedish, give the Finnish name if you know it, otherwise the Swedish text made readable.
+- name: the same product in English, always. Translate every Finnish or Swedish word: KEVYTMAITO 1L → "Low-fat milk 1 l", KAURAHIUTALE → "Oat flakes", JAUHELIHA → "Minced meat", RUISLEIPÄ → "Rye bread", PESUAINE → "Detergent", WC-PAPERI → "Toilet paper", PANTTI → "Bottle deposit". Expand abbreviations (KEV. → low-fat, LUOMU → organic, PKT → pack). If unsure, use the closest plain English product type (e.g. "Sausage", "Bread roll", "Snack"). Keep brand names as they are (Valio, Fazer, Pirkka). Never leave Finnish or Swedish words in name (they belong in name_fi).
 - qty: the quantity when printed (2 KPL, 2 x, 0,512 kg → 0.512), otherwise null. price: the line total in euros.
-- category: the best fit from the user's categories, or null if none fits.
+- category: exactly one of the user's categories, chosen by what the product is, not by the shop. Typical fits: food and drink bought in a shop → the groceries category; meals, coffee or snacks bought to eat at a restaurant, café or kiosk → the eating-out category; medicine, pharmacy and health products → the health category; tickets, fuel, parking, taxi → the transport category; clothes, electronics, home and cleaning goods, toiletries → the shopping or household category; cinema, games, hobbies → the fun category. If nothing fits, use the catch-all category (Other) if the user has one.
+- If the user has filed the same or a similar product before (listed below), use the same category they chose.
 - list_item: if the line is something on the user's shopping list, that list item's exact text; otherwise null.
 - date as YYYY-MM-DD (two-digit years are 20xx). total: the amount paid (for a bill: the amount to pay). shop: for a bill, the company.
 - is_receipt: true for a receipt or a bill, false for anything else.`;
 
+function buildSchema(categories: string[], listItems: string[], bills: string[]) {
+const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
 const schema = {
   type: "object", additionalProperties: false,
   required: ["is_receipt", "doc_type", "shop", "date", "total", "currency", "items", "bill"],
@@ -52,7 +56,7 @@ const schema = {
       properties: {
         company: { type: ["string", "null"] }, amount: { type: ["number", "null"] }, due_date: { type: ["string", "null"], description: "YYYY-MM-DD" },
         reference: { type: ["string", "null"] }, iban: { type: ["string", "null"] }, invoice_number: { type: ["string", "null"] },
-        period: { type: ["string", "null"] }, match: { type: ["string", "null"] },
+        period: { type: ["string", "null"] }, match: oneOf(bills),
       },
     }] },
     shop: { type: ["string", "null"], description: "Shop name and branch as printed, e.g. K-Market Kamppi" },
@@ -63,18 +67,36 @@ const schema = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        required: ["name", "qty", "price", "category", "list_item"],
+        required: ["name_fi", "name", "qty", "price", "category", "list_item"],
         properties: {
-          name: { type: "string" },
+          name_fi: { type: "string", description: "Finnish, readable" },
+          name: { type: "string", description: "English only" },
           qty: { type: ["number", "null"] },
           price: { type: "number" },
-          category: { type: ["string", "null"] },
-          list_item: { type: ["string", "null"] },
+          category: categories.length ? { type: "string", enum: categories } : { type: "null" },
+          list_item: oneOf(listItems),
         },
       },
     },
   },
 };
+return schema;
+}
+
+/* Names that still look Finnish or Swedish after reading. */
+const NON_ENGLISH = /[äöå]|maito|leipä|leipa|liha|juusto|kahvi|jogurtti|kerma|peruna|sipuli|omena|banaani|makkara|siideri|keksi|suklaa|karkki|pesuaine|paperi|saippua|hammastahna|rasvaton|kevyt|luomu|täysjyvä|kaura|vehnä|kastike|mauste|pakaste|jauhe|\b(muna|munat|kana|kala|olut|vesi|mehu|tuore|riisi|kpl|pss|pkt|rs|tlk)\b/i;
+
+async function translateLeftovers(openaiKey: string, names: string[]): Promise<string[] | null> {
+  const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
+    method: "POST", headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: MODEL, temperature: 0,
+      messages: [{ role: "system", content: "Translate Finnish or Swedish shop receipt product names into short, plain English product names. Keep brand names. Expand abbreviations. Return the same number of names, in the same order." },
+        { role: "user", content: JSON.stringify(names) }],
+      response_format: { type: "json_schema", json_schema: { name: "names", strict: true, schema: { type: "object", additionalProperties: false, required: ["names"], properties: { names: { type: "array", items: { type: "string" } } } } } } }),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  try { const out = JSON.parse((await res.json()).choices?.[0]?.message?.content || "{}").names; return Array.isArray(out) && out.length === names.length ? out.map(String) : null; } catch { return null; }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -96,8 +118,13 @@ Deno.serve(async (req) => {
   const image = String(body.image || "");
   const isPdf = /^data:application\/pdf;base64,/.test(image);
   if (!(isPdf || /^data:image\/(jpeg|png|webp);base64,/.test(image)) || image.length > 8_000_000) return json(400, { error: "Send a JPEG, PNG or WebP photo, or a PDF, under 6 MB.", code: "image" });
-  const categories = strList(body.categories, 40, 60), listItems = strList(body.listItems, 200, 120), bills = strList(body.bills, 60, 80);
+  const uniq = (xs: string[]) => { const m = new Map<string, string>(); xs.forEach((x) => { if (!m.has(x.toLowerCase())) m.set(x.toLowerCase(), x); }); return [...m.values()]; };
+  const categories = uniq(strList(body.categories, 40, 60)), listItems = uniq(strList(body.listItems, 200, 120)), bills = uniq(strList(body.bills, 60, 80));
   const hint = ["receipt", "bill"].includes(String(body.hint)) ? String(body.hint) : null;
+  const catLower = new Map(categories.map((c) => [c.toLowerCase(), c]));
+  const examples = (Array.isArray(body.examples) ? body.examples : []).slice(0, 80)
+    .filter((x: Record<string, unknown>) => x && typeof x.name === "string" && typeof x.category === "string" && catLower.has(String(x.category).toLowerCase()))
+    .map((x: Record<string, unknown>) => `${String(x.name).slice(0, 60)} → ${catLower.get(String(x.category).toLowerCase())}`);
 
   // Count this scan; stops at the daily limit.
   const use = await fetch(`${url}/rest/v1/rpc/koti_ai_use`, { method: "POST", headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ daily_limit: LIMIT }) });
@@ -107,6 +134,7 @@ Deno.serve(async (req) => {
   const prompt = `The user's categories: ${categories.length ? categories.join(" | ") : "(none)"}
 Open items on the user's shopping lists: ${listItems.length ? listItems.join(" | ") : "(none)"}
 The user's existing bills: ${bills.length ? bills.join(" | ") : "(none)"}
+How the user filed products before (follow these): ${examples.length ? examples.join("; ") : "(none yet)"}
 ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The user says this is a receipt." : "It may be a receipt or a bill."} Read it.`;
   const doc = isPdf ? { type: "file", file: { filename: "document.pdf", file_data: image } } : { type: "image_url", image_url: { url: image, detail: "high" } };
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
@@ -115,7 +143,7 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
     body: JSON.stringify({
       model: MODEL, temperature: 0,
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: [{ type: "text", text: prompt }, doc] }],
-      response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema } },
+      response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema: buildSchema(categories, listItems, bills) } },
     }),
   });
   if (!res.ok) {
@@ -134,12 +162,16 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
 
   const catSet = new Set(categories.map((c) => c.toLowerCase())), listSet = new Map(listItems.map((x) => [x.toLowerCase(), x]));
   const items = (Array.isArray(r.items) ? r.items : []).slice(0, 150).map((x: Record<string, unknown>) => ({
+    name_fi: String(x.name_fi || "").trim().slice(0, 120) || null,
     name: String(x.name || "").trim().slice(0, 120) || "Item",
     qty: money(x.qty),
     price: money(x.price) ?? 0,
     category: typeof x.category === "string" && catSet.has(x.category.toLowerCase()) ? categories.find((c) => c.toLowerCase() === (x.category as string).toLowerCase()) : null,
     list_item: typeof x.list_item === "string" ? listSet.get(x.list_item.toLowerCase()) || null : null,
   }));
+  // Rail: English names must be English (the Finnish name is kept separately in name_fi). Anything that still looks Finnish or Swedish gets one more, translation-only pass.
+  const left = items.map((it, k) => [k, it.name] as [number, string]).filter(([, n]) => NON_ENGLISH.test(n));
+  if (left.length) { const t = await translateLeftovers(openaiKey, left.map(([, n]) => n)); if (t) left.forEach(([k], j) => { if (t[j] && t[j].trim()) items[k].name = t[j].trim().slice(0, 120); }); }
   const date = typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : null;
   const total = money(r.total) ?? Math.round(items.reduce((a, i) => a + i.price, 0) * 100) / 100;
   const docType = r.doc_type === "bill" ? "bill" : "receipt";

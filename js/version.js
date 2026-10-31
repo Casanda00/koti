@@ -1,2 +1,2 @@
 // Shown in More so you can check which version of Koti a device is running. Matches VERSION in sw.js.
-export const APP_VERSION = "2026-10-31-13";
+export const APP_VERSION = "2026-10-31-14";

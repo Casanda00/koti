@@ -76,7 +76,7 @@ function cleanTx(t) {
     source: ["manual", "voice", "bank", "receipt"].includes(t.source) ? t.source : "manual",
     receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, billId: t.billId || null, billDue: t.billDue ? String(t.billDue).slice(0, 10) : null,
     incomeId: t.incomeId || null, incomeDue: t.incomeDue ? String(t.incomeDue).slice(0, 10) : null,
-    lines: Array.isArray(t.lines) && t.lines.length ? t.lines.slice(0, 150).map(l => ({ name: String(l.name || "Item").slice(0, 120), qty: Number(l.qty) > 0 ? Math.round(Number(l.qty) * 1000) / 1000 : null,
+    lines: Array.isArray(t.lines) && t.lines.length ? t.lines.slice(0, 150).map(l => ({ name: String(l.name || "Item").slice(0, 120), nameFi: l.nameFi ? String(l.nameFi).slice(0, 120) : null, qty: Number(l.qty) > 0 ? Math.round(Number(l.qty) * 1000) / 1000 : null,
       price: Math.round((Number(l.price) || 0) * 100) / 100, categoryId: l.categoryId || null, itemId: l.itemId || null })) : null,
     updatedAt: t.updatedAt || EPOCH,
   };
