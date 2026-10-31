@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#eef1ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121715" media="(prefers-color-scheme: dark)">
+<title>Koti</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='2.5' width='22' height='7' rx='1' fill='none' stroke='%2323302b' stroke-width='2'/%3E%3Crect x='3' y='9' width='26' height='20.5' rx='1.5' fill='%2323302b'/%3E%3Crect x='6' y='12' width='11' height='14.5' fill='%23fbfcfa'/%3E%3Crect x='19' y='12' width='7' height='7.5' fill='%23fbfcfa'/%3E%3Crect x='19' y='21.5' width='7' height='5' fill='%2316794f'/%3E%3Crect x='6' y='20' width='11' height='6.5' fill='%2316794f'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: your floor plan leads, filling room by room; summary column beside it; spending over time; then the checklist and settings. */
+:root{
+  --bg:#eef1ee; --paper:#fbfcfa; --ink:#18221e; --ink-2:#4b5751; --muted:#6f7b75; --line:#dbe1dc;
+  --wall:#23302b; --spruce:#16794f; --spruce-soft:#e3f0e8; --spruce-track:#cfe3d7; --amber:#c7841a; --amber-soft:#f8ecd6;
+  --warn:#a35f00; --crit:#b3362e; --crit-soft:#f8e3e1; --good:#16794f; --on-accent:#ffffff;
+  --display:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;
+  --body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121715; --paper:#1a201d; --ink:#e8eee9; --ink-2:#b4c0b9; --muted:#8e9a94; --line:#2c3531;
+  --wall:#cdd7d1; --spruce:#2fa774; --spruce-soft:#1d2e26; --spruce-track:#24392f; --amber:#b8790f; --amber-soft:#2f2717;
+  --warn:#e0a03a; --crit:#ef7a70; --crit-soft:#3a1f1d; --good:#4cc08c; --on-accent:#0f1a15; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#121715; --paper:#1a201d; --ink:#e8eee9; --ink-2:#b4c0b9; --muted:#8e9a94; --line:#2c3531;
+  --wall:#cdd7d1; --spruce:#2fa774; --spruce-soft:#1d2e26; --spruce-track:#24392f; --amber:#b8790f; --amber-soft:#2f2717;
+  --warn:#e0a03a; --crit:#ef7a70; --crit-soft:#3a1f1d; --good:#4cc08c; --on-accent:#0f1a15; color-scheme:dark;}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+.num{font-variant-numeric:tabular-nums}
+a{color:var(--spruce)}
+:focus-visible{outline:2px solid var(--spruce);outline-offset:2px;border-radius:4px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+.skip{position:absolute;left:12px;top:-60px;background:var(--spruce);color:var(--on-accent);padding:8px 14px;border-radius:8px;z-index:10;font-weight:600}
+.skip:focus{top:12px}
+.list-tools h2{scroll-margin-top:16px}
+
+/* Header */
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:26px 0 18px}
+.brand{display:flex;align-items:center;gap:12px}
+.mark{width:40px;height:40px;color:var(--wall);flex:none}
+.brand h1{font-size:32px;line-height:1;font-weight:700;letter-spacing:-.02em}
+.brand .sub{color:var(--muted);font-size:13px;margin-top:3px}
+.sync{display:inline-flex;align-items:center;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:99px;padding:7px 14px 7px 11px;font-size:13px;color:var(--ink-2)}
+.sync:hover{border-color:var(--muted)}
+.sync b{color:var(--ink);font-weight:600}
+.sync .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.sync[data-state="ok"] .dot{background:var(--good);box-shadow:0 0 0 3px var(--spruce-soft)}
+.sync[data-state="busy"] .dot{background:var(--amber);animation:pulse 1s ease-in-out infinite}
+.sync[data-state="error"] .dot{background:var(--crit);box-shadow:0 0 0 3px var(--crit-soft)}
+@keyframes pulse{50%{opacity:.35}}
+
+/* Cards and grids */
+.grid-top{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;align-items:start}
+.col{display:grid;gap:16px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px}
+.card h2{font:600 16px/1.3 var(--display)}
+.hint{font-size:12px;color:var(--muted);margin-top:2px}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.mt{margin-top:16px}
+
+/* Floor plan */
+.plan svg{width:100%;height:auto;display:block}
+.room{cursor:pointer;outline:none}
+.room .level{fill:var(--spruce);opacity:.22;transition:opacity .15s}
+.room .waterline{stroke:var(--spruce);stroke-width:2}
+.room .plate{fill:var(--paper);opacity:.94;transition:stroke .15s}
+.room:hover .level,.room.sel .level{opacity:.34}
+.room:focus-visible .plate,.room.sel .plate{stroke:var(--spruce);stroke-width:2}
+.room text{font-family:var(--body);fill:var(--ink)}
+.room .rname{font-weight:600;font-size:17px}
+.room .rcode{font-weight:500;fill:var(--muted);font-size:12px}
+.room .rpct{font-family:var(--display);font-weight:700;font-size:32px;font-variant-numeric:tabular-nums}
+.room .rcount{font-size:14px;fill:var(--ink-2)}
+.legend-row{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:10px}
+.legend-row span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:10px;border-radius:2px;display:inline-block}
+
+/* Summary */
+.big{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:10px}
+.big strong{font:700 56px/1 var(--display);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.big.mid strong{font-size:40px}
+.big span{color:var(--ink-2);font-size:14px}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.fact{border-top:1px solid var(--line);padding-top:10px}
+.fact b{display:block;font:600 20px/1.2 var(--display);font-variant-numeric:tabular-nums}
+.fact span{font-size:12px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--spruce-soft);color:var(--good)}
+.chip.warn{background:var(--amber-soft);color:var(--warn)}
+.chip.crit{background:var(--crit-soft);color:var(--crit)}
+.meter{height:10px;background:var(--spruce-track);border-radius:99px;overflow:hidden;margin:12px 0 8px}
+.meter i{display:block;height:100%;border-radius:99px;background:var(--spruce);transition:width .25s}
+.meter-legend{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--muted)}
+.prio{display:grid;gap:12px}
+.prio-row{display:grid;grid-template-columns:78px 1fr 52px;align-items:center;gap:10px;font-size:13px}
+.prio-row .meter{margin:0;height:8px}
+.prio-row .num{text-align:right;color:var(--ink-2)}
+
+/* Charts */
+.chart{position:relative}
+.chart svg{width:100%;height:auto;display:block;overflow:visible}
+.axis text{font-size:11px;fill:var(--muted);font-family:var(--body);font-variant-numeric:tabular-nums}
+.grid line{stroke:var(--line);stroke-width:1}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:12px;line-height:1.45;padding:7px 10px;border-radius:8px;white-space:nowrap;transform:translate(-50%,calc(-100% - 12px));opacity:0;transition:opacity .1s;z-index:3}
+.tip b{font-weight:600}
+.key{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.key span{display:inline-flex;align-items:center;gap:6px}
+.key .ln{width:16px;height:2px;display:inline-block;border-radius:2px}
+.empty-chart{display:grid;place-items:center;text-align:center;min-height:180px;color:var(--muted);font-size:14px;border:1px dashed var(--line);border-radius:12px;padding:20px}
+details.table{margin-top:10px;font-size:13px;color:var(--ink-2)}
+details.table summary{cursor:pointer;color:var(--muted);font-size:12px}
+details.table table{border-collapse:collapse;margin-top:8px;width:100%}
+details.table td,details.table th{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+details.table td:last-child,details.table th:last-child{text-align:right}
+
+/* Checklist */
+.list-tools{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:28px 0 14px}
+.list-tools-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.list-tools h2{font:700 24px/1.2 var(--display)}
+.chips{display:flex;gap:7px;flex-wrap:wrap;min-width:0;max-width:100%}
+.fchip{border:1px solid var(--line);background:var(--paper);border-radius:99px;padding:7px 13px;font-size:13px;color:var(--ink-2)}
+.fchip:hover{border-color:var(--muted)}
+.fchip[aria-pressed="true"]{background:var(--spruce-soft);border-color:var(--spruce);color:var(--ink);font-weight:600}
+.seg{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:99px;padding:3px}
+.seg button{border:0;background:none;font-size:13px;padding:6px 13px;border-radius:99px;color:var(--ink-2)}
+.seg button[aria-pressed="true"]{background:var(--spruce);color:var(--on-accent);font-weight:600}
+.search{border:1px solid var(--line);background:var(--paper);border-radius:99px;padding:8px 14px;font-size:14px;min-width:240px}
+.lists{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.rl-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px}
+.rl-head h3{font-size:16px}
+.rl-head .room-tag{font-size:12px;color:var(--muted);font-family:var(--body);font-weight:500;margin-left:6px}
+.rl-meta{display:flex;align-items:center;gap:8px;flex:none}
+.rl-meta .meter{width:80px;height:6px;margin:0}
+.rl-meta .num{font-size:12px;color:var(--muted)}
+.item{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.item input[type=checkbox]{appearance:none;-webkit-appearance:none;width:20px;height:20px;margin:0;border-radius:6px;border:1.5px solid var(--muted);background:var(--paper);display:grid;place-items:center;cursor:pointer}
+.item input[type=checkbox]:checked{background:var(--spruce);border-color:var(--spruce)}
+.item input[type=checkbox]:checked::after{content:"";width:9px;height:5px;border:2px solid var(--on-accent);border-top:0;border-right:0;transform:translateY(-1px) rotate(-45deg)}
+.item .nm{overflow-wrap:anywhere}
+.item.done .nm{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}
+.price{width:84px;border:1px dashed var(--line);background:transparent;border-radius:8px;padding:3px 8px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums}
+.price:focus{border-style:solid;border-color:var(--spruce)}
+.item:not(.done) .price{visibility:hidden}
+.pill{font-size:11px;font-weight:700;border-radius:99px;padding:3px 9px;white-space:nowrap;border:1px solid transparent}
+.pill.Essential{background:var(--spruce-soft);color:var(--good)}
+.pill.Soon{background:var(--amber-soft);color:var(--warn)}
+.pill.Later{background:var(--bg);color:var(--muted);border-color:var(--line)}
+button.pill:hover{border-color:currentColor}
+.x{border:0;background:none;color:var(--muted);width:28px;height:28px;border-radius:8px;font-size:18px;line-height:1}
+.x:hover{background:var(--bg);color:var(--crit)}
+.empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:30px;border:1px dashed var(--line);border-radius:16px}
+
+/* Forms */
+.grid-bottom{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
+label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:5px}
+.field{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 11px;width:100%;font-size:14px}
+.field:focus{outline:2px solid var(--spruce-track);border-color:var(--spruce)}
+textarea.field{min-height:120px;resize:vertical}
+.row{display:grid;gap:10px}
+.row.two{grid-template-columns:1fr 1fr}
+.row.add{grid-template-columns:2fr 1.3fr 1fr auto;align-items:end}
+.btn{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 14px;font-size:14px;font-weight:600;color:var(--ink)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--spruce);border-color:var(--spruce);color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{color:var(--crit)}
+.btn:disabled{opacity:.55;cursor:wait}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+.note.warn{color:var(--warn)}
+.status{font-size:13px;margin:10px 0 0;color:var(--ink-2)}
+.status[data-state="error"]{color:var(--crit)}
+.status[data-state="ok"]{color:var(--good)}
+.steps{margin:6px 0 14px;padding-left:20px;color:var(--ink-2);font-size:14px;display:grid;gap:4px}
+.toggle{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;color:var(--ink);margin:12px 0 0;cursor:pointer}
+.toggle input{appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;margin:0;cursor:pointer;transition:background .15s;flex:none}
+.toggle input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--paper);transition:transform .15s}
+.toggle input:checked{background:var(--spruce)}
+.toggle input:checked::after{transform:translateX(16px)}
+.map-row{display:grid;grid-template-columns:1fr 170px auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.map-row select{padding:6px 8px}
+footer{color:var(--muted);font-size:12px;padding:30px 0 40px;text-align:center}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+@media (max-width:900px){
+  .grid-top,.grid-bottom,.lists{grid-template-columns:1fr}
+  .row.add{grid-template-columns:1fr 1fr}.row.add .grow{grid-column:1/-1}
+}
+@media (max-width:520px){
+  .wrap{padding:0 14px}
+  .brand h1{font-size:28px}
+  .big strong{font-size:46px}
+  .chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;flex:1 1 100%}
+  .list-tools-row>.search{flex:1 1 100%}
+  .fchip{flex:none}
+  .search{min-width:0;width:100%}
+  .item{grid-template-columns:26px minmax(0,1fr) auto auto;padding:11px 0}
+  .item .pill{grid-row:1;grid-column:3}.item .x{grid-row:1;grid-column:4}
+  .item .price{grid-row:2;grid-column:2;justify-self:start;width:110px}
+  .item:not(.done) .price{display:none}
+  .item input[type=checkbox]{width:22px;height:22px}
+  .field,.search{font-size:16px}
+  .row.two,.map-row{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="kotiMark" viewBox="0 0 32 32"><rect x="5" y="2.5" width="22" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="9" width="26" height="20.5" rx="1.5" fill="currentColor"/><rect x="6" y="12" width="11" height="14.5" fill="var(--paper)"/><rect x="19" y="12" width="7" height="7.5" fill="var(--paper)"/><rect x="19" y="21.5" width="7" height="5" fill="var(--spruce)"/><rect x="6" y="20" width="11" height="6.5" fill="var(--spruce)"/></symbol></svg>
+
+<a class="skip" href="#listTitle">Skip to shopping lists</a>
+<div class="wrap">
+<header class="top">
+  <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><use href="#kotiMark"/></svg><div><h1 translate="no">Koti</h1><div class="sub" id="subline">My new home</div></div></div>
+  <button class="sync" id="syncPill" data-state="local" type="button"><span class="dot" aria-hidden="true"></span><span id="syncText"><b>Saved on this device</b></span></button>
+</header>
+
+<main>
+<div class="grid-top">
+  <section class="card plan" aria-labelledby="planTitle">
+    <div class="card-head"><div><h2 id="planTitle">Rooms</h2><div class="hint">Fill level shows how much of each room's list is bought</div></div></div>
+    <div class="chart" id="planWrap"><svg id="plan" viewBox="50 5 640 945" role="group" aria-label="Floor plan with progress per room"></svg><div class="tip" id="planTip"></div></div>
+    <div class="legend-row"><span><i class="sw" style="background:var(--spruce);opacity:.35"></i>Bought share of the room's items</span><span><i class="sw" style="background:repeating-linear-gradient(135deg,var(--line) 0 2px,transparent 2px 6px);border:1px solid var(--line)"></i>No list yet</span><span>Click a room to show its lists</span></div>
+  </section>
+
+  <div class="col">
+    <section class="card">
+      <h2>Overall progress</h2>
+      <div class="big"><strong id="pct">0%</strong><span id="pctSub"></span></div>
+      <div class="meter" aria-hidden="true"><i id="pctFill"></i></div>
+      <div class="facts">
+        <div class="fact"><b id="essLeft">0</b><span>Essentials still to buy</span></div>
+        <div class="fact"><b id="lastBuy">None yet</b><span>Last purchase</span></div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head" style="margin-bottom:0"><h2>Budget</h2><span class="chip ok" id="budgetChip"></span></div>
+      <div class="big mid"><strong id="spent">€0</strong><span id="budgetSub"></span></div>
+      <div class="meter" aria-hidden="true"><i id="budgetFill"></i></div>
+      <div class="meter-legend"><span id="spentSplit">Spent</span><span id="leftTxt"></span></div>
+    </section>
+    <section class="card">
+      <h2 style="margin-bottom:12px">By priority</h2>
+      <div class="prio" id="prio"></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><div><h2>Spending by room</h2><div class="hint">Prices of bought items</div></div></div>
+      <div class="chart" id="barWrap"><svg id="bars" role="img" aria-label="Spending by room"></svg><div class="tip" id="barTip"></div></div>
+    </section>
+  </div>
+</div>
+
+<section class="card mt">
+  <div class="card-head"><div><h2>Spending over time</h2><div class="hint" id="lineHint">Running total of item prices</div></div>
+    <div class="key"><span><i class="ln" style="background:var(--spruce)"></i>Spent</span><span><i class="ln" style="background:var(--amber)"></i>Budget</span></div></div>
+  <div class="chart" id="lineWrap"><svg id="line" role="img" aria-label="Running total of spending against budget"></svg><div class="tip" id="lineTip"></div></div>
+  <details class="table"><summary>Show purchases as a table</summary><table><thead><tr><th>Date</th><th>Item</th><th>Price</th></tr></thead><tbody id="purchaseRows"></tbody></table></details>
+</section>
+
+<section aria-labelledby="listTitle">
+  <div class="list-tools">
+    <div class="list-tools-row"><h2 id="listTitle">Shopping lists</h2><input class="search" id="search" type="search" placeholder="Search items…" aria-label="Search items"></div>
+    <div class="list-tools-row">
+      <div class="chips" id="roomChips" role="group" aria-label="Filter by room"></div>
+      <div class="seg" role="group" aria-label="Show items" id="statusSeg"><button type="button" data-v="all">All</button><button type="button" data-v="todo">To buy</button><button type="button" data-v="done">Bought</button></div>
+    </div>
+  </div>
+  <div class="lists" id="lists"></div>
+</section>
+
+<div class="grid-bottom">
+  <section class="card">
+    <h2>Add an item</h2>
+    <div class="row add" style="margin-top:12px">
+      <div class="grow"><label for="newName">Item</label><input class="field" id="newName" placeholder="e.g. Shower curtain…" autocomplete="off"></div>
+      <div><label for="newList">List</label><select class="field" id="newList"></select></div>
+      <div><label for="newPriority">Priority</label><select class="field" id="newPriority"><option>Essential</option><option selected>Soon</option><option>Later</option></select></div>
+      <button class="btn primary" id="addBtn" type="button">Add item</button>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Budget and dates</h2>
+    <div class="row two" style="margin-top:12px">
+      <div><label for="budget">Shopping budget (€)</label><input class="field num" id="budget" type="number" min="0" step="1" inputmode="decimal"></div>
+      <div><label for="extra">Other spending (€)</label><input class="field num" id="extra" type="number" min="0" step="0.01" inputmode="decimal"></div>
+    </div>
+    <p class="note" id="extraNote">Costs that aren't checklist items, like delivery fees. Item prices are added automatically.</p>
+    <div class="row two" style="margin-top:10px">
+      <div><label for="movedIn">Moved in</label><input class="field" id="movedIn" type="date"></div>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Lists and rooms</h2>
+    <div class="hint">Choose where each list sits on the floor plan</div>
+    <div id="mapRows" style="margin-top:10px"></div>
+    <div class="row add" style="grid-template-columns:2fr 1.3fr auto;margin-top:12px">
+      <div><label for="newListName">New list</label><input class="field" id="newListName" placeholder="e.g. Balcony…" autocomplete="off"></div>
+      <div><label for="newListRoom">Room</label><select class="field" id="newListRoom"></select></div>
+      <button class="btn" id="addListBtn" type="button">Add list</button>
+    </div>
+  </section>
+  <section class="card">
+    <h2><label for="notes" style="font:inherit;color:inherit;margin:0">Moving-in notes</label></h2>
+    <textarea class="field" id="notes" style="margin-top:12px" placeholder="Measurements, delivery times, things to remember…"></textarea>
+    <p class="note">Notes sync to the Settings tab in your Google Sheet.</p>
+  </section>
+  <section class="card" id="sheetsPanel">
+    <h2>Google Sheets</h2>
+    <div class="hint">Your sheet keeps a copy you can open anywhere</div>
+    <ol class="steps">
+      <li>In your Google Sheet, open Extensions → Apps Script.</li>
+      <li>Replace the code with the Koti script, then change <code>SECRET</code> to your own phrase.</li>
+      <li>Deploy → New deployment → Web app. Execute as Me, access Anyone. Copy the URL.</li>
+      <li>Paste the URL and secret below, then select Save to Sheets.</li>
+    </ol>
+    <button class="btn" id="copyScript" type="button">Copy Apps Script code</button>
+    <div class="row" style="margin-top:14px">
+      <div><label for="scriptUrl">Web app URL</label><input class="field" id="scriptUrl" type="url" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
+      <div><label for="syncToken">Shared secret</label><input class="field" id="syncToken" type="password" spellcheck="false" placeholder="Same as SECRET in the script" autocomplete="off"></div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="autoSync" checked> Sync automatically</label>
+    <div class="btns">
+      <button class="btn primary" id="pushBtn" type="button">Save to Sheets</button>
+      <button class="btn" id="pullBtn" type="button">Load from Sheets</button>
+    </div>
+    <p class="status" id="syncStatus" aria-live="polite">Not connected yet.</p>
+  </section>
+  <section class="card">
+    <h2>Backup</h2>
+    <div class="hint">A file copy of everything, separate from Google Sheets</div>
+    <div class="btns">
+      <button class="btn" id="exportBtn" type="button">Download backup</button>
+      <button class="btn" id="importBtn" type="button">Restore from backup</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+      <button class="btn danger" id="resetBtn" type="button">Start over</button>
+    </div>
+    <p class="note">Start over clears ticks, prices and notes on this device. If auto-sync is on, it also clears your sheet.</p>
+  </section>
+</div>
+</main>
+<footer>Koti · Saved in this browser<span id="footSync"></span></footer>
+</div>
+
+<script type="text/plain" id="gsCode">/*__APPS_SCRIPT__*/</script>
+<script>
+"use strict";
+/* ---------- Data ---------- */
+const SEED=[
+ ["Kitchen & cooking","Dish soap|Essential;Dishes and plates|Essential;Bowls|Essential;Cups and mugs|Essential;Spoons, forks and knives|Essential;Cooking spoon|Essential;Frying pan|Essential;Cooking pot|Essential;Kitchen knife|Essential;Chopping board|Essential;Spatula|Soon;Food storage containers|Soon;Dish drying rack|Soon;Colander / strainer|Soon;Baking items|Later;Oven tray|Later;Electric kettle|Soon"],
+ ["Groceries & pantry","Cooking oil|Essential;Eggs|Essential;Sugar|Soon;Milk|Essential;Juice|Later;Salt|Essential;Seasoning|Essential;Sauces|Soon;Rice|Essential;Pasta|Soon;Bread|Essential;Butter|Soon;Tea or coffee|Soon;Fruits (bananas and others)|Essential;Yogurt|Soon;Pizza bites|Later;Onions, garlic and potatoes|Soon;Frozen vegetables|Soon"],
+ ["Bathroom & personal care","Shower soap|Essential;Toothpaste|Essential;Shampoo and conditioner|Essential;Bath towels|Essential;Hand towels|Soon;Bath mat|Soon;Toilet paper|Essential;Toilet brush|Essential;Toilet cleaner|Soon;Hand soap|Essential;Bathroom bin|Soon;Napkins and paper towels|Soon"],
+ ["Laundry & cleaning","Laundry soap / detergent|Essential;Laundry basket|Soon;Drying rack|Essential;Clothes pegs|Later;Mop|Essential;Vacuum cleaner|Essential;Broom and dustpan|Soon;Cleaning cloths|Essential;Cleaning brush and sponge|Essential;Rubber gloves|Later;Floor cleaner|Soon;Window cleaner|Later;Trash bags|Essential;Waste bin|Essential"],
+ ["Living room","Blanket|Soon;Curtains|Soon;Storage boxes|Later;Sofa|Soon;Rug|Later;Floor lamp|Later"],
+ ["Bedroom","Bed and mattress|Essential;Bedsheets|Essential;Duvet|Essential;Duvet cover|Essential;Pillows|Essential;Pillowcases|Essential;Hangers|Essential;Bedside lamp|Later"],
+ ["Tools & household","Extension cord / power strip|Soon;Light bulbs|Soon;Scissors|Soon;Tape|Later;Screwdriver set|Soon;Measuring tape|Later;Batteries|Later;First aid kit|Soon;Small household bin|Soon;Doormat|Soon"]
+];
+const DEFAULT_ROOMS={"Kitchen & cooking":"K","Groceries & pantry":"K","Living room":"OH","Bedroom":"MH","Bedroom & living":"MH","Bathroom & personal care":"KPH","Laundry & cleaning":"ET","Tools & household":"ET"};
+const ZONES={
+ K:{label:"Kitchen",name:"Kitchen",poly:[[80,530],[240,530],[240,840],[80,840]],lab:[144,566]},
+ OH:{label:"Living room",name:"Living room",poly:[[80,248],[425,248],[425,640],[240,640],[240,530],[80,530]],lab:[104,292]},
+ MH:{label:"Bedroom",name:"Bedroom",poly:[[438,248],[660,248],[660,575],[438,575]],lab:[462,292]},
+ KPH:{label:"Bathroom",name:"Bathroom",poly:[[438,648],[660,648],[660,840],[438,840]],lab:[458,684]},
+ ET:{label:"Entrance",name:"Entrance hall",poly:[[240,640],[425,640],[425,780],[240,780]],lab:[256,672]},
+ PARVEKE:{label:"Balcony",name:"Balcony",poly:[[85,30],[645,30],[645,205],[85,205]],lab:[110,72]}
+};
+const ZONE_ORDER=["K","OH","MH","KPH","ET","PARVEKE"];
+const PRIOS=["Essential","Soon","Later"];
+const KEY="kotiTracker_v2",OLD_KEY="newHomeTracker_v1",CFG_KEY="kotiSheetsConfig",OLD_CFG="newHomeSheetsConfig";
+
+const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+function seedState(){
+ return normalize({version:2,categories:SEED.map(([name,raw])=>({name,items:raw.split(";").map(x=>{const [n,p]=x.split("|");return{id:slug(name)+"--"+slug(n),name:n,priority:p,done:false,price:null,boughtAt:null}})})),
+  budget:500,extraSpend:0,notes:"",movedIn:"",roomMap:{...DEFAULT_ROOMS},updatedAt:new Date(0).toISOString()});
+}
+function normalize(s){
+ s.version=2;
+ s.categories=(s.categories||[]).filter(c=>c&&c.name).map(c=>({name:String(c.name),items:(c.items||[]).filter(i=>i&&i.name).map((i,k)=>({
+  id:String(i.id||slug(c.name)+"--"+slug(i.name)+"-"+k),name:String(i.name),priority:PRIOS.includes(i.priority)?i.priority:"Soon",done:!!i.done,
+  price:i.price===null||i.price===undefined||i.price===""||isNaN(Number(i.price))?null:Number(i.price),
+  boughtAt:i.boughtAt?String(i.boughtAt).slice(0,10):null}))}));
+ s.roomMap=Object.assign({},s.roomMap||{});
+ s.categories.forEach(c=>{if(!ZONES[s.roomMap[c.name]])s.roomMap[c.name]=DEFAULT_ROOMS[c.name]||"OH"});
+ s.budget=Number(s.budget)||0;s.extraSpend=Number(s.extraSpend)||0;s.notes=s.notes||"";s.movedIn=s.movedIn?String(s.movedIn).slice(0,10):"";
+ s.updatedAt=s.updatedAt||new Date(0).toISOString();
+ return s;
+}
+/* Version 1 (the original tracker) → version 2: split "Bedroom & living", move old total to "Other spending". */
+function migrateV1(old){
+ const cats=[];let doormat=null;const livingNames=["blanket","curtains","storage boxes"];
+ old.categories.forEach(c=>{
+  if(c.name!=="Bedroom & living"){cats.push({name:c.name,items:c.items.map(i=>({...i}))});return}
+  const liv={name:"Living room",items:[]},bed={name:"Bedroom",items:[]};
+  c.items.forEach(i=>{const n=i.name.toLowerCase();if(n==="doormat")doormat={...i};else (livingNames.includes(n)?liv:bed).items.push({...i})});
+  [["Sofa","Soon"],["Rug","Later"],["Floor lamp","Later"]].forEach(([n,p])=>{if(!liv.items.some(i=>i.name.toLowerCase()===n.toLowerCase()))liv.items.push({id:"living-room--"+slug(n),name:n,priority:p,done:false})});
+  cats.push(liv,bed);
+ });
+ if(doormat){const t=cats.find(c=>c.name==="Tools & household")||cats.find(c=>c.name==="Bedroom");if(t)t.items.push(doormat)}
+ const prior=Number(old.spent)||0;
+ return normalize({version:2,categories:cats,budget:old.budget??500,extraSpend:prior,carriedSpend:prior>0,notes:old.notes||"",movedIn:"",roomMap:{...DEFAULT_ROOMS},updatedAt:new Date().toISOString()});
+}
+function loadState(){
+ try{const v2=JSON.parse(localStorage.getItem(KEY));if(v2&&Array.isArray(v2.categories))return normalize(v2)}catch(e){}
+ try{const v1=JSON.parse(localStorage.getItem(OLD_KEY));if(v1&&Array.isArray(v1.categories)){const m=migrateV1(v1);localStorage.setItem(KEY,JSON.stringify(m));return m}}catch(e){}
+ return seedState();
+}
+let state=loadState();
+let ui={room:"all",status:"todo",query:""};
+
+/* ---------- Helpers ---------- */
+const $=id=>document.getElementById(id);
+const eur=(n,d=2)=>new Intl.NumberFormat("en-FI",{style:"currency",currency:"EUR",minimumFractionDigits:d,maximumFractionDigits:d}).format(Number(n)||0);
+const eur0=n=>eur(Math.round(Number(n)||0),0);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const todayISO=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const parseDay=s=>{const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const fmtDay=d=>d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e}
+function showTip(t,html,x,y){t.innerHTML=html;t.style.left=x+"px";t.style.top=y+"px";t.style.opacity=1}
+function hideTip(t){t.style.opacity=0}
+const allItems=()=>state.categories.flatMap(c=>c.items);
+const itemSpend=()=>allItems().filter(i=>i.done&&i.price>0).reduce((a,i)=>a+i.price,0);
+const totalSpent=()=>itemSpend()+state.extraSpend;
+function zoneStats(){
+ const z={};ZONE_ORDER.forEach(k=>z[k]={code:k,lists:[],total:0,done:0,ess:0,spent:0});
+ state.categories.forEach(c=>{const s=z[state.roomMap[c.name]];s.lists.push(c.name);c.items.forEach(i=>{s.total++;if(i.done){s.done++;if(i.price>0)s.spent+=i.price}else if(i.priority==="Essential")s.ess++})});
+ return z;
+}
+
+/* ---------- Saving ---------- */
+function save(){state.updatedAt=new Date().toISOString();try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}queueSync()}
+function saveQuiet(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+
+/* ---------- Summary ---------- */
+function renderSummary(){
+ const items=allItems(),done=items.filter(i=>i.done).length,pct=items.length?Math.round(done/items.length*100):0;
+ $("pct").textContent=pct+"%";$("pctSub").textContent=`${done} of ${items.length} items bought`;$("pctFill").style.width=pct+"%";
+ $("essLeft").textContent=items.filter(i=>!i.done&&i.priority==="Essential").length;
+ const dates=items.filter(i=>i.done&&i.boughtAt).map(i=>i.boughtAt).sort();
+ if(dates.length){const last=parseDay(dates[dates.length-1]),days=Math.round((parseDay(todayISO())-last)/864e5);$("lastBuy").textContent=days<=0?"Today":days===1?"Yesterday":days<7?days+" days ago":fmtDay(last)}else $("lastBuy").textContent="None yet";
+ const spent=totalSpent(),b=state.budget,ratio=b>0?spent/b:0,chip=$("budgetChip");
+ $("spent").textContent=eur0(spent);$("budgetSub").textContent=b>0?`of ${eur0(b)} budget`:"no budget set";
+ const fill=$("budgetFill");fill.style.width=Math.min(100,ratio*100)+"%";
+ if(b<=0){chip.className="chip ok";chip.textContent="Set a budget below";fill.style.background="var(--spruce)"}
+ else if(ratio>1){chip.className="chip crit";chip.innerHTML=`<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.5" fill="currentColor"/><path d="M6 3v3.6M6 8.4v.1" stroke="var(--paper)" stroke-width="1.6" stroke-linecap="round"/></svg>Over by ${eur0(spent-b)}`;fill.style.background="var(--crit)"}
+ else if(ratio>=.85){chip.className="chip warn";chip.innerHTML=`<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1 11 10H1Z" fill="currentColor"/></svg>${Math.round(ratio*100)}% used`;fill.style.background="var(--amber)"}
+ else{chip.className="chip ok";chip.innerHTML=`<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 5 8.5 9.5 3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>${Math.round(ratio*100)}% used`;fill.style.background="var(--spruce)"}
+ $("spentSplit").textContent=state.extraSpend>0?`Items ${eur0(itemSpend())} + other ${eur0(state.extraSpend)}`:"Spent on items";
+ $("leftTxt").textContent=b>0?(b-spent>=0?`${eur(b-spent)} left`:`${eur(spent-b)} over`):"";
+ const prio=$("prio");prio.innerHTML="";
+ PRIOS.forEach(p=>{const its=items.filter(i=>i.priority===p),d=its.filter(i=>i.done).length;
+  const r=document.createElement("div");r.className="prio-row";
+  r.innerHTML=`<span class="pill ${p}" style="justify-self:start">${p}</span><div class="meter" role="img" aria-label="${p}: ${d} of ${its.length} bought"><i style="width:${its.length?d/its.length*100:0}%"></i></div><span class="num">${d}/${its.length}</span>`;prio.appendChild(r)});
+ $("subline").textContent=state.movedIn?`My new home · moved in ${parseDay(state.movedIn).toLocaleDateString("en-GB",{day:"numeric",month:"long"})}`:"My new home";
+}
+
+/* ---------- Floor plan ---------- */
+function renderPlan(){
+ const svg=$("plan"),wrap=$("planWrap"),t=$("planTip");svg.innerHTML="";hideTip(t);
+ const stats=zoneStats(),pts=a=>a.map(p=>p.join(",")).join(" ");
+ const defs=el("defs",{},svg);
+ const hatch=el("pattern",{id:"hatch",width:"10",height:"10",patternUnits:"userSpaceOnUse",patternTransform:"rotate(45)"},defs);
+ el("rect",{width:"3",height:"10",fill:"var(--line)"},hatch);
+ el("rect",{x:80,y:248,width:580,height:592,fill:"var(--paper)"},svg);
+ el("rect",{x:85,y:30,width:560,height:175,fill:stats.PARVEKE.total?"var(--paper)":"url(#hatch)"},svg);
+ const groups=[];
+ ZONE_ORDER.forEach(code=>{
+  const z=ZONES[code],s=stats[code],p=s.total?s.done/s.total:0;
+  const xs=z.poly.map(q=>q[0]),ys=z.poly.map(q=>q[1]),x0=Math.min(...xs),x1=Math.max(...xs),top=Math.min(...ys),bot=Math.max(...ys);
+  const g=el("g",{class:"room"+(ui.room===code?" sel":""),tabindex:"0",role:"button","aria-label":`${z.name}: ${s.total?`${s.done} of ${s.total} bought`:"no list yet"}. Show its lists.`},svg);
+  el("polygon",{points:pts(z.poly),fill:"transparent"},g);
+  if(s.total){
+   const cp=el("clipPath",{id:"clip-"+code},defs);el("polygon",{points:pts(z.poly)},cp);
+   const lv=el("g",{"clip-path":`url(#clip-${code})`},g),lh=(bot-top)*p,ly=bot-lh;
+   el("rect",{class:"level",x:x0,y:ly,width:x1-x0,height:lh},lv);
+   if(p>0&&p<1)el("line",{class:"waterline",x1:x0,x2:x1,y1:ly,y2:ly},lv);
+  }
+  groups.push([g,code,z,s,p]);
+ });
+ el("polyline",{points:"80,530 240,530 240,840",fill:"none",stroke:"var(--muted)","stroke-width":1.5,"stroke-dasharray":"2 6","stroke-linecap":"round"},svg);
+ el("polyline",{points:"240,640 425,640",fill:"none",stroke:"var(--muted)","stroke-width":1.5,"stroke-dasharray":"2 6","stroke-linecap":"round"},svg);
+ const fx=el("g",{fill:"none",stroke:"var(--muted)","stroke-width":1.2,opacity:.8},svg);
+ el("rect",{x:82,y:532,width:52,height:282},fx);el("path",{d:"M82 532 L134 590 M82 590 H134"},fx);
+ [[95,647],[121,647],[95,673],[121,673]].forEach(([cx,cy])=>el("circle",{cx,cy,r:8},fx));
+ el("rect",{x:88,y:738,width:40,height:28,rx:3},fx);
+ el("rect",{x:441,y:577,width:216,height:56},fx);el("path",{d:"M495 577 V633 M605 577 V633"},fx);
+ el("rect",{x:276,y:782,width:146,height:56},fx);el("path",{d:"M366 782 V838"},fx);
+ el("ellipse",{cx:628,cy:766,rx:24,ry:16},fx);el("rect",{x:508,y:792,width:52,height:34,rx:3},fx);
+ el("rect",{x:444,y:768,width:56,height:68,"stroke-dasharray":"4 4"},fx);
+ const holes=[[80,248,345,592],[438,248,222,387],[438,648,222,192],[425,265,13,80],[425,490,13,75],[425,675,13,75],[148,840,87,20],[290,205,93,43],[135,212,150,30],[472,212,128,30]];
+ let d="M60 205 H680 V860 H60 Z M68 15 H85 V205 H68 Z M645 15 H660 V205 H645 Z";
+ holes.forEach(([x,y,w,h])=>d+=` M${x} ${y} h${w} v${h} h${-w} Z`);
+ el("path",{d,fill:"var(--wall)","fill-rule":"evenodd"},svg);
+ const win=el("g",{fill:"none",stroke:"var(--wall)","stroke-width":1.5},svg);
+ [[135,212,150,30],[472,212,128,30]].forEach(([x,y,w,h])=>{el("rect",{x,y,width:w,height:h},win);el("line",{x1:x,x2:x+w,y1:y+h/2,y2:y+h/2},win)});
+ el("rect",{x:85,y:15,width:560,height:14},win);el("rect",{x:357,y:33,width:20,height:16,fill:"var(--wall)"},svg);
+ const dr=el("g",{fill:"none",stroke:"var(--wall)","stroke-width":1.5},svg);
+ el("path",{d:"M383 205 V120 A85 85 0 0 0 298 205"},dr);el("path",{d:"M148 860 V945 A87 87 0 0 1 235 860"},dr);el("path",{d:"M425 675 H350 A75 75 0 0 0 425 750"},dr);
+ const f=planScale();
+ groups.forEach(([g,code,z,s,p])=>{
+  svg.appendChild(g);
+  const [lx,ly]=z.lab,plate=el("rect",{class:"plate",rx:8},g);
+  const a=el("text",{class:"rname",x:lx,y:ly,style:`font-size:${17*f}px`},g);a.textContent=z.label;
+  const c=el("tspan",{class:"rcode",dx:8,style:`font-size:${12*f}px`},a);c.textContent=code;
+  if(s.total){el("text",{class:"rpct",x:lx,y:ly+34*f,style:`font-size:${32*f}px`},g).textContent=Math.round(p*100)+"%";el("text",{class:"rcount",x:lx,y:ly+56*f,style:`font-size:${14*f}px`},g).textContent=f>1?`${s.done}/${s.total}`:`${s.done} of ${s.total} bought`}
+  else el("text",{class:"rcount",x:lx,y:ly+24*f,style:`font-size:${14*f}px`},g).textContent="No list yet";
+  const tb=[...g.querySelectorAll("text")].map(n=>n.getBBox());
+  const bx0=Math.min(...tb.map(b=>b.x)),by0=Math.min(...tb.map(b=>b.y)),bx1=Math.max(...tb.map(b=>b.x+b.width)),by1=Math.max(...tb.map(b=>b.y+b.height));
+  plate.setAttribute("x",bx0-8);plate.setAttribute("y",by0-6);plate.setAttribute("width",bx1-bx0+16);plate.setAttribute("height",by1-by0+12);
+  const show=()=>{const sc=wrap.getBoundingClientRect().width/640;
+   const html=s.total?`<b>${esc(z.name)}</b><br>${esc(s.lists.join(", "))}<br>${s.done} of ${s.total} bought · ${s.ess?s.ess+" essential"+(s.ess>1?"s":"")+" left":"no essentials left"}<br>${eur(s.spent)} spent`:`<b>${esc(z.name)}</b><br>No list yet. Add one under Lists and rooms.`;
+   showTip(t,html,(bx0+(bx1-bx0)/2-50)*sc,(by0-8-5)*sc)};
+  const pick=()=>{ui.room=ui.room===code?"all":code;renderPlanSelection();renderLists();if(ui.room!=="all")$("listTitle").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"})};
+  g.addEventListener("mouseenter",show);g.addEventListener("focus",show);
+  g.addEventListener("mouseleave",()=>hideTip(t));g.addEventListener("blur",()=>hideTip(t));
+  g.addEventListener("click",pick);g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pick()}});
+  g.dataset.code=code;
+ });
+}
+function planScale(){const w=$("planWrap").clientWidth||640;return w<420?1.45:w<520?1.2:1}
+let lastScale=null;
+function renderPlanSelection(){$("plan").querySelectorAll(".room").forEach(g=>g.classList.toggle("sel",g.dataset.code===ui.room))}
+
+/* ---------- Charts ---------- */
+function niceMax(v){if(v<=0)return 100;const p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p;return ([1,1.2,1.6,2,2.4,3,4,5,6,8,10].find(k=>n<=k))*p}
+function drawLine(){
+ const svg=$("line"),wrap=$("lineWrap"),t=$("lineTip");svg.innerHTML="";hideTip(t);
+ const buys=allItems().filter(i=>i.done&&i.price>0&&i.boughtAt).sort((a,b)=>a.boughtAt.localeCompare(b.boughtAt));
+ const rows=$("purchaseRows");rows.innerHTML=buys.length?buys.slice().reverse().map(i=>`<tr><td>${fmtDay(parseDay(i.boughtAt))}</td><td>${esc(i.name)}</td><td class="num">${eur(i.price)}</td></tr>`).join(""):`<tr><td colspan="3">No priced purchases yet.</td></tr>`;
+ $("lineHint").textContent=state.extraSpend>0?`Running total of item prices, starting from ${eur0(state.extraSpend)} other spending`:"Running total of item prices";
+ let empty=wrap.querySelector(".empty-chart");
+ if(!buys.length){svg.style.display="none";if(!empty){empty=document.createElement("div");empty.className="empty-chart";wrap.appendChild(empty)}empty.textContent="Tick an item and type its price to start your spending line.";return}
+ svg.style.display="";if(empty)empty.remove();
+ const days=[];buys.forEach(i=>{const last=days[days.length-1];if(last&&last.key===i.boughtAt){last.add+=i.price;last.items.push(i.name)}else days.push({key:i.boughtAt,d:parseDay(i.boughtAt),add:i.price,items:[i.name]})});
+ let run=state.extraSpend;days.forEach(p=>{run+=p.add;p.v=run});
+ const today=parseDay(todayISO());
+ let x0=days[0].d;if(state.movedIn){const m=parseDay(state.movedIn);if(m<x0)x0=m}
+ const lastDay=days[days.length-1].d>today?days[days.length-1].d:today;
+ let x1=new Date(lastDay.getFullYear(),lastDay.getMonth(),lastDay.getDate()+1);
+ if(x1-x0<864e5*3)x0=new Date(x1.getFullYear(),x1.getMonth(),x1.getDate()-3);
+ const W=Math.max(300,wrap.clientWidth),H=240,m={l:52,r:78,t:14,b:26};
+ svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+ const top=niceMax(Math.max(run,state.budget)*1.08);
+ const X=d=>m.l+(d-x0)/(x1-x0)*(W-m.l-m.r),Y=v=>H-m.b-v/top*(H-m.t-m.b);
+ const grid=el("g",{class:"grid"},svg),axis=el("g",{class:"axis"},svg);
+ for(let k=0;k<=4;k++){const v=top*k/4;el("line",{x1:m.l,x2:W-m.r,y1:Y(v),y2:Y(v)},grid);el("text",{x:m.l-8,y:Y(v)+4,"text-anchor":"end"},axis).textContent=eur0(v)}
+ const span=Math.round((x1-x0)/864e5)-1,maxT=W<480?3:6,step=Math.max(1,Math.ceil(span/(maxT-1)));
+ for(let k=0;k<=span;k+=step){const d=new Date(x0.getFullYear(),x0.getMonth(),x0.getDate()+k),tx=X(d);el("text",{x:tx,y:H-6,"text-anchor":k===0?"start":(W-m.r-tx<30?"end":"middle")},axis).textContent=fmtDay(d)}
+ if(state.budget>0){el("line",{x1:m.l,x2:W-m.r,y1:Y(state.budget),y2:Y(state.budget),stroke:"var(--amber)","stroke-width":2},svg);
+  el("text",{x:W-m.r+8,y:Y(state.budget)+4,style:"font:12px var(--body);fill:var(--ink-2)"},svg).textContent="Budget"}
+ let d=`M${X(x0)} ${Y(state.extraSpend)}`;days.forEach(p=>{d+=` H${X(p.d)} V${Y(p.v)}`});const endX=X(x1);d+=` H${endX}`;
+ el("path",{d:d+` V${Y(0)} H${X(x0)} Z`,fill:"var(--spruce)",opacity:.1},svg);
+ el("path",{d,fill:"none",stroke:"var(--spruce)","stroke-width":2,"stroke-linejoin":"round","stroke-linecap":"round"},svg);
+ el("circle",{cx:endX,cy:Y(run),r:5,fill:"var(--spruce)",stroke:"var(--paper)","stroke-width":2},svg);
+ const nearB=state.budget>0&&Math.abs(Y(run)-Y(state.budget))<16;
+ el("text",{x:endX+10,y:Y(run)+(nearB?(Y(run)>Y(state.budget)?16:-8):4),style:"font:600 12px var(--body);fill:var(--ink);font-variant-numeric:tabular-nums"},svg).textContent=eur0(run);
+ const cross=el("line",{y1:m.t,y2:H-m.b,stroke:"var(--muted)","stroke-width":1,opacity:0},svg);
+ const dot=el("circle",{r:5,fill:"var(--spruce)",stroke:"var(--paper)","stroke-width":2,opacity:0},svg);
+ const hit=el("rect",{x:m.l-10,y:0,width:W-m.l-m.r+20,height:H,fill:"transparent"},svg);
+ const move=cx=>{const b=svg.getBoundingClientRect(),s=b.width/W,mx=(cx-b.left)/s;let best=days[0];days.forEach(p=>{if(Math.abs(X(p.d)-mx)<Math.abs(X(best.d)-mx))best=p});
+  const px=X(best.d),py=Y(best.v);cross.setAttribute("x1",px);cross.setAttribute("x2",px);cross.setAttribute("opacity",.5);dot.setAttribute("cx",px);dot.setAttribute("cy",py);dot.setAttribute("opacity",1);
+  const list=best.items.slice(0,3).map(esc).join(", ")+(best.items.length>3?` and ${best.items.length-3} more`:"");
+  showTip(t,`<b>${fmtDay(best.d)}</b> · +${eur(best.add)}<br>${list}<br>Total ${eur(best.v)}${state.budget>0?` of ${eur0(state.budget)}`:""}`,Math.min(Math.max(px*s,90),b.width-90),py*s)};
+ hit.addEventListener("mousemove",e=>move(e.clientX));hit.addEventListener("touchstart",e=>move(e.touches[0].clientX),{passive:true});
+ hit.addEventListener("mouseleave",()=>{hideTip(t);cross.setAttribute("opacity",0);dot.setAttribute("opacity",0)});
+}
+function drawBars(){
+ const svg=$("bars"),wrap=$("barWrap"),t=$("barTip");svg.innerHTML="";hideTip(t);
+ const st=zoneStats(),rows=ZONE_ORDER.map(k=>st[k]).filter(z=>z.total).sort((a,b)=>b.spent-a.spent);
+ const W=Math.max(260,wrap.clientWidth),row=34,H=rows.length*row+4,lab=96,valW=70,bw=W-lab-valW,max=Math.max(...rows.map(r=>r.spent),1);
+ svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+ rows.forEach((r,i)=>{const y=i*row+8,w=r.spent?Math.max(4,r.spent/max*bw):0,g=el("g",{},svg),z=ZONES[r.code];
+  el("text",{x:0,y:y+12,style:"font:12px var(--body);fill:var(--ink-2)"},g).textContent=z.label;
+  if(w)el("path",{d:`M${lab} ${y} H${lab+w-4} a4 4 0 0 1 4 4 V${y+12} a4 4 0 0 1 -4 4 H${lab} Z`,fill:"var(--spruce)"},g);
+  el("text",{x:lab+w+(w?8:0),y:y+12,style:"font:600 12px var(--body);fill:var(--ink);font-variant-numeric:tabular-nums"},g).textContent=eur0(r.spent);
+  const hit=el("rect",{x:0,y:y-8,width:W,height:row,fill:"transparent"},g);
+  hit.addEventListener("mousemove",()=>{const s=svg.getBoundingClientRect().width/W;const priced=allItems().filter(i=>i.done&&i.price>0&&r.lists.includes(state.categories.find(c=>c.items.includes(i)).name)).length;
+   showTip(t,`<b>${esc(z.name)}</b><br>${eur(r.spent)} across ${priced} priced item${priced===1?"":"s"}`,Math.max(lab+w/2,80)*s,y*s)});
+  hit.addEventListener("mouseleave",()=>hideTip(t));
+ });
+ svg.setAttribute("aria-label","Spending by room: "+rows.map(r=>`${ZONES[r.code].label} ${eur0(r.spent)}`).join(", "));
+}
+
+/* ---------- Lists ---------- */
+function renderFilters(){
+ const st=zoneStats(),chips=$("roomChips");chips.innerHTML="";
+ [["all","All rooms"],...ZONE_ORDER.filter(k=>st[k].total).map(k=>[k,ZONES[k].label])].forEach(([k,lab])=>{
+  const b=document.createElement("button");b.type="button";b.className="fchip";b.textContent=lab;b.setAttribute("aria-pressed",ui.room===k);
+  b.onclick=()=>{ui.room=k;renderPlanSelection();renderLists()};chips.appendChild(b)});
+ $("statusSeg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===ui.status));
+}
+function renderLists(){
+ renderFilters();
+ const box=$("lists");box.innerHTML="";const q=ui.query.trim().toLowerCase();
+ state.categories.forEach(c=>{
+  const code=state.roomMap[c.name];if(ui.room!=="all"&&code!==ui.room)return;
+  const shown=c.items.filter(i=>(!q||i.name.toLowerCase().includes(q))&&(ui.status==="all"||(ui.status==="done"?i.done:!i.done)));
+  if(!shown.length&&(q||ui.status!=="all"))return;
+  const done=c.items.filter(i=>i.done).length,sec=document.createElement("section");sec.className="card";
+  sec.innerHTML=`<div class="rl-head"><h3>${esc(c.name)}<span class="room-tag">${esc(ZONES[code].label)}</span></h3><div class="rl-meta"><span class="num">${done}/${c.items.length}</span><div class="meter" aria-hidden="true"><i style="width:${c.items.length?done/c.items.length*100:0}%"></i></div></div></div>`;
+  if(!c.items.length){const p=document.createElement("p");p.className="note";p.textContent="No items yet. Add one below.";sec.appendChild(p)}
+  shown.forEach(item=>{
+   const row=document.createElement("div");row.className="item"+(item.done?" done":"");
+   const cb=document.createElement("input");cb.type="checkbox";cb.checked=item.done;cb.id="cb-"+item.id;cb.setAttribute("aria-label",`${item.name} bought`);
+   cb.onchange=()=>{item.done=cb.checked;item.boughtAt=cb.checked?(item.boughtAt||todayISO()):null;save();renderAll({keepFocus:cb.id})};
+   const nm=document.createElement("label");nm.className="nm";nm.htmlFor=cb.id;nm.textContent=item.name;nm.style.cssText="font:inherit;color:inherit;margin:0;cursor:pointer;font-weight:400";
+   const pr=document.createElement("input");pr.className="price";pr.type="text";pr.inputMode="decimal";pr.placeholder="€ price";pr.setAttribute("aria-label",`Price of ${item.name} in euros`);
+   pr.value=item.price!=null?item.price.toFixed(2):"";pr.tabIndex=item.done?0:-1;
+   pr.onchange=()=>{const v=pr.value.replace(/[€\s]/g,"").replace(",",".");item.price=v===""||isNaN(Number(v))?null:Math.max(0,Number(v));pr.value=item.price!=null?item.price.toFixed(2):"";save();renderSummary();drawCharts();renderPlan()};
+   pr.onkeydown=e=>{if(e.key==="Enter")pr.blur()};
+   const pill=document.createElement("button");pill.type="button";pill.className="pill "+item.priority;pill.textContent=item.priority;pill.title="Change priority";pill.setAttribute("aria-label",`Priority ${item.priority}. Change priority of ${item.name}`);
+   pill.onclick=()=>{item.priority=PRIOS[(PRIOS.indexOf(item.priority)+1)%3];save();renderAll({keepFocus:"pill-"+item.id})};pill.id="pill-"+item.id;
+   const x=document.createElement("button");x.type="button";x.className="x";x.innerHTML="&times;";x.setAttribute("aria-label",`Remove ${item.name}`);
+   x.onclick=()=>{if(confirm(`Remove "${item.name}" from ${c.name}?`)){c.items=c.items.filter(i=>i.id!==item.id);save();renderAll()}};
+   row.append(cb,nm,pr,pill,x);sec.appendChild(row);
+  });
+  box.appendChild(sec);
+ });
+ if(!box.children.length){const e=document.createElement("div");e.className="empty";e.textContent=ui.status==="todo"&&!q?"Everything here is bought. Switch to All to see the full list.":"No items match. Try another room or search.";box.appendChild(e)}
+}
+
+/* ---------- Settings ---------- */
+function roomOptions(sel){return ZONE_ORDER.map(k=>`<option value="${k}"${k===sel?" selected":""}>${esc(ZONES[k].name)} (${k})</option>`).join("")}
+function renderSettings(){
+ $("newList").innerHTML=state.categories.map(c=>`<option>${esc(c.name)}</option>`).join("");
+ $("newListRoom").innerHTML=roomOptions("PARVEKE");
+ const mr=$("mapRows");mr.innerHTML="";
+ state.categories.forEach((c,idx)=>{const r=document.createElement("div");r.className="map-row";
+  r.innerHTML=`<label for="map-${idx}" style="margin:0;font:inherit;color:var(--ink);font-weight:500">${esc(c.name)} <span class="num" style="color:var(--muted);font-size:12px">${c.items.length} items</span></label><select class="field" id="map-${idx}">${roomOptions(state.roomMap[c.name])}</select>`;
+  const del=document.createElement("button");del.type="button";del.className="x";del.innerHTML="&times;";del.setAttribute("aria-label",`Delete list ${c.name}`);
+  del.onclick=()=>{if(c.items.length&&!confirm(`Delete "${c.name}" and its ${c.items.length} items?`))return;state.categories.splice(idx,1);delete state.roomMap[c.name];save();renderAll()};
+  r.appendChild(del);r.querySelector("select").onchange=e=>{state.roomMap[c.name]=e.target.value;save();renderAll()};mr.appendChild(r)});
+ $("budget").value=state.budget;$("extra").value=state.extraSpend||"";$("movedIn").value=state.movedIn||"";
+ if(document.activeElement!==$("notes"))$("notes").value=state.notes;
+ const n=$("extraNote");
+ if(state.carriedSpend){n.className="note warn";n.textContent=`Your old spending total (${eur(state.extraSpend)}) was moved here. Lower it as you add prices to items, so nothing is counted twice.`}
+ else{n.className="note";n.textContent="Costs that aren't checklist items, like delivery fees. Item prices are added automatically."}
+}
+function renderAll(opts={}){renderSummary();renderPlan();drawCharts();renderLists();renderSettings();if(opts.keepFocus){const f=$(opts.keepFocus);if(f)f.focus({preventScroll:true})}}
+function drawCharts(){drawLine();drawBars()}
+
+/* ---------- Events ---------- */
+$("search").oninput=e=>{ui.query=e.target.value;renderLists()};
+$("statusSeg").querySelectorAll("button").forEach(b=>b.onclick=()=>{ui.status=b.dataset.v;renderLists()});
+$("addBtn").onclick=()=>{const name=$("newName").value.trim();if(!name){$("newName").focus();return}
+ const c=state.categories.find(c=>c.name===$("newList").value);if(!c)return;
+ c.items.push({id:"custom-"+Date.now().toString(36),name,priority:$("newPriority").value,done:false,price:null,boughtAt:null});
+ $("newName").value="";ui.room="all";if(ui.status==="done")ui.status="todo";save();renderAll();$("newName").focus()};
+$("newName").onkeydown=e=>{if(e.key==="Enter")$("addBtn").click()};
+$("addListBtn").onclick=()=>{const name=$("newListName").value.trim();if(!name){$("newListName").focus();return}
+ if(state.categories.some(c=>c.name.toLowerCase()===name.toLowerCase())){alert(`You already have a list called "${name}".`);return}
+ state.categories.push({name,items:[]});state.roomMap[name]=$("newListRoom").value;$("newListName").value="";save();renderAll();$("newList").value=name;$("newName").focus()};
+$("budget").oninput=e=>{state.budget=Math.max(0,Number(e.target.value)||0);save();renderSummary();drawCharts()};
+$("extra").oninput=e=>{state.extraSpend=Math.max(0,Number(e.target.value)||0);if(state.carriedSpend){state.carriedSpend=false}save();renderSummary();drawCharts()};
+$("extra").onchange=()=>renderSettings();
+$("movedIn").onchange=e=>{state.movedIn=e.target.value||"";save();renderSummary();drawCharts()};
+$("notes").oninput=e=>{state.notes=e.target.value;save()};
+$("syncPill").onclick=()=>$("sheetsPanel").scrollIntoView({behavior:"smooth",block:"start"});
+$("exportBtn").onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`koti-backup-${todayISO()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$("importBtn").onclick=()=>$("importFile").click();
+$("importFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.categories))throw 0;
+ if(!confirm("Replace everything on this device with the backup?"))return;state=d.version===2?normalize(d):migrateV1(d);save();renderAll()}catch(err){alert("That file isn't a Koti or My New Home backup.")}finally{e.target.value=""}};
+$("resetBtn").onclick=()=>{if(!confirm("Clear all ticks, prices, custom items and notes, and start from the original list?"))return;const keep={budget:state.budget};state=seedState();state.budget=keep.budget;save();ui={room:"all",status:"todo",query:""};$("search").value="";renderAll()};
+$("copyScript").onclick=async()=>{const code=$("gsCode").textContent;try{await navigator.clipboard.writeText(code);$("copyScript").textContent="Copied. Paste it into Apps Script"}catch(e){const ta=document.createElement("textarea");ta.value=code;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();$("copyScript").textContent="Copied. Paste it into Apps Script"}setTimeout(()=>$("copyScript").textContent="Copy Apps Script code",4000)};
+let rt;new ResizeObserver(()=>{clearTimeout(rt);rt=setTimeout(()=>{drawCharts();const f=planScale();if(f!==lastScale){lastScale=f;renderPlan()}},80)}).observe($("lineWrap"));
+
+/* ---------- Google Sheets sync ---------- */
+let cfg={url:"",token:"",auto:true};
+try{const c=JSON.parse(localStorage.getItem(CFG_KEY)||localStorage.getItem(OLD_CFG)||"{}");cfg={url:c.url||"",token:c.token||"",auto:c.auto!==false}}catch(e){}
+$("scriptUrl").value=cfg.url;$("syncToken").value=cfg.token;$("autoSync").checked=cfg.auto;
+function saveCfg(){cfg={url:$("scriptUrl").value.trim(),token:$("syncToken").value,auto:$("autoSync").checked};try{localStorage.setItem(CFG_KEY,JSON.stringify(cfg))}catch(e){}}
+["scriptUrl","syncToken"].forEach(id=>$(id).onchange=()=>{saveCfg();setSync(configured()?"local":"local",configured()?"Ready to sync":"Saved on this device")});
+$("autoSync").onchange=()=>{saveCfg();if(cfg.auto&&configured())push()};
+const configured=()=>!!(cfg.url&&cfg.token);
+let lastSync=null,dirty=false,syncTimer=null,busy=false;
+function setSync(st,msg,detail){
+ const p=$("syncPill");p.dataset.state=st;
+ const when=lastSync?` <span>${relTime(lastSync)}</span>`:"";
+ $("syncText").innerHTML=st==="ok"?`<b>Synced with Google Sheets</b>${when}`:`<b>${esc(msg)}</b>`;
+ const s=$("syncStatus");s.dataset.state=st;s.textContent=detail||msg;
+ $("footSync").textContent=st==="ok"?" and in Google Sheets":"";
+}
+function relTime(d){const s=Math.round((Date.now()-d)/1000);if(s<45)return"just now";const m=Math.round(s/60);if(m<60)return m+" min ago";const h=Math.round(m/60);return h<24?h+" h ago":d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+setInterval(()=>{if($("syncPill").dataset.state==="ok")setSync("ok")},30000);
+async function call(method,body){
+ saveCfg();if(!configured())throw new Error("Add the web app URL and shared secret first.");
+ let r;
+ if(method==="GET"){const u=new URL(cfg.url);u.searchParams.set("action","get");u.searchParams.set("token",cfg.token);r=await fetch(u,{redirect:"follow"})}
+ else r=await fetch(cfg.url,{method:"POST",redirect:"follow",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)});
+ let d;try{d=await r.json()}catch(e){throw new Error("Google didn't send back data. Check the URL ends in /exec and access is set to Anyone.")}
+ if(!r.ok||d.ok===false)throw new Error(d.error||"Google Sheets didn't accept the request.");
+ return d;
+}
+function queueSync(){dirty=true;if(!cfg.auto||!configured())return;clearTimeout(syncTimer);setSync("busy","Saving changes…");syncTimer=setTimeout(push,2500)}
+async function push(){
+ if(busy){clearTimeout(syncTimer);syncTimer=setTimeout(push,1500);return}
+ busy=true;$("pushBtn").disabled=true;setSync("busy","Saving to Sheets…");
+ try{const {carriedSpend,...payload}=state;await call("POST",{action:"save",token:cfg.token,state:payload});dirty=false;lastSync=new Date();setSync("ok","Synced","Saved to Google Sheets.")}
+ catch(e){setSync("error","Sync failed",e.message+" Your changes are still saved on this device.")}
+ finally{busy=false;$("pushBtn").disabled=false}
+}
+async function pull({ask=false,onlyIfNewer=false}={}){
+ if(ask&&!confirm("Replace what's on this device with the version in Google Sheets?"))return;
+ busy=true;$("pullBtn").disabled=true;setSync("busy","Checking Google Sheets…");
+ try{const d=await call("GET");if(!d.state||!Array.isArray(d.state.categories))throw new Error("The sheet has no Koti data yet. Select Save to Sheets first.");
+  const remote=d.state.version===2?normalize(d.state):Object.assign(migrateV1(d.state),{updatedAt:d.state.updatedAt||new Date(0).toISOString(),carriedSpend:false});
+  if(onlyIfNewer&&new Date(remote.updatedAt)<=new Date(state.updatedAt)){busy=false;if(new Date(remote.updatedAt)<new Date(state.updatedAt))await push();else{lastSync=new Date();setSync("ok","Synced","Up to date with Google Sheets.")}return}
+  let filled=false;remote.categories.forEach(c=>c.items.forEach(i=>{if(i.done&&!i.boughtAt){i.boughtAt=todayISO();filled=true}if(!i.done&&i.boughtAt){i.boughtAt=null}}));
+  state=remote;saveQuiet();dirty=false;lastSync=new Date();renderAll();setSync("ok","Synced","Loaded the latest version from Google Sheets.");
+  if(filled||d.state.categories.some(c=>c.items.some(i=>String(i.id).startsWith("sheet-")))){busy=false;save()}}
+ catch(e){
+  if(onlyIfNewer&&/empty|no Koti data/i.test(e.message)){busy=false;$("pullBtn").disabled=false;return push()}
+  setSync("error","Sync failed",e.message)}
+ finally{busy=false;$("pullBtn").disabled=false}
+}
+$("pushBtn").onclick=()=>{clearTimeout(syncTimer);push()};
+$("pullBtn").onclick=()=>pull({ask:true});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&cfg.auto&&configured()&&!dirty&&!busy&&(!lastSync||Date.now()-lastSync>60000))pull({onlyIfNewer:true})});
+
+/* ---------- Start ---------- */
+renderAll();
+if(configured()){setSync("local","Ready to sync");if(cfg.auto)pull({onlyIfNewer:true})}
+</script>
+</body>
+</html>
