@@ -1,17 +1,22 @@
-// Home setup view: floor plan, progress, lists with swipe actions, item and add sheets.
-import { store, PRIOS, ZONES, ZONE_ORDER, zoneStats, sortedLists, itemsOf, listOf, itemSpend, totalSpent, todayISO } from "./data.js";
+// Project view (Home setup and other projects): floor plan when the project has one, progress, budget,
+// room lists with swipe actions; also the item sheet and the add-item sheet for projects.
+import { store, PRIOS, ZONES, ZONE_ORDER, zoneStats, sortedLists, itemsOf, listOf, todayISO, roomsOf, projectItems, projectSpent, HOME_PROJECT, HOME_PLAN, topLists } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { drawFullPlan, miniPlanHTML, drawLine, drawBars } from "./charts.js";
 import { sync } from "./sync.js";
 
 const ui = { room: "all", status: "todo", query: "" };
-let root = null, lastList = null;
+let root = null, lastList = null, pid = HOME_PROJECT;
+export const currentProject = () => pid;
+export function setProject(id) { if (id !== pid) { pid = id; ui.room = "all"; ui.query = ""; const q = root && $("#suSearch", root); if (q) q.value = ""; } renderSetup(); }
+const project = () => listOf(pid) || { id: pid, name: "Project", budget: null, extraSpend: 0, plan: null };
+const projLists = () => { const r = roomsOf(pid); return r.length ? r : [project()]; };
 
 export function mountSetup(el) {
   root = el;
   root.innerHTML = `
   <div class="setup">
-    <header class="vh"><div><h1>Home setup</h1><div class="sub" id="suSub"></div></div><a class="sync" href="#more" data-sync><span class="dot"></span><span class="t"></span></a></header>
+    <header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1 id="suTitle">Home setup</h1><div class="sub" id="suSub"></div></div><div class="hbtns"><button type="button" class="hbtn" data-proj-settings aria-label="Project settings">${icon("more", "ic")}</button></div></header>
     <div id="suBanner"></div>
     <div class="setup-top">
       <div>
@@ -53,6 +58,7 @@ export function mountSetup(el) {
   $("#suChips", root).addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; pickRoom(b.dataset.zone, false); });
   $("#miniPlan", root).addEventListener("click", e => { const b = e.target.closest("[data-zone]"); if (b) pickRoom(b.dataset.zone, true); });
   bindListEvents($("#suLists", root));
+  root.addEventListener("click", e => { if (e.target.closest("[data-proj-settings]")) import("./lists.js").then(m => m.openListSettings(listOf(pid))); });
 }
 
 function pickRoom(code, fromPlan) {
@@ -64,16 +70,19 @@ function pickRoom(code, fromPlan) {
 /* ---------- Render ---------- */
 export function renderSetup() {
   if (!root) return;
-  const items = store.model.items, done = items.filter(i => i.done).length, pct = items.length ? Math.round(done / items.length * 100) : 0;
+  const P = project(), hasPlan = P.plan === HOME_PLAN;
+  root.classList.toggle("noplan", !hasPlan);
+  $("#suTitle", root).textContent = P.name;
+  const items = projectItems(pid), done = items.filter(i => i.done).length, pct = items.length ? Math.round(done / items.length * 100) : 0;
   const ess = items.filter(i => !i.done && i.priority === "Essential").length;
   $("#suSub", root).textContent = `${pct}% bought · ${ess} essential${ess === 1 ? "" : "s"} left`;
   $("#stPct", root).textContent = pct + "%"; $("#stPctBar", root).style.width = pct + "%";
   $("#stPctSub", root).textContent = `${done} of ${items.length} items`;
-  const S = store.model.settings, spent = totalSpent(), b = Number(S.budget) || 0, ratio = b > 0 ? spent / b : 0;
+  const spent = projectSpent(pid), b = Number(P.budget) || 0, ratio = b > 0 ? spent / b : 0;
   $("#stSpent", root).textContent = eur0(spent);
   const bar = $("#stBudBar", root); bar.style.width = Math.min(100, ratio * 100) + "%";
   bar.style.background = ratio > 1 ? "var(--crit)" : ratio >= .85 ? "var(--amber)" : "var(--spruce)";
-  $("#stBudSub", root).textContent = b > 0 ? (b - spent >= 0 ? `${eur(b - spent)} left of ${eur0(b)}` : `${eur(spent - b)} over ${eur0(b)}`) : "Set a budget in More";
+  $("#stBudSub", root).textContent = b > 0 ? (b - spent >= 0 ? `${eur(b - spent)} left of ${eur0(b)}` : `${eur(spent - b)} over ${eur0(b)}`) : "Set a budget with ⋯ at the top";
   $("#stChip", root).innerHTML = b > 0 ? (ratio > 1 ? `<span class="chip crit">Over</span>` : ratio >= .85 ? `<span class="chip warn">${Math.round(ratio * 100)}%</span>` : `<span class="chip ok">${Math.round(ratio * 100)}%</span>`) : "";
   $$("[data-prio]", root).forEach(box => { box.innerHTML = PRIOS.map(p => { const its = items.filter(i => i.priority === p), d = its.filter(i => i.done).length;
     return `<div class="prio-row"><span class="pill ${p}">${p}</span><div class="meter" role="img" aria-label="${p}: ${d} of ${its.length} bought"><i style="width:${its.length ? d / its.length * 100 : 0}%"></i></div><span class="num">${d}/${its.length}</span></div>`; }).join(""); });
@@ -88,9 +97,10 @@ function renderBanner() {
 
 export function renderPlans() {
   if (!root) return;
+  if (project().plan !== HOME_PLAN) { $("#suChips", root).innerHTML = ""; $$("#suSeg button", root).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === ui.status)); return; }
   $("#miniPlan", root).innerHTML = miniPlanHTML(ui.room);
   if (getComputedStyle($(".plan-full", root)).display !== "none") drawFullPlan($("#plan", root), $("#planWrap", root), $("#planTip", root), ui.room, code => pickRoom(code, true));
-  const st = zoneStats();
+  const st = zoneStats(pid);
   $("#suChips", root).innerHTML = [["all", "All rooms"], ...ZONE_ORDER.filter(k => st[k].total).map(k => [k, ZONES[k].label])]
     .map(([k, l]) => `<button type="button" class="fchip" data-zone="${k}" aria-pressed="${ui.room === k}">${esc(l)}</button>`).join("");
   $$("#suSeg button", root).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === ui.status));
@@ -98,15 +108,15 @@ export function renderPlans() {
 
 export function renderCharts() {
   if (!root) return;
-  $$("[data-line]", root).forEach(w => { if (w.offsetParent !== null) drawLine($("svg", w), w, $(".tip", w), w.closest("section").querySelector("[data-linehint]")); });
-  $$("[data-bars]", root).forEach(w => { if (w.offsetParent !== null) drawBars($("svg", w), w, $(".tip", w)); });
+  $$("[data-line]", root).forEach(w => { if (w.offsetParent !== null) drawLine($("svg", w), w, $(".tip", w), w.closest("section").querySelector("[data-linehint]"), pid); });
+  $$("[data-bars]", root).forEach(w => { if (w.offsetParent !== null) drawBars($("svg", w), w, $(".tip", w), pid); });
 }
 
 function renderLists() {
   $$("#suSeg button", root).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === ui.status));
   const box = $("#suLists", root), q = ui.query.trim().toLowerCase();
   let html = "";
-  sortedLists().forEach(l => {
+  projLists().forEach(l => {
     if (ui.room !== "all" && l.room !== ui.room) return;
     const all = itemsOf(l.id), done = all.filter(i => i.done).length;
     const shown = all.filter(i => (!q || i.name.toLowerCase().includes(q)) && (ui.status === "all" || (ui.status === "done" ? i.done : !i.done)));
@@ -166,7 +176,12 @@ function removeItem(it) {
 }
 
 /* ---------- Item sheet ---------- */
-function listOptions(sel) { return sortedLists().map(l => `<option value="${esc(l.id)}"${l.id === sel ? " selected" : ""}>${esc(l.name)}</option>`).join(""); }
+/* Lists an item can live in: shopping lists, and each project's rooms (or the project itself if it has none). */
+function listOptions(sel, onlyProject = null) {
+  const out = [];
+  topLists().forEach(l => { if (l.kind === "project") { if (onlyProject && l.id !== onlyProject) return; const r = roomsOf(l.id); (r.length ? r : [l]).forEach(x => out.push([x.id, r.length ? `${l.name} › ${x.name}` : l.name])); } else if (!onlyProject) out.push([l.id, l.name]); });
+  return out.map(([id, n]) => `<option value="${esc(id)}"${id === sel ? " selected" : ""}>${esc(n)}</option>`).join("");
+}
 function prioSeg(sel) { return `<div class="seg" role="radiogroup" aria-label="Priority">${PRIOS.map(p => `<button type="button" role="radio" data-p="${p}" aria-pressed="${p === sel}" aria-checked="${p === sel}">${p}</button>`).join("")}</div>`; }
 function bindPrio(B) { $(".seg", B).addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; $$(".seg button", B).forEach(x => { x.setAttribute("aria-pressed", x === b); x.setAttribute("aria-checked", x === b); }); }); }
 const chosenPrio = B => ($(".seg [aria-pressed='true']", B) || {}).dataset?.p || "Soon";
@@ -180,6 +195,8 @@ export function openItem(it, { focusPrice = false } = {}) {
         <div class="field"><span class="flabel">Priority</span>${prioSeg(it.priority)}</div>
         <div class="grp">
           <label class="row"><span class="rt">Bought</span><input type="checkbox" id="itDone" ${it.done ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--spruce)"></label>
+          <label class="row"><span class="rt">Amount</span><input class="inl" id="itQty" inputmode="decimal" placeholder="1" value="${it.qty != null ? String(it.qty).replace(".", ",") : ""}" autocomplete="off"></label>
+          <label class="row"><span class="rt">Note</span><input class="inl" id="itNote" placeholder="Brand, size…" value="${esc(it.note || "")}" maxlength="300" autocomplete="off" style="max-width:60%"></label>
           <label class="row"><span class="rt">Price</span><input class="inl" id="itPrice" inputmode="decimal" placeholder="€0.00" value="${it.price != null ? it.price.toFixed(2) : ""}" autocomplete="off"></label>
           <label class="row"><span class="rt">Bought on</span><input class="inl" id="itDate" type="date" value="${it.boughtAt || ""}"></label>
           <label class="row"><span class="rt">List</span><select class="inl" id="itList">${listOptions(it.listId)}</select></label>
@@ -196,7 +213,8 @@ export function openItem(it, { focusPrice = false } = {}) {
       if (Number.isNaN(price)) { $("#itMsg", B).dataset.state = "error"; $("#itMsg", B).textContent = "Type the price as a number, like 24,90."; return; }
       let done = $("#itDone", B).checked; if (price != null && price > 0 && !it.done && !done) done = true;
       const date = $("#itDate", B).value || null;
-      store.updateItem(it.id, { name, priority: chosenPrio(B), price, listId: $("#itList", B).value, done, boughtAt: done ? (date || todayISO()) : null });
+      const q = parseMoney($("#itQty", B).value);
+      store.updateItem(it.id, { name, priority: chosenPrio(B), price, qty: q && !Number.isNaN(q) ? q : null, note: $("#itNote", B).value.trim() || null, listId: $("#itList", B).value, done, boughtAt: done ? (date || todayISO()) : null });
       closeSheet();
     },
   });
@@ -204,16 +222,16 @@ export function openItem(it, { focusPrice = false } = {}) {
 
 /* ---------- Add sheet ---------- */
 export function openAdd() {
-  const lists = sortedLists();
+  const lists = projLists();
   if (!lists.length) { toast("Add a list first in More → Lists and rooms"); location.hash = "#more"; return; }
-  const def = (lastList && listOf(lastList)) ? lastList : (ui.room !== "all" ? (lists.find(l => l.room === ui.room) || lists[0]).id : lists[0].id);
+  const def = (lastList && lists.some(l => l.id === lastList)) ? lastList : (ui.room !== "all" ? (lists.find(l => l.room === ui.room) || lists[0]).id : lists[0].id);
   openSheet({
     title: "Add item", right: "Add",
     body: B => {
       B.innerHTML = `
         <div class="seg" aria-label="What to add"><button type="button" data-switch="expense">Expense</button><button type="button" aria-pressed="true">Checklist item</button></div>
         <div class="field"><label for="adName">Item</label><input class="inp" id="adName" placeholder="e.g. Shower curtain…" autocomplete="off" maxlength="200" enterkeyhint="done" autofocus></div>
-        <div class="field"><label for="adList">List</label><select class="inp" id="adList">${listOptions(def)}</select></div>
+        <div class="field"><label for="adList">List</label><select class="inp" id="adList">${listOptions(def, pid)}</select></div>
         <div class="field"><span class="flabel">Priority</span>${prioSeg("Soon")}</div>
         <p class="msg" id="adMsg" aria-live="polite"></p>
         <p class="note">Bought it already? Tick it in the list and add the price: it counts in Money as Home setup.</p>`;

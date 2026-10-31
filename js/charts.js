@@ -1,5 +1,5 @@
 // Floor plans and charts for the Setup view.
-import { store, ZONES, ZONE_ORDER, zoneStats } from "./data.js";
+import { store, ZONES, ZONE_ORDER, zoneStats, projectItems, listOf, HOME_PROJECT } from "./data.js";
 import { svgEl as el, showTip, hideTip, esc, eur, eur0, parseDay, fmtDay } from "./ui.js";
 import { todayISO } from "./data.js";
 
@@ -81,10 +81,10 @@ export function miniPlanHTML(selected) {
 
 /* ---------- Spending over time ---------- */
 function niceMax(v) { if (v <= 0) return 100; const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p; return [1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8, 10].find(k => n <= k) * p; }
-export function drawLine(svg, wrap, tip, hintEl) {
+export function drawLine(svg, wrap, tip, hintEl, pid = HOME_PROJECT) {
   svg.innerHTML = ""; hideTip(tip);
-  const S = store.model.settings, extra = Number(S.extraSpend) || 0, budget = Number(S.budget) || 0;
-  const buys = store.model.items.filter(i => i.done && i.price > 0 && i.boughtAt).sort((a, b) => a.boughtAt.localeCompare(b.boughtAt));
+  const S = store.model.settings, P = listOf(pid) || {}, extra = Number(P.extraSpend) || 0, budget = Number(P.budget) || 0;
+  const buys = projectItems(pid).filter(i => i.done && i.price > 0 && i.boughtAt).sort((a, b) => a.boughtAt.localeCompare(b.boughtAt));
   if (hintEl) hintEl.textContent = extra > 0 ? `Running total of item prices, starting from ${eur0(extra)} other spending` : "Running total of item prices";
   let empty = wrap.querySelector(".empty-chart");
   if (!buys.length) { svg.style.display = "none"; if (!empty) { empty = document.createElement("div"); empty.className = "empty-chart"; wrap.appendChild(empty); } empty.textContent = "Tick an item and add its price to start your spending line."; return; }
@@ -124,9 +124,9 @@ export function drawLine(svg, wrap, tip, hintEl) {
 }
 
 /* ---------- Spending by room ---------- */
-export function drawBars(svg, wrap, tip) {
+export function drawBars(svg, wrap, tip, pid = HOME_PROJECT) {
   svg.innerHTML = ""; hideTip(tip);
-  const st = zoneStats(), rows = ZONE_ORDER.map(k => st[k]).filter(z => z.total).sort((a, b) => b.spent - a.spent);
+  const st = zoneStats(pid), rows = ZONE_ORDER.map(k => st[k]).filter(z => z.total).sort((a, b) => b.spent - a.spent);
   const W = Math.max(240, wrap.clientWidth), row = 34, H = rows.length * row + 4, lab = 96, valW = 64, bw = W - lab - valW, max = Math.max(...rows.map(r => r.spent), 1);
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   rows.forEach((r, i) => { const y = i * row + 8, w = r.spent ? Math.max(4, r.spent / max * bw) : 0, g = el("g", {}, svg), z = ZONES[r.code];

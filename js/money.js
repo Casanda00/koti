@@ -1,6 +1,8 @@
-// Money view: month summary, budgets with pace, spending by month, transactions; add/edit expense and categories sheets.
-import { store, todayISO, HOME_SETUP_CAT, TX_KINDS, BILLS_CAT } from "./data.js";
-import { billTotals, openBill } from "./plan.js";
+// Budgets (what's left until payday, categories, projects, savings goals, spending by month) and All spending.
+// Also the add/edit expense, categories and receipt sheets.
+import { store, todayISO, TX_KINDS, BILLS_CAT, projectOf, listOf, topLists, projectSpent } from "./data.js";
+import { billTotals, openBill, goalsHTML, openGoal } from "./plan.js";
+import { incomeTotals, nextPay } from "./income.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
 import { parseExpense } from "./voice.js";
 import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
@@ -14,60 +16,65 @@ export function periodFor(date, sd = startDay()) {
   const start = new Date(y, m, sd), end = new Date(y, m + 1, sd - 1);
   return { start, end, from: iso(start), to: iso(end) };
 }
-const shift = (p, n) => periodFor(new Date(p.start.getFullYear(), p.start.getMonth() + n, p.start.getDate()));
-function periodLabel(p, long = true) {
+export const shift = (p, n) => periodFor(new Date(p.start.getFullYear(), p.start.getMonth() + n, p.start.getDate()));
+export function periodLabel(p, long = true) {
   if (p.start.getDate() === 1) return p.start.toLocaleDateString("en-GB", long ? { month: "long", year: "numeric" } : { month: "short" });
   return `${fmtDay(p.start)} – ${fmtDay(p.end)}`;
 }
-export function nextPayday(today = new Date()) {
-  const pd = store.model.settings.payday, t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const inMonth = (y, m) => pd === "last" || !pd ? new Date(y, m + 1, 0) : new Date(y, m, Math.min(Number(pd), new Date(y, m + 1, 0).getDate()));
-  let d = inMonth(t0.getFullYear(), t0.getMonth()); if (d < t0) d = inMonth(t0.getFullYear(), t0.getMonth() + 1);
-  return { date: d, days: Math.round((d - t0) / 864e5) };
+export const nextPayday = () => nextPay();
+export function navHTML(prefix) {
+  return `<div class="mo-nav"><button type="button" class="mo-arrow" data-${prefix}="-1" aria-label="Previous month">${icon("chev", "ic sm flip")}</button><b data-period></b><button type="button" class="mo-arrow" data-${prefix}="1" aria-label="Next month">${icon("chev", "ic sm")}</button><button type="button" class="mo-today" data-${prefix}="0" hidden>This month</button></div>`;
 }
 
 /* ---------- Totals ---------- */
-export const catName = id => id === HOME_SETUP_CAT ? "Home setup" : id === BILLS_CAT ? "Bills" : ((store.model.categories.find(c => c.id === id) || {}).name || "Uncategorised");
-export function setupEntries(p) {
-  return store.model.items.filter(i => i.done && i.price > 0 && i.boughtAt && i.boughtAt >= p.from && i.boughtAt <= p.to)
-    .map(i => ({ id: "item:" + i.id, itemId: i.id, date: i.boughtAt, amount: i.price, kind: "expense", categoryId: HOME_SETUP_CAT, payee: i.name, note: null, fromSetup: true }));
+export const catName = id => {
+  if (id === BILLS_CAT) return "Bills";
+  if (id && id.startsWith("proj:")) return (listOf(id.slice(5)) || {}).name || "Project";
+  return (store.model.categories.find(c => c.id === id) || {}).name || "Uncategorised";
+};
+/* Purchases ticked in a project (like Home setup) count as spending in the month they were bought. */
+export function projectEntries(p) {
+  return store.model.items.filter(i => i.done && i.price > 0 && i.boughtAt && i.boughtAt >= p.from && i.boughtAt <= p.to).map(i => ({ i, pr: projectOf(i.listId) })).filter(x => x.pr)
+    .map(({ i, pr }) => ({ id: "item:" + i.id, itemId: i.id, date: i.boughtAt, amount: i.price, kind: "expense", categoryId: "proj:" + pr.id, projectId: pr.id, payee: i.name, note: null, fromProject: true }));
 }
 export function totals(p) {
   const tx = store.model.transactions.filter(t => t.date >= p.from && t.date <= p.to);
-  const byCat = {}; let spend = 0, incomeTx = 0;
+  const byCat = {}; let spend = 0, incomeLoose = 0;
   tx.forEach(t => {
-    if (t.kind === "income") { incomeTx += t.amount; return; }
+    if (t.kind === "income") { if (!t.incomeId) incomeLoose += t.amount; return; }
     const v = t.kind === "refund" ? -t.amount : t.amount, k = t.categoryId || "none";
     byCat[k] = (byCat[k] || 0) + v; spend += v;
   });
-  const setup = setupEntries(p).reduce((a, e) => a + e.amount, 0);
-  const income = store.model.settings.income != null ? Number(store.model.settings.income) : (incomeTx || null);
+  const pe = projectEntries(p), byProject = {};
+  pe.forEach(e => { byProject[e.projectId] = (byProject[e.projectId] || 0) + e.amount; });
+  const projects = pe.reduce((a, e) => a + e.amount, 0);
+  const inc = incomeTotals(p), income = (inc.total + incomeLoose) || null;
   const bills = billTotals(p), billsPaid = byCat[BILLS_CAT] || 0, everyday = spend - billsPaid;
-  return { tx, byCat, spend, everyday, setup, total: spend + setup, income, incomeTx, bills, billsPaid, billsDue: bills.due };
+  return { tx, byCat, spend, everyday, projects, byProject, setup: projects, total: spend + projects, income, inc, incomeLoose, bills, billsPaid, billsDue: bills.due };
 }
-function pace(p) { const now = new Date(), t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()); if (t0 < p.start) return 0; if (t0 > p.end) return 1; const days = Math.round((p.end - p.start) / 864e5) + 1; return (Math.round((t0 - p.start) / 864e5) + 1) / days; }
+export function pace(p) { const now = new Date(), t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()); if (t0 < p.start) return 0; if (t0 > p.end) return 1; const days = Math.round((p.end - p.start) / 864e5) + 1; return (Math.round((t0 - p.start) / 864e5) + 1) / days; }
 
-/* ---------- View ---------- */
-let root = null, view = null; // view = current period
+/* ---------- Budgets view ---------- */
+let root = null, view = null;
 export function mountMoney(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
-  <header class="vh"><div><h1>Money</h1><div class="sub" id="moSub"></div></div><a class="sync" href="#more" data-sync><span class="dot"></span><span class="t"></span></a></header>
-  <div class="mo-nav"><button type="button" class="mo-arrow" data-shift="-1" aria-label="Previous month">${icon("chev", "ic sm flip")}</button><b id="moPeriod"></b><button type="button" class="mo-arrow" data-shift="1" aria-label="Next month">${icon("chev", "ic sm")}</button><button type="button" class="mo-today" data-shift="0" hidden>This month</button></div>
+  <header class="vh"><div><h1>Budgets</h1><div class="sub" id="moSub"></div></div><a class="sync" href="#more" data-sync><span class="dot"></span><span class="t"></span></a></header>
+  ${navHTML("shift")}
   <div class="mo-top">
     <section class="card mo-hero" id="moHero"></section>
     <div class="stats mo-stats"><div class="stat" id="moSpendStat"></div><div class="stat" id="moSetupStat"></div></div>
   </div>
   <div class="mo-mid">
-    <section><div class="gh"><h2>Budgets</h2><button type="button" class="link" data-open="categories">Edit</button></div><div class="grp" id="moBudgets"></div><p class="note" id="moPaceNote"></p></section>
-    <section><div class="gh"><h2>By month</h2></div><div class="card"><div class="chart" id="moColsWrap"><svg id="moCols" role="img"></svg><div class="tip"></div></div><div class="key" style="margin-top:8px"><span><i class="sw" style="background:var(--spruce)"></i>Spent</span><span id="moIncKey"><i class="ln" style="background:var(--amber)"></i>Income</span></div></div></section>
-  </div>
-  <div class="gh"><h2>Transactions</h2><span class="num" id="moTxCount"></span></div>
-  <div id="moTx"></div>`;
+    <section><div class="gh"><h2>Categories</h2><button type="button" class="link" data-open="categories">Edit</button></div><div class="grp" id="moBudgets"></div><p class="note" id="moPaceNote"></p>
+      <div id="moProjWrap"><div class="gh"><h2>Projects</h2></div><div class="grp" id="moProjects"></div></div></section>
+    <section><div class="gh"><h2>Savings goals</h2><button type="button" class="link" data-goal-add>Add</button></div><div id="moGoals"></div>
+      <div class="gh"><h2>By month</h2></div><div class="card"><div class="chart" id="moColsWrap"><svg id="moCols" role="img"></svg><div class="tip"></div></div><div class="key" style="margin-top:8px"><span><i class="sw" style="background:var(--spruce)"></i>Spent</span><span id="moIncKey"><i class="ln" style="background:var(--amber)"></i>Income</span></div></div></section>
+  </div>`;
   root.addEventListener("click", e => {
     const s = e.target.closest("[data-shift]"); if (s) { const n = Number(s.dataset.shift); view = n === 0 ? periodFor(new Date()) : shift(view, n); renderMoney(); return; }
-    const t = e.target.closest("[data-tx]"); if (t) { const tx = store.model.transactions.find(x => x.id === t.dataset.tx); if (tx && tx.billId) { const b = store.model.bills.find(x => x.id === tx.billId); if (b) { openBill(b); return; } } if (tx) openExpense({ tx }); return; }
-    const it = e.target.closest("[data-item]"); if (it) { import("./setup.js").then(m => { const item = store.model.items.find(i => i.id === it.dataset.item); if (item) m.openItem(item); }); return; }
+    if (e.target.closest("[data-goal-add]")) { openGoal(); return; }
+    const g = e.target.closest("[data-goal]"); if (g) { const goal = store.model.goals.find(x => x.id === g.dataset.goal); if (goal) openGoal(goal); return; }
     const c = e.target.closest("[data-cat]"); if (c) openCategories();
   });
 }
@@ -75,54 +82,54 @@ export function mountMoney(elm) {
 export function renderMoney() {
   if (!root) return;
   const cur = periodFor(new Date()), isCur = view.from === cur.from, isFuture = view.from > cur.from;
-  const T = totals(view), pd = nextPayday(), S = store.model.settings;
-  $("#moPeriod", root).textContent = periodLabel(view);
+  const T = totals(view), pd = nextPay();
+  $("[data-period]", root).textContent = periodLabel(view);
   $(".mo-today", root).hidden = isCur;
-  $("#moSub", root).textContent = isCur ? (S.payday ? `${pd.days === 0 ? "Payday today" : `${pd.days} day${pd.days === 1 ? "" : "s"} to payday`} · ${fmtDay(pd.date)}` : "") : (isFuture ? "Upcoming month" : "Past month");
+  $("#moSub", root).textContent = isCur ? (pd ? `${pd.days === 0 ? "Payday today" : `${pd.days} day${pd.days === 1 ? "" : "s"} to payday`} · ${fmtDay(pd.date)}` : "") : (isFuture ? "Upcoming month" : "Past month");
 
-  // hero
   const H = $("#moHero", root);
   if (T.income) {
-    const left = T.income - T.total - T.billsDue, parts = [["Bills", T.billsPaid + T.billsDue, "var(--wall)"], ["Spending", Math.max(0, T.everyday), "var(--spruce)"], ["Home setup", T.setup, "var(--amber)"], ["Left", Math.max(0, left), "var(--spruce-track)"]].filter(p => p[1] > 0);
+    const left = T.income - T.total - T.billsDue, parts = [["Bills", T.billsPaid + T.billsDue, "var(--wall)"], ["Spending", Math.max(0, T.everyday), "var(--spruce)"], ["Projects", T.projects, "var(--amber)"], ["Left", Math.max(0, left), "var(--spruce-track)"]].filter(p => p[1] > 0);
     const sum = parts.reduce((a, p) => a + p[1], 0) || 1;
-    H.innerHTML = `<div class="card-head" style="margin-bottom:4px"><h2>${isCur ? "Left until payday" : isFuture ? "Planned income" : "Left at month end"}</h2>${left < 0 ? `<span class="chip crit">Over by ${eur0(-left)}</span>` : left / T.income < .1 && isCur ? `<span class="chip warn">Running low</span>` : `<span class="chip ok">On track</span>`}</div>
-      <div class="big ${left < 0 ? "danger" : ""}">${eur0(left)}</div><div class="hint" style="font-size:13px">of ${eur0(T.income)} income${T.total ? `, after ${eur0(T.total)} spent` : ""}${T.billsDue ? ` and ${eur0(T.billsDue)} in bills still due` : ""}</div>
+    const incNote = T.inc.expected > T.inc.received && isCur ? ` (${eur0(T.inc.received)} received so far)` : "";
+    H.innerHTML = `<div class="card-head" style="margin-bottom:4px"><h2>${isCur ? "Left until payday" : isFuture ? "Planned" : "Left at month end"}</h2>${left < 0 ? `<span class="chip crit">Over by ${eur0(-left)}</span>` : left / T.income < .1 && isCur ? `<span class="chip warn">Running low</span>` : `<span class="chip ok">On track</span>`}</div>
+      <div class="big ${left < 0 ? "danger" : ""}">${eur0(left)}</div><div class="hint" style="font-size:13px">of ${eur0(T.income)} income${incNote}${T.total ? `, after ${eur0(T.total)} spent` : ""}${T.billsDue ? ` and ${eur0(T.billsDue)} in bills still due` : ""}</div>
       <div class="flow" role="img" aria-label="${esc(parts.map(p => `${p[0]} ${eur0(p[1])}`).join(", "))}">${parts.map(p => `<i style="width:${p[1] / sum * 100}%;background:${p[2]}"></i>`).join("")}</div>
       <div class="key">${parts.map(p => `<span><i class="sw" style="background:${p[2]}"></i>${p[0]} ${eur0(p[1])}</span>`).join("")}</div>`;
   } else {
     H.innerHTML = `<h2>${isCur ? "Spent this month" : "Spent"}</h2><div class="big" style="margin-top:6px">${eur0(T.total)}</div>${T.billsDue ? `<div class="hint" style="font-size:13px">${eur0(T.billsDue)} in bills still due</div>` : ""}
-      <p class="hint" style="font-size:13px;margin-top:6px"><a href="#more" class="link-inline">Add your monthly income in More</a> to see what's left until payday.</p>`;
+      <p class="hint" style="font-size:13px;margin-top:6px"><a href="#income" class="link-inline">Add your income</a> to see what's left until payday.</p>`;
   }
-  // stats
   const budgeted = store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0);
   $("#moSpendStat", root).innerHTML = `<div class="k">Everyday spending</div><div class="v">${eur0(T.everyday)}</div><div class="meter"><i style="width:${budgeted ? Math.min(100, T.everyday / budgeted * 100) : 0}%;background:${budgeted && T.everyday > budgeted ? "var(--crit)" : "var(--spruce)"}"></i></div><div class="s">${budgeted ? `of ${eur0(budgeted)} budgeted` : "No budgets set"}</div>`;
-  $("#moSetupStat", root).innerHTML = `<div class="k">Home setup</div><div class="v">${eur0(T.setup)}</div><div class="s">From your checklist this month</div>`;
+  $("#moSetupStat", root).innerHTML = `<div class="k">Bills</div><div class="v">${eur0(T.bills.total)}</div><div class="meter"><i style="width:${T.bills.total ? Math.min(100, T.billsPaid / T.bills.total * 100) : 0}%;background:var(--wall)"></i></div><div class="s">${T.bills.count ? `${T.bills.paidCount} of ${T.bills.count} paid` : "No bills this month"}</div>`;
 
-  // budgets
   const pc = isCur ? pace(view) : isFuture ? 0 : 1;
   const rows = store.model.categories.slice().sort((a, b) => a.position - b.position).map(c => ({ id: c.id, name: c.name, budget: c.budget, spent: T.byCat[c.id] || 0 }));
   if (T.byCat.none) rows.push({ id: "none", name: "Uncategorised", budget: null, spent: T.byCat.none });
   Object.keys(T.byCat).filter(k => k !== "none" && k !== BILLS_CAT && !store.model.categories.some(c => c.id === k)).forEach(k => rows.push({ id: k, name: "Deleted category", budget: null, spent: T.byCat[k] }));
-  let bh = rows.map(r => {
+  $("#moBudgets", root).innerHTML = rows.map(r => {
     const ratio = r.budget ? r.spent / r.budget : 0, over = r.budget != null && r.spent > r.budget;
     const col = over ? "var(--crit)" : ratio >= .9 ? "var(--amber)" : "var(--spruce)";
     const right = r.budget ? (over ? `<span class="danger">${eur0(r.spent - r.budget)} over</span>` : `${eur0(r.budget - r.spent)} left`) : eur0(r.spent);
     return `<button type="button" class="row r2" data-cat="${esc(r.id)}" aria-label="${esc(r.name)}: ${eur(r.spent)} spent${r.budget ? ` of ${eur(r.budget)}` : ""}"><span class="rt">${esc(r.name)}<small class="num">${r.budget ? `${eur0(r.spent)} of ${eur0(r.budget)}` : "No budget"}</small></span><span class="rv">${right}</span>
       ${r.budget ? `<span class="bullet"><i style="width:${Math.min(100, ratio * 100)}%;background:${col}"></i>${pc > 0 && pc < 1 ? `<span class="pace" style="left:${pc * 100}%"></span>` : ""}</span>` : ""}</button>`;
-  }).join("");
-  if (T.bills.count || T.billsPaid) bh = `<a class="row r2" href="#plan" aria-label="Bills: ${eur(T.billsPaid)} paid of ${eur(T.bills.total)}"><span class="rt">Bills<small class="num">${eur0(T.billsPaid)} paid of ${eur0(T.bills.total)}</small></span><span class="rv">${T.billsDue ? `${eur0(T.billsDue)} due` : "All paid"}</span><span class="bullet"><i style="width:${T.bills.total ? Math.min(100, T.billsPaid / T.bills.total * 100) : 100}%;background:var(--wall)"></i></span></a>` + bh;
-  if (T.setup) bh += `<a class="row" href="#setup"><span class="rt">Home setup<small>From your checklist</small></span><span class="rv">${eur0(T.setup)}</span></a>`;
-  $("#moBudgets", root).innerHTML = bh || `<div class="row"><span class="rt muted">No categories yet</span></div>`;
+  }).join("") || `<div class="row"><span class="rt muted">No categories yet</span></div>`;
   $("#moPaceNote", root).textContent = pc > 0 && pc < 1 ? "The line on each bar marks where you'd be at an even pace through the month." : "";
 
-  drawCols(); renderTx(T);
+  const projects = topLists().filter(l => l.kind === "project");
+  $("#moProjWrap", root).hidden = !projects.length;
+  $("#moProjects", root).innerHTML = projects.map(pr => { const total = projectSpent(pr.id), month = T.byProject[pr.id] || 0, b = Number(pr.budget) || 0;
+    return `<a class="row r2" href="#list/${encodeURIComponent(pr.id)}"><span class="rt">${esc(pr.name)}<small class="num">${eur0(month)} this month · ${eur0(total)}${b ? ` of ${eur0(b)}` : ""} in total</small></span><span class="rv">${b ? (total > b ? `<span class="danger">${eur0(total - b)} over</span>` : `${eur0(b - total)} left`) : ""}</span>${b ? `<span class="bullet"><i style="width:${Math.min(100, total / b * 100)}%;background:${total > b ? "var(--crit)" : "var(--amber)"}"></i></span>` : ""}</a>`; }).join("");
+  $("#moGoals", root).innerHTML = goalsHTML();
+  drawCols();
 }
 
 function drawCols() {
   const wrap = $("#moColsWrap", root), svg = $("#moCols", root), tip = $(".tip", wrap); svg.innerHTML = ""; hideTip(tip);
   if (wrap.offsetParent === null) return;
   const ps = [-5, -4, -3, -2, -1, 0].map(n => shift(view, n)).map(p => ({ p, t: totals(p) }));
-  const income = store.model.settings.income != null ? Number(store.model.settings.income) : null;
+  const income = totals(view).income;
   $("#moIncKey", root).hidden = !income;
   const W = Math.max(260, wrap.clientWidth), H = 200, m = { l: 48, r: income ? 56 : 12, t: 20, b: 24 };
   const maxV = Math.max(income || 0, ...ps.map(x => x.t.total)) * 1.12 || 100;
@@ -137,29 +144,44 @@ function drawCols() {
     el("text", { x: cx, y: H - 6, "text-anchor": "middle" }, ax).textContent = periodLabel(p, false).split(" – ")[0].replace(/^\d+ /, "");
     if (last && t.total > 0) el("text", { x: cx, y: y - 7, "text-anchor": "middle", style: "font:600 12px var(--body);fill:var(--ink);font-variant-numeric:tabular-nums" }, svg).textContent = eur0(t.total);
     const hit = el("rect", { x: m.l + bw * i, y: m.t, width: bw, height: H - m.t - m.b, fill: "transparent" }, svg);
-    const show = () => { const s = svg.getBoundingClientRect().width / W; showTip(tip, `<b>${esc(periodLabel(p))}</b><br>${eur(t.total)} spent${t.setup ? ` (${eur0(t.setup)} home setup)` : ""}${income ? `<br>${t.total <= income ? eur0(income - t.total) + " left" : eur0(t.total - income) + " over"}` : ""}`, Math.min(Math.max(cx * s, 80), W * s - 80), Math.max(y, m.t + 30) * s); };
+    const show = () => { const s = svg.getBoundingClientRect().width / W; showTip(tip, `<b>${esc(periodLabel(p))}</b><br>${eur(t.total)} spent${t.projects ? ` (${eur0(t.projects)} on projects)` : ""}${income ? `<br>${t.total <= income ? eur0(income - t.total) + " left" : eur0(t.total - income) + " over"}` : ""}`, Math.min(Math.max(cx * s, 80), W * s - 80), Math.max(y, m.t + 30) * s); };
     hit.addEventListener("mousemove", show); hit.addEventListener("touchstart", show, { passive: true }); hit.addEventListener("mouseleave", () => hideTip(tip));
   });
   if (income) { el("line", { x1: m.l, x2: W - m.r, y1: Y(income), y2: Y(income), stroke: "var(--amber)", "stroke-width": 2 }, svg); el("text", { x: W - m.r + 6, y: Y(income) + 4, style: "font:12px var(--body);fill:var(--ink-2)" }, svg).textContent = "Income"; }
 }
 
+/* ---------- All spending ---------- */
+let sroot = null, sview = null;
 function dayLabel(d) {
   const t = todayISO(), y = new Date(); y.setDate(y.getDate() - 1);
   if (d === t) return "Today"; if (d === iso(y)) return "Yesterday";
   return parseDay(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
-function renderTx(T) {
-  const all = [...T.tx.map(t => ({ ...t })), ...setupEntries(view)].sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-  $("#moTxCount", root).textContent = all.length ? `${all.length}` : "";
-  if (!all.length) { $("#moTx", root).innerHTML = `<div class="empty">No spending recorded for ${esc(periodLabel(view))}. Tap <b>+</b> to add an expense, or scan a receipt.</div>`; return; }
+export function mountSpending(elm) {
+  sroot = elm; sview = periodFor(new Date());
+  sroot.innerHTML = `<header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1>All spending</h1><div class="sub" id="spSub"></div></div></header>
+    ${navHTML("sshift")}<div id="moTx"></div>`;
+  sroot.addEventListener("click", e => {
+    const s = e.target.closest("[data-sshift]"); if (s) { const n = Number(s.dataset.sshift); sview = n === 0 ? periodFor(new Date()) : shift(sview, n); renderSpending(); return; }
+    const t = e.target.closest("[data-tx]"); if (t) { const tx = store.model.transactions.find(x => x.id === t.dataset.tx); if (tx && tx.billId) { const b = store.model.bills.find(x => x.id === tx.billId); if (b) { openBill(b); return; } } if (tx && tx.incomeId) { import("./income.js").then(m => m.openSource(store.model.income.find(x => x.id === tx.incomeId))); return; } if (tx) openExpense({ tx }); return; }
+    const it = e.target.closest("[data-item]"); if (it) { import("./setup.js").then(m => { const item = store.model.items.find(i => i.id === it.dataset.item); if (item) m.openItem(item); }); }
+  });
+}
+export function renderSpending() {
+  if (!sroot) return;
+  const T = totals(sview), cur = periodFor(new Date());
+  $("[data-period]", sroot).textContent = periodLabel(sview); $(".mo-today", sroot).hidden = sview.from === cur.from;
+  $("#spSub", sroot).textContent = `${eur(T.total)} spent${T.inc.received + T.incomeLoose ? ` · ${eur0(T.inc.received + T.incomeLoose)} income` : ""}`;
+  const all = [...T.tx.map(t => ({ ...t })), ...projectEntries(sview)].sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  if (!all.length) { $("#moTx", sroot).innerHTML = `<div class="empty">Nothing recorded for ${esc(periodLabel(sview))}. Tap <b>+</b> to add an expense or scan a receipt.</div>`; return; }
   let html = "", day = null;
   all.forEach(t => {
     if (t.date !== day) { if (day) html += `</div>`; day = t.date; const sum = all.filter(x => x.date === day && x.kind !== "income").reduce((a, x) => a + (x.kind === "refund" ? -x.amount : x.amount), 0); html += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span><span class="num">${eur(sum)}</span></div><div class="grp">`; }
     const sign = t.kind === "expense" ? "" : "+", title = t.payee || catName(t.categoryId);
-    const sub = [t.payee ? catName(t.categoryId) : null, t.note, t.kind !== "expense" ? (t.kind === "income" ? "Income" : "Refund") : null, t.source === "voice" ? "Spoken" : null].filter(Boolean).join(" · ");
-    html += `<button type="button" class="row" ${t.fromSetup ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind !== "expense" ? " good" : ""}">${sign}${eur(t.amount)}</span></button>`;
+    const sub = [t.payee ? (t.kind === "income" ? "Income" : catName(t.categoryId)) : null, t.note, t.kind === "refund" ? "Refund" : null].filter(Boolean).join(" · ");
+    html += `<button type="button" class="row" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind !== "expense" ? " good" : ""}">${sign}${eur(t.amount)}</span></button>`;
   });
-  $("#moTx", root).innerHTML = html + `</div>`;
+  $("#moTx", sroot).innerHTML = html + `</div>`;
 }
 
 /* ---------- Add / edit expense ---------- */

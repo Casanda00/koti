@@ -10,23 +10,26 @@ export const sync = { status: "local", text: "Saved on this device", detail: "",
 export function onSync(fn) { listeners.add(fn); fn(sync); return () => listeners.delete(fn); }
 function setStatus(status, text, detail = "") { Object.assign(sync, { status, text, detail }); listeners.forEach(f => f(sync)); }
 
-const TABLES = ["lists", "items", "categories", "transactions", "bills", "goals", "settings"];
-const ROWS = ["lists", "items", "categories", "transactions", "bills", "goals"];
+const TABLES = ["lists", "items", "categories", "transactions", "bills", "goals", "income", "settings"];
+const ROWS = ["lists", "items", "categories", "transactions", "bills", "goals", "income"];
+const TABLE = k => ({ income: "income_sources" }[k] || k);   // model key → database table
 const t = s => (s ? Date.parse(s) : 0);
-const rowOfList = (l, uid) => ({ user_id: uid, id: l.id, name: l.name, room: l.room, position: l.position, deleted: !!l.deleted, updated_at: l.updatedAt });
-const rowOfItem = (i, uid) => ({ user_id: uid, id: i.id, list_id: i.listId, name: i.name, priority: i.priority, done: !!i.done, price: i.price, bought_at: i.boughtAt, position: i.position, deleted: !!i.deleted, updated_at: i.updatedAt });
-const listFromRow = r => ({ id: r.id, name: r.name, room: r.room, position: r.position, updatedAt: r.updated_at });
+const rowOfList = (l, uid) => ({ user_id: uid, id: l.id, name: l.name, room: l.room, kind: l.kind || "room", parent_id: l.parentId || null, budget: l.budget ?? null, extra_spend: l.extraSpend || 0, plan: l.plan || null, position: l.position, deleted: !!l.deleted, updated_at: l.updatedAt });
+const rowOfItem = (i, uid) => ({ user_id: uid, id: i.id, list_id: i.listId, name: i.name, priority: i.priority, done: !!i.done, price: i.price, bought_at: i.boughtAt, qty: i.qty ?? null, note: i.note || null, position: i.position, deleted: !!i.deleted, updated_at: i.updatedAt });
+const listFromRow = r => ({ id: r.id, name: r.name, room: r.room, kind: r.kind || "room", parentId: r.parent_id || null, budget: r.budget == null ? null : Number(r.budget), extraSpend: Number(r.extra_spend) || 0, plan: r.plan || null, position: r.position, updatedAt: r.updated_at });
+const incOfRow = r => ({ id: r.id, name: r.name, amount: r.amount == null ? null : Number(r.amount), frequency: r.frequency, payDay: r.pay_day, expectedDate: r.expected_date, payer: r.payer, active: r.active !== false, position: r.position, updatedAt: r.updated_at });
+const rowOfInc = (x, uid) => ({ user_id: uid, id: x.id, name: x.name, amount: x.amount, frequency: x.frequency, pay_day: x.payDay, expected_date: x.expectedDate, payer: x.payer, active: x.active !== false, position: x.position, deleted: !!x.deleted, updated_at: x.updatedAt });
 const catOfRow = r => ({ id: r.id, name: r.name, budget: r.budget == null ? null : Number(r.budget), position: r.position, updatedAt: r.updated_at });
 const rowOfCat = (c, uid) => ({ user_id: uid, id: c.id, name: c.name, budget: c.budget, position: c.position, deleted: !!c.deleted, updated_at: c.updatedAt });
-const txOfRow = r => ({ id: r.id, date: r.date, amount: Number(r.amount), kind: r.kind, categoryId: r.category_id, payee: r.payee, note: r.note, source: r.source, receiptPath: r.receipt_path, bankRef: r.bank_ref, billId: r.bill_id || null, billDue: r.bill_due || null, updatedAt: r.updated_at });
-const rowOfTx = (t, uid) => ({ user_id: uid, id: t.id, date: t.date, amount: t.amount, kind: t.kind, category_id: t.categoryId, payee: t.payee, note: t.note, source: t.source, receipt_path: t.receiptPath, bank_ref: t.bankRef, bill_id: t.billId || null, bill_due: t.billDue || null, deleted: !!t.deleted, updated_at: t.updatedAt });
+const txOfRow = r => ({ id: r.id, date: r.date, amount: Number(r.amount), kind: r.kind, categoryId: r.category_id, payee: r.payee, note: r.note, source: r.source, receiptPath: r.receipt_path, bankRef: r.bank_ref, billId: r.bill_id || null, billDue: r.bill_due || null, incomeId: r.income_id || null, incomeDue: r.income_due || null, updatedAt: r.updated_at });
+const rowOfTx = (t, uid) => ({ user_id: uid, id: t.id, date: t.date, amount: t.amount, kind: t.kind, category_id: t.categoryId, payee: t.payee, note: t.note, source: t.source, receipt_path: t.receiptPath, bank_ref: t.bankRef, bill_id: t.billId || null, bill_due: t.billDue || null, income_id: t.incomeId || null, income_due: t.incomeDue || null, deleted: !!t.deleted, updated_at: t.updatedAt });
 const billOfRow = r => ({ id: r.id, name: r.name, amount: Number(r.amount), frequency: r.frequency, dueDay: r.due_day, anchorMonth: r.anchor_month, autopay: !!r.autopay, autoThrough: r.auto_through, active: r.active !== false, payee: r.payee, note: r.note, position: r.position, updatedAt: r.updated_at });
 const rowOfBill = (b, uid) => ({ user_id: uid, id: b.id, name: b.name, amount: b.amount, frequency: b.frequency, due_day: b.dueDay, anchor_month: b.anchorMonth, autopay: !!b.autopay, auto_through: b.autoThrough, active: b.active !== false, payee: b.payee, note: b.note, position: b.position, deleted: !!b.deleted, updated_at: b.updatedAt });
 const goalOfRow = r => ({ id: r.id, name: r.name, target: Number(r.target), saved: Number(r.saved), targetDate: r.target_date, monthly: r.monthly == null ? null : Number(r.monthly), position: r.position, updatedAt: r.updated_at });
 const rowOfGoal = (g, uid) => ({ user_id: uid, id: g.id, name: g.name, target: g.target, saved: g.saved, target_date: g.targetDate, monthly: g.monthly, position: g.position, deleted: !!g.deleted, updated_at: g.updatedAt });
-const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, transactions: rowOfTx, bills: rowOfBill, goals: rowOfGoal };
-const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow, bills: billOfRow, goals: goalOfRow };
-const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, position: r.position, updatedAt: r.updated_at });
+const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, transactions: rowOfTx, bills: rowOfBill, goals: rowOfGoal, income: rowOfInc };
+const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow, bills: billOfRow, goals: goalOfRow, income: incOfRow };
+const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, qty: r.qty == null ? null : Number(r.qty), note: r.note || null, position: r.position, updatedAt: r.updated_at });
 
 /* ---------- Apply rows from the server ---------- */
 export function applyRows(kind, rows) {
@@ -72,7 +75,7 @@ export async function pull() {
   for (const kind of TABLES) {
     let since = store.meta.lastSync[kind];
     for (;;) {
-      let q = c.from(kind).select("*").order("synced_at", { ascending: true }).limit(1000);
+      let q = c.from(TABLE(kind)).select("*").order("synced_at", { ascending: true }).limit(1000);
       if (since) q = q.gt("synced_at", since);
       const { data, error } = await q;
       if (error) throw error;
@@ -106,7 +109,7 @@ export async function flush() {
   setStatus("busy", "Saving…");
   try {
     const send = async (table, batch) => { for (let k = 0; k < batch.length; k += 500) { const { error } = await c.from(table).upsert(batch.slice(k, k + 500).map(b => b.row), { onConflict: "user_id,id" }); if (error) throw error; } };
-    for (const k of ROWS) if (batches[k].length) await send(k, batches[k]);
+    for (const k of ROWS) if (batches[k].length) await send(TABLE(k), batches[k]);
     if (settings) { const { error } = await c.from("settings").upsert(settings.row, { onConflict: "user_id" }); if (error) throw error; }
     const settle = (kind, sent) => sent.forEach(s => {
       const cur = store.model[kind].find(x => x.id === s.id) || (store.meta.tomb && store.meta.tomb[kind] && store.meta.tomb[kind][s.id]);
@@ -141,12 +144,13 @@ async function begin() {
       store.meta.owner = uid; store.markAllPending(); // first device: upload what's here
     } else {
       if (store.hasUserData()) { try { localStorage.setItem("koti.beforeSignIn", JSON.stringify(store.model)); } catch {} }
-      store.resetLocal({ version: 3, lists: [], items: [], categories: [], transactions: [], bills: [], goals: [], settings: {} });
+      store.resetLocal({ version: 3, lists: [], items: [], categories: [], transactions: [], bills: [], goals: [], income: [], settings: {} });
       store.meta.owner = uid; store.persist();
     }
   }
   await pull();
   store.seedCategoriesIfEmpty();   // first time Money runs for this account
+  store.upgrade();                 // older data on the server that hasn't been moved over yet
   await flush();
   subscribe();
 }
@@ -154,7 +158,7 @@ function subscribe() {
   const c = sync.client, uid = sync.user.id;
   if (channel) c.removeChannel(channel);
   channel = c.channel("koti-" + uid);
-  TABLES.forEach(kind => channel.on("postgres_changes", { event: "*", schema: "public", table: kind, filter: `user_id=eq.${uid}` }, p => { if (p.new) applyRows(kind, [p.new]); }));
+  TABLES.forEach(kind => channel.on("postgres_changes", { event: "*", schema: "public", table: TABLE(kind), filter: `user_id=eq.${uid}` }, p => { if (p.new) applyRows(kind, [p.new]); }));
   channel.subscribe();
 }
 async function start() {

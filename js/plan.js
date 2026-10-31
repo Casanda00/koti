@@ -1,4 +1,4 @@
-// Plan view: bills and subscriptions on a calendar, paid tracking, autopay, savings goals.
+// Bills (a screen under Expenses): calendar, paid tracking, autopay. Savings goals (shown in Budgets).
 import { store, todayISO, BILLS_CAT, FREQS } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { periodFor } from "./money.js";
@@ -87,16 +87,14 @@ let root = null, view = null, pickedDay = null;
 export function mountPlan(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
-  <header class="vh"><div><h1>Plan</h1><div class="sub" id="plSub"></div></div><a class="sync" href="#more" data-sync><span class="dot"></span><span class="t"></span></a></header>
+  <header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1>Bills</h1><div class="sub" id="plSub"></div></div><button type="button" class="btn-sm" data-act="add-bill">${icon("plus", "ic sm")} Add bill</button></header>
   <div class="mo-nav"><button type="button" class="mo-arrow" data-pshift="-1" aria-label="Previous month">${icon("chev", "ic sm flip")}</button><b id="plPeriod"></b><button type="button" class="mo-arrow" data-pshift="1" aria-label="Next month">${icon("chev", "ic sm")}</button><button type="button" class="mo-today" data-pshift="0" hidden>This month</button></div>
   <div class="pl-top">
     <section class="card" id="plSummary"></section>
     <section class="card"><div class="cal" id="plCal" role="grid" aria-label="Bills this month"></div><div class="key" style="margin-top:10px"><span><i class="dotk" style="background:var(--amber)"></i>Due</span><span><i class="dotk" style="background:var(--spruce)"></i>Paid</span><span><i class="dotk" style="background:var(--crit)"></i>Overdue</span></div></section>
   </div>
-  <div class="gh"><h2>Bills and subscriptions</h2><button type="button" class="link" data-act="add-bill">Add</button></div>
-  <div id="plBills"></div>
-  <div class="gh"><h2>Savings goals</h2><button type="button" class="link" data-act="add-goal">Add</button></div>
-  <div id="plGoals"></div>`;
+  <div class="gh"><h2>Bills and subscriptions</h2></div>
+  <div id="plBills"></div>`;
   root.addEventListener("click", e => {
     const s = e.target.closest("[data-pshift]"); if (s) { const n = Number(s.dataset.pshift); view = n === 0 ? periodFor(new Date()) : periodFor(new Date(view.start.getFullYear(), view.start.getMonth() + n, view.start.getDate())); pickedDay = null; renderPlanView(); return; }
     const a = e.target.closest("[data-act]"); if (a) { if (a.dataset.act === "add-bill") openBill(); if (a.dataset.act === "add-goal") openGoal(); return; }
@@ -165,13 +163,16 @@ export function renderPlanView() {
   }
   $("#plBills", root).innerHTML = bh;
 
-  // goals
+}
+
+/* Savings goals as rows, for the Budgets screen. */
+export function goalsHTML() {
   const goals = store.model.goals.slice().sort((a, b) => a.position - b.position);
   const planned = goals.reduce((a, g) => a + goalPlan(g).need, 0);
-  $("#plGoals", root).innerHTML = goals.length ? `<div class="grp">${goals.map(g => { const pl = goalPlan(g), pct = Math.min(100, g.saved / g.target * 100);
+  return goals.length ? `<div class="grp">${goals.map(g => { const pl = goalPlan(g), pct = Math.min(100, g.saved / g.target * 100);
     return `<button type="button" class="row r2" data-goal="${esc(g.id)}" aria-label="${esc(g.name)}: ${eur(g.saved)} of ${eur(g.target)}. ${esc(pl.text)}"><span class="rt">${esc(g.name)}<small class="${pl.state === "behind" ? "warn-t" : ""}">${esc(pl.text)}</small></span><span class="rv num">${eur0(g.saved)} / ${eur0(g.target)}</span><span class="bullet"><i style="width:${pct}%;background:${pl.state === "done" ? "var(--good)" : "var(--spruce)"}"></i></span></button>`; }).join("")}</div>
     ${planned ? `<p class="note">Your goals ask for about ${eur0(planned)} a month.</p>` : ""}`
-    : `<div class="empty" style="text-align:left"><b style="color:var(--ink)">Save toward something</b><p style="margin:6px 0 12px">An emergency fund, a trip, a new laptop. Set a target and Koti works out the monthly amount.</p><button type="button" class="btn primary" data-act="add-goal" style="width:auto;display:inline-block;padding:10px 16px">Add a goal</button></div>`;
+    : `<div class="empty" style="text-align:left"><b style="color:var(--ink)">Save toward something</b><p style="margin:6px 0 12px">An emergency fund, a trip, a new laptop. Set a target and Koti works out the monthly amount.</p><button type="button" class="btn primary" data-goal-add style="width:auto;display:inline-block;padding:10px 16px">Add a goal</button></div>`;
 }
 
 /* ---------- Bill sheet ---------- */

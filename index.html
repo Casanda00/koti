@@ -40,6 +40,10 @@
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
   <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-budgets" viewBox="0 0 24 24"><path d="M4 20V10M9.3 20V5M14.7 20v-8M20 20v-5"/></symbol>
+  <symbol id="i-income" viewBox="0 0 24 24"><path d="M12 20V8m0 0-4 4m4-4 4 4M5 4h14"/></symbol>
+  <symbol id="i-expenses" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5M5 14v6h14v-6"/></symbol>
   <symbol id="i-table" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 4.5v15"/></symbol>
 </svg>
 
@@ -47,26 +51,30 @@
 <div class="app">
   <aside class="side" aria-label="Main">
     <div class="brand"><svg class="mark" aria-hidden="true"><use href="#kotiMark"/></svg><b translate="no">Koti</b></div>
-    <a class="side-link" href="#setup" data-route="setup"><svg class="ic"><use href="#i-setup"/></svg>Home setup</a>
-    <a class="side-link" href="#money" data-route="money"><svg class="ic"><use href="#i-money"/></svg>Money</a>
-    <a class="side-link" href="#plan" data-route="plan"><svg class="ic"><use href="#i-plan"/></svg>Plan</a>
+    <a class="side-link" href="#budgets" data-route="budgets"><svg class="ic"><use href="#i-budgets"/></svg>Budgets</a>
+    <a class="side-link" href="#income" data-route="income"><svg class="ic"><use href="#i-income"/></svg>Income</a>
+    <a class="side-link" href="#expenses" data-route="expenses"><svg class="ic"><use href="#i-expenses"/></svg>Expenses</a>
     <a class="side-link" href="#more" data-route="more"><svg class="ic"><use href="#i-more"/></svg>More</a>
     <button class="side-add" type="button" data-action="add"><svg class="ic sm"><use href="#i-plus"/></svg>Add</button>
     <div class="side-foot" id="sideFoot"></div>
   </aside>
 
   <main class="views" id="main">
-    <section class="view" id="view-setup" data-view="setup" hidden></section>
-    <section class="view" id="view-money" data-view="money" hidden></section>
-    <section class="view" id="view-plan" data-view="plan" hidden></section>
+    <section class="view" id="view-budgets" data-view="budgets" hidden></section>
+    <section class="view" id="view-income" data-view="income" hidden></section>
+    <section class="view" id="view-expenses" data-view="expenses" hidden></section>
+    <section class="view" id="view-spending" data-view="spending" hidden></section>
+    <section class="view" id="view-bills" data-view="bills" hidden></section>
+    <section class="view" id="view-list" data-view="list" hidden></section>
+    <section class="view" id="view-project" data-view="project" hidden></section>
     <section class="view" id="view-more" data-view="more" hidden></section>
   </main>
 
   <nav class="tabbar" aria-label="Main">
-    <a class="tab" href="#setup" data-route="setup"><svg class="ic"><use href="#i-setup"/></svg>Setup</a>
-    <a class="tab" href="#money" data-route="money"><svg class="ic"><use href="#i-money"/></svg>Money</a>
+    <a class="tab" href="#budgets" data-route="budgets"><svg class="ic"><use href="#i-budgets"/></svg>Budgets</a>
+    <a class="tab" href="#income" data-route="income"><svg class="ic"><use href="#i-income"/></svg>Income</a>
     <button class="tab-add" type="button" data-action="add" aria-label="Add"><svg class="ic"><use href="#i-plus"/></svg></button>
-    <a class="tab" href="#plan" data-route="plan"><svg class="ic"><use href="#i-plan"/></svg>Plan</a>
+    <a class="tab" href="#expenses" data-route="expenses"><svg class="ic"><use href="#i-expenses"/></svg>Expenses</a>
     <a class="tab" href="#more" data-route="more"><svg class="ic"><use href="#i-more"/></svg>More</a>
   </nav>
 </div>

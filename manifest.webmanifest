@@ -3,20 +3,62 @@
   "short_name": "Koti",
   "description": "Set up your new home and plan your money.",
   "id": "./",
-  "start_url": "./#setup",
+  "start_url": "./#budgets",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#eef1ee",
   "theme_color": "#eef1ee",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
   "shortcuts": [
-    { "name": "Add expense", "url": "./?add=expense#money", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Scan a receipt", "url": "./?add=expense&mode=scan#money", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Add checklist item", "url": "./?add=item#setup", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+    {
+      "name": "Scan a receipt",
+      "url": "./?add=expense&mode=scan#budgets",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Add expense",
+      "url": "./?add=expense#budgets",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Add to a list",
+      "url": "./?add=item#expenses",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

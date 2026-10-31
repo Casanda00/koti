@@ -1,5 +1,5 @@
 // More view: account, month settings, home setup settings, data tools, install help.
-import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO } from "./data.js";
+import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO, roomsOf, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount } from "./sync.js";
 import { openCategories, openReceiptsList } from "./money.js";
@@ -33,9 +33,9 @@ export function renderMore() {
   <div class="grp">
     <label class="row"><span class="rt">Budget month starts</span><select class="inl" data-set="monthStart">${days(S.monthStart)}</select>${chev}</label>
     <label class="row"><span class="rt">Payday</span><select class="inl" data-set="payday">${days(S.payday, `<option value="last"${S.payday === "last" ? " selected" : ""}>Last day</option>`)}</select>${chev}</label>
-    <label class="row"><span class="rt">Monthly income</span><input class="inl" data-set="income" data-money inputmode="decimal" placeholder="€0" value="${moneyField(S.income)}" autocomplete="off"></label>
+    <a class="row" href="#income"><span class="rt">Income<small>Salary and other sources</small></span>${chev}</a>
   </div>
-  <p class="note">Money uses these to show what's left until payday.</p>
+  <p class="note">Budgets uses these to show what's left until payday.</p>
   <div class="grp" style="margin-top:10px">
     <button type="button" class="row" data-open="categories"><span class="ico g">${icon("money")}</span><span class="rt">Categories and budgets<small>${store.model.categories.length} categories · ${eur(store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0)).replace(/\.00$/, "")} a month</small></span>${chev}</button>
     <label class="row"><span class="rt">Keep receipt photos<small>Off: scans are only read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
@@ -43,13 +43,12 @@ export function renderMore() {
 
   <div class="gh"><h2>Home setup</h2></div>
   <div class="grp">
-    <label class="row"><span class="rt">Shopping budget</span><input class="inl" data-set="budget" data-money inputmode="decimal" placeholder="€0" value="${moneyField(S.budget || "")}" autocomplete="off"></label>
-    <label class="row"><span class="rt">Other spending<small>Delivery fees and costs that aren't items</small></span><input class="inl" data-set="extraSpend" data-money inputmode="decimal" placeholder="€0" value="${moneyField(S.extraSpend || "")}" autocomplete="off"></label>
+    <a class="row" href="#list/proj-home-setup"><span class="rt">Budget and spending<small>Set on the Home setup project</small></span>${chev}</a>
     <label class="row"><span class="rt">Moved in</span><input class="inl" data-set="movedIn" type="date" value="${esc(S.movedIn || "")}"></label>
-    <button type="button" class="row" data-open="lists"><span class="ico g">${icon("list")}</span><span class="rt">Lists and rooms<small>${store.model.lists.length} lists</small></span>${chev}</button>
+    <button type="button" class="row" data-open="lists"><span class="ico g">${icon("list")}</span><span class="rt">Home setup rooms<small>${roomsOf(HOME_PROJECT).length} room lists</small></span>${chev}</button>
     <button type="button" class="row" data-open="notes"><span class="ico a">${icon("note")}</span><span class="rt">Moving-in notes<small>${S.notes ? esc(S.notes.split("\n")[0].slice(0, 48)) : "Measurements, delivery times…"}</small></span>${chev}</button>
   </div>
-  ${S.carriedSpend ? `<p class="note warn">Your old spending total (${eur(S.extraSpend)}) was moved to Other spending. Lower it as you add prices to items, so nothing is counted twice.</p>` : ""}
+  ${S.carriedSpend && (listOf(HOME_PROJECT) || {}).extraSpend ? `<p class="note warn">Your old spending total (${eur(listOf(HOME_PROJECT).extraSpend)}) is in the Home setup project's Other spending. Lower it as you add prices to items, so nothing is counted twice.</p>` : ""}
 
   <div class="gh"><h2>Data</h2></div>
   <div class="grp">
@@ -144,10 +143,10 @@ async function doSignOut() {
 /* ---------- Lists and rooms ---------- */
 const roomOptions = sel => ZONE_ORDER.map(k => `<option value="${k}"${k === sel ? " selected" : ""}>${esc(ZONES[k].name)}</option>`).join("");
 function openLists() {
-  openSheet({ title: "Lists and rooms", left: "Done", body: B => {
+  openSheet({ title: "Home setup rooms", left: "Done", body: B => {
     const draw = () => {
       B.innerHTML = `<p class="note" style="margin-top:0">Choose where each list sits on your floor plan. Tap a name to rename it.</p>
-        <div class="grp">${sortedLists().map(l => `<div class="row" data-l="${esc(l.id)}"><input class="inl" style="text-align:left;flex:1;max-width:none;color:var(--ink)" value="${esc(l.name)}" aria-label="List name" data-f="name" maxlength="120"><select class="inl" data-f="room" aria-label="Room for ${esc(l.name)}">${roomOptions(l.room)}</select><button type="button" class="x" data-f="del" aria-label="Delete ${esc(l.name)}" style="color:var(--muted);width:32px;height:32px">${icon("trash", "ic sm")}</button></div>`).join("")}</div>
+        <div class="grp">${roomsOf(HOME_PROJECT).map(l => `<div class="row" data-l="${esc(l.id)}"><input class="inl" style="text-align:left;flex:1;max-width:none;color:var(--ink)" value="${esc(l.name)}" aria-label="List name" data-f="name" maxlength="120"><select class="inl" data-f="room" aria-label="Room for ${esc(l.name)}">${roomOptions(l.room)}</select><button type="button" class="x" data-f="del" aria-label="Delete ${esc(l.name)}" style="color:var(--muted);width:32px;height:32px">${icon("trash", "ic sm")}</button></div>`).join("")}</div>
         <div class="field" style="margin-top:6px"><label for="nlName">New list</label><input class="inp" id="nlName" placeholder="e.g. Balcony…" maxlength="120" autocomplete="off"></div>
         <div class="field"><label for="nlRoom">Room</label><select class="inp" id="nlRoom">${roomOptions("PARVEKE")}</select></div>
         <button type="button" class="btn primary" id="nlAdd">Add list</button>`;
@@ -159,8 +158,8 @@ function openLists() {
           if (n && !confirm(`Delete "${l.name}" and its ${n} items?`)) return; store.deleteList(id); draw(); });
       });
       $("#nlAdd", B).onclick = () => { const n = $("#nlName", B).value.trim(); if (!n) { $("#nlName", B).focus(); return; }
-        if (store.model.lists.some(l => l.name.toLowerCase() === n.toLowerCase())) { toast(`You already have a list called "${n}"`); return; }
-        store.addList(n, $("#nlRoom", B).value); toast(`Added ${n}`); draw(); };
+        if (roomsOf(HOME_PROJECT).some(l => l.name.toLowerCase() === n.toLowerCase())) { toast(`You already have a room list called "${n}"`); return; }
+        store.addList(n, $("#nlRoom", B).value, { kind: "room", parentId: HOME_PROJECT }); toast(`Added ${n}`); draw(); };
     };
     draw();
   } });
@@ -202,9 +201,16 @@ function doExport() {
   a.href = URL.createObjectURL(blob); a.download = `koti-backup-${todayISO()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 function doReset() {
-  if (!confirm("Start over with the original checklist? Ticks, prices, your own items and notes are cleared everywhere you're signed in.")) return;
-  const budget = store.model.settings.budget; const m = seedModel(); m.settings.budget = budget;
-  store.replaceAll(m); toast("Started over");
+  if (!confirm("Start Home setup over with the original checklist? Its ticks, prices, your own items there and your notes are cleared everywhere you're signed in. Other lists, bills, goals, income and expenses stay.")) return;
+  const seed = seedModel(), cur = store.model, old = listOf(HOME_PROJECT);
+  const homeIds = new Set([HOME_PROJECT, ...roomsOf(HOME_PROJECT).map(r => r.id)]);
+  const seedHome = seed.lists.filter(l => l.id === HOME_PROJECT || l.parentId === HOME_PROJECT), seedHomeIds = new Set(seedHome.map(l => l.id));
+  const hp = seedHome.find(l => l.id === HOME_PROJECT); if (old && hp) { hp.budget = old.budget; hp.name = old.name; }
+  const keepLists = cur.lists.filter(l => !homeIds.has(l.id) && !seedHomeIds.has(l.id));
+  const keepIds = new Set(keepLists.map(l => l.id));
+  // Only the Home setup lists and items are replaced; categories, expenses, bills, goals and income are left out so they stay as they are.
+  store.replaceAll({ version: 3, lists: [...seedHome, ...keepLists], items: [...seed.items.filter(i => seedHomeIds.has(i.listId)), ...cur.items.filter(i => keepIds.has(i.listId))], settings: { ...cur.settings, notes: "" } });
+  toast("Home setup started over");
 }
 
 /* ---------- Install ---------- */
