@@ -1,24 +1,35 @@
 # Koti
 
-A tracker for setting up a new home: the apartment's floor plan fills room by room as items are bought, with budget, spending charts and two-way sync to Google Sheets.
+A phone-first app for setting up a new home and, in later steps, planning money. It installs to the home screen from the browser, works offline, and syncs between devices through Supabase.
 
-**Open it:** the GitHub Pages address for this repository (Settings → Pages).
+**Open it:** https://casanda00.github.io/koti/
+
+## How it fits together
+
+| Part | Where |
+|---|---|
+| App (screens, logic) | This repository, served by GitHub Pages. Plain HTML, CSS and JavaScript modules; no build step. |
+| Data | Supabase project `koti` (`dghcrcneikxuaacsyhpy`): tables `lists`, `items`, `settings`, each locked to the signed-in user with row level security. |
+| Database changes | `supabase/migrations/`. Applied through the Supabase connector; the optional `Update database` workflow applies them too if its secrets are set. |
 
 ## Files
 
-| File | What it is |
+| Path | What it is |
 |---|---|
-| `index.html` | The dashboard. Built file, served by GitHub Pages. |
-| `apps-script.gs` | Google Apps Script that connects the dashboard to a Google Sheet. |
-| `src/koti.template.html` | Dashboard source. Edit this, not `index.html`. |
-| `build.py` | Rebuilds `index.html` from the template and the Apps Script. |
+| `index.html` | App shell: sidebar (wide screens), tab bar (phones), sheet layer |
+| `css/app.css` | Design tokens, light and dark themes, phone and desktop layouts |
+| `js/data.js` | Data model, migrations from earlier versions, local store and change queue |
+| `js/sync.js` | Sign-in and sync with Supabase: offline queue, pulls by server timestamp, live updates |
+| `js/setup.js` | Home setup view: floor plan, progress, lists, swipe actions, item and add sheets |
+| `js/more.js` | Account, month settings, lists and rooms, import, backup, install help |
+| `js/charts.js` | Floor plans and charts |
+| `js/config.js` | Supabase URL and publishable key (public by design) |
+| `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and home-screen install. Bump `VERSION` in `sw.js` on each release. |
 
-## Connecting Google Sheets
+## Coming next
 
-1. In the Google Sheet: Extensions → Apps Script. Paste `apps-script.gs` and set `SECRET` (letters and numbers).
-2. Deploy → New deployment → Web app. Execute as: Me. Who has access: Anyone.
-3. In the dashboard's Google Sheets panel, paste the `/exec` URL and the secret, then select Save to Sheets.
-
-After changing the script, use Deploy → Manage deployments → edit → New version, so the URL stays the same.
-
-The URL and secret are stored only in each browser. Nothing private is kept in this repository.
+1. ~~App shell, sign-in and sync, Home setup~~
+2. Money: add expenses by typing or speaking, budgets, charts
+3. Bank CSV import for any bank, category rules
+4. Receipts: scan, store, read total and date
+5. Plan: bills calendar and savings goals

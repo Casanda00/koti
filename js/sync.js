@@ -1,0 +1,185 @@
+// Sync between this device and Supabase.
+// Local-first: every change is saved on the device and queued; the queue is uploaded when online and signed in.
+// Pulls fetch rows changed since the last pull (by the server's synced_at); realtime pushes changes from other devices.
+// Conflicts: the newer updated_at wins, row by row.
+import { store, now, seedModel } from "./data.js";
+
+const CFG = window.KOTI_CONFIG || {};
+const listeners = new Set();
+export const sync = { status: "local", text: "Saved on this device", detail: "", lastSync: null, user: null, configured: !!(CFG.url && CFG.key), client: null };
+export function onSync(fn) { listeners.add(fn); fn(sync); return () => listeners.delete(fn); }
+function setStatus(status, text, detail = "") { Object.assign(sync, { status, text, detail }); listeners.forEach(f => f(sync)); }
+
+const TABLES = ["lists", "items", "settings"];
+const t = s => (s ? Date.parse(s) : 0);
+const rowOfList = (l, uid) => ({ user_id: uid, id: l.id, name: l.name, room: l.room, position: l.position, deleted: !!l.deleted, updated_at: l.updatedAt });
+const rowOfItem = (i, uid) => ({ user_id: uid, id: i.id, list_id: i.listId, name: i.name, priority: i.priority, done: !!i.done, price: i.price, bought_at: i.boughtAt, position: i.position, deleted: !!i.deleted, updated_at: i.updatedAt });
+const listFromRow = r => ({ id: r.id, name: r.name, room: r.room, position: r.position, updatedAt: r.updated_at });
+const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, position: r.position, updatedAt: r.updated_at });
+
+/* ---------- Apply rows from the server ---------- */
+export function applyRows(kind, rows) {
+  let changed = false;
+  const m = store.model, meta = store.meta;
+  for (const r of rows) {
+    if (!r) continue;
+    if (kind === "settings") {
+      if (meta.pending.settings && t(m.settings.updatedAt) >= t(r.updated_at)) continue;
+      m.settings = { ...m.settings, ...(r.data || {}), updatedAt: r.updated_at };
+      meta.pending.settings = false; changed = true; continue;
+    }
+    const arr = kind === "items" ? m.items : m.lists;
+    const idx = arr.findIndex(x => x.id === r.id);
+    const local = idx >= 0 ? arr[idx] : meta.tomb && meta.tomb[kind] && meta.tomb[kind][r.id];
+    if (meta.pending[kind][r.id] && local && t(local.updatedAt) >= t(r.updated_at)) continue; // ours is newer; it will upload
+    if (!meta.pending[kind][r.id] && local && idx >= 0 && t(local.updatedAt) === t(r.updated_at) && !r.deleted) continue; // already have it
+    delete meta.pending[kind][r.id];
+    if (meta.tomb && meta.tomb[kind]) delete meta.tomb[kind][r.id];
+    if (r.deleted) { if (idx >= 0) { arr.splice(idx, 1); changed = true; } continue; }
+    const obj = kind === "items" ? itemFromRow(r) : listFromRow(r);
+    if (idx >= 0) arr[idx] = obj; else arr.push(obj);
+    changed = true;
+  }
+  if (changed) { store.persist(); store.emit("remote"); }
+  return changed;
+}
+
+/* ---------- Errors ---------- */
+function explain(e) {
+  const msg = (e && (e.message || e.error_description || e.msg)) || String(e);
+  if (!navigator.onLine || /Failed to fetch|NetworkError|Load failed|network/i.test(msg)) return ["offline", "Offline", "Changes are saved on this device and will upload when you're back online."];
+  if (/JWT|token|not authenticated|401|refresh/i.test(msg)) return ["error", "Sign in again", "Your session ended. Sign in again in More to keep syncing."];
+  if ((e && (e.code === "42P01" || e.code === "PGRST205")) || /relation .* does not exist|Could not find the table/i.test(msg))
+    return ["error", "Database not set up", "The database tables aren't there yet. On GitHub, open Actions → Update database and run it."];
+  return ["error", "Sync problem", msg];
+}
+function fail(e) { const [s, txt, d] = explain(e); setStatus(s, txt, d); }
+
+/* ---------- Pull ---------- */
+export async function pull() {
+  const c = sync.client, uid = sync.user && sync.user.id; if (!c || !uid) return;
+  for (const kind of TABLES) {
+    let since = store.meta.lastSync[kind];
+    for (;;) {
+      let q = c.from(kind).select("*").order("synced_at", { ascending: true }).limit(1000);
+      if (since) q = q.gt("synced_at", since);
+      const { data, error } = await q;
+      if (error) throw error;
+      if (!data.length) break;
+      applyRows(kind, data);
+      since = data[data.length - 1].synced_at;
+      store.meta.lastSync[kind] = since; store.persist();
+      if (data.length < 1000) break;
+    }
+  }
+}
+
+/* ---------- Upload ---------- */
+let flushing = false, again = false, timer = null;
+export function queueFlush(delay = 600) { clearTimeout(timer); if (canSync()) { setStatus("busy", "Saving…"); timer = setTimeout(flush, delay); } else idleStatus(); }
+const canSync = () => !!(sync.client && sync.user && store.meta.owner === sync.user.id);
+
+export async function flush() {
+  if (!canSync()) { idleStatus(); return; }
+  if (flushing) { again = true; return; }
+  flushing = true;
+  const c = sync.client, uid = sync.user.id, meta = store.meta, m = store.model;
+  const pick = kind => Object.keys(meta.pending[kind]).map(id => {
+    const arr = kind === "items" ? m.items : m.lists;
+    const obj = arr.find(x => x.id === id) || (meta.tomb && meta.tomb[kind] && meta.tomb[kind][id]);
+    if (!obj) { delete meta.pending[kind][id]; return null; }
+    return { id, version: obj.updatedAt, row: kind === "items" ? rowOfItem(obj, uid) : rowOfList(obj, uid) };
+  }).filter(Boolean);
+  const lists = pick("lists"), items = pick("items");
+  const settings = meta.pending.settings ? { version: m.settings.updatedAt, row: { user_id: uid, data: (({ updatedAt, ...rest }) => rest)(m.settings), updated_at: m.settings.updatedAt } } : null;
+  if (!lists.length && !items.length && !settings) { flushing = false; okStatus(); return; }
+  setStatus("busy", "Saving…");
+  try {
+    const send = async (table, batch) => { for (let k = 0; k < batch.length; k += 500) { const { error } = await c.from(table).upsert(batch.slice(k, k + 500).map(b => b.row), { onConflict: "user_id,id" }); if (error) throw error; } };
+    if (lists.length) await send("lists", lists);
+    if (items.length) await send("items", items);
+    if (settings) { const { error } = await c.from("settings").upsert(settings.row, { onConflict: "user_id" }); if (error) throw error; }
+    const settle = (kind, sent) => sent.forEach(s => {
+      const arr = kind === "items" ? store.model.items : store.model.lists;
+      const cur = arr.find(x => x.id === s.id) || (store.meta.tomb && store.meta.tomb[kind] && store.meta.tomb[kind][s.id]);
+      if (!cur || cur.updatedAt === s.version) { delete store.meta.pending[kind][s.id]; if (store.meta.tomb && store.meta.tomb[kind]) delete store.meta.tomb[kind][s.id]; }
+    });
+    settle("lists", lists); settle("items", items);
+    if (settings && store.model.settings.updatedAt === settings.version) store.meta.pending.settings = false;
+    store.persist(); sync.lastSync = new Date(); okStatus();
+  } catch (e) { fail(e); }
+  finally { flushing = false; if (again) { again = false; flush(); } }
+}
+
+/* ---------- Status helpers ---------- */
+export const pendingCount = () => Object.keys(store.meta.pending.items).length + Object.keys(store.meta.pending.lists).length + (store.meta.pending.settings ? 1 : 0);
+function okStatus() { if (!navigator.onLine) return setStatus("offline", "Offline", "Changes are saved on this device and will upload when you're back online."); setStatus("ok", "Synced", ""); }
+function idleStatus() {
+  if (!sync.configured) return setStatus("local", "Saved on this device", "Cloud sync isn't set up in this copy of Koti.");
+  if (!sync.user) return setStatus("signedout", "Not signed in", "Sign in to keep your phone and computer in step.");
+  if (!navigator.onLine) return setStatus("offline", "Offline", "Changes are saved on this device and will upload when you're back online.");
+}
+
+/* ---------- Session lifecycle ---------- */
+let channel = null, starting = null;
+async function begin() {
+  const c = sync.client, uid = sync.user.id;
+  setStatus("busy", "Syncing…");
+  if (store.meta.owner && store.meta.owner !== uid) store.resetLocal(seedModel());
+  if (store.meta.owner !== uid) {
+    const { count, error } = await c.from("lists").select("id", { count: "exact", head: true });
+    if (error) throw error;
+    if (!count) {
+      store.meta.owner = uid; store.markAllPending(); // first device: upload what's here
+    } else {
+      if (store.hasUserData()) { try { localStorage.setItem("koti.beforeSignIn", JSON.stringify(store.model)); } catch {} }
+      store.resetLocal({ version: 3, lists: [], items: [], settings: {} });
+      store.meta.owner = uid; store.persist();
+    }
+  }
+  await pull();
+  await flush();
+  subscribe();
+}
+function subscribe() {
+  const c = sync.client, uid = sync.user.id;
+  if (channel) c.removeChannel(channel);
+  channel = c.channel("koti-" + uid);
+  TABLES.forEach(kind => channel.on("postgres_changes", { event: "*", schema: "public", table: kind, filter: `user_id=eq.${uid}` }, p => { if (p.new) applyRows(kind, [p.new]); }));
+  channel.subscribe();
+}
+async function start() {
+  if (starting) return starting;
+  starting = (async () => { try { await begin(); } catch (e) { fail(e); } finally { starting = null; } })();
+  return starting;
+}
+export async function refresh() { if (!canSync()) return; try { await pull(); await flush(); } catch (e) { fail(e); } }
+
+export function initSync() {
+  store.on(kind => { if (kind === "local") queueFlush(); });
+  window.addEventListener("online", () => { if (sync.user) start(); });
+  window.addEventListener("offline", () => idleStatus());
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+  setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 120000);
+  if (!sync.configured || !window.supabase) { sync.configured = false; idleStatus(); return; }
+  sync.client = window.supabase.createClient(CFG.url, CFG.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "koti.auth" } });
+  sync.client.auth.onAuthStateChange((event, session) => {
+    const before = sync.user && sync.user.id;
+    sync.user = session ? session.user : null;
+    if (event === "PASSWORD_RECOVERY") listeners.forEach(f => f(sync, "recovery"));
+    if (sync.user && sync.user.id !== before) setTimeout(start, 0);
+    if (!sync.user) { if (channel) { sync.client.removeChannel(channel); channel = null; } idleStatus(); }
+  });
+  idleStatus();
+}
+
+/* ---------- Account actions ---------- */
+const redirect = () => location.origin + location.pathname;
+export async function signIn(email, password) { const { error } = await sync.client.auth.signInWithPassword({ email, password }); if (error) throw error; }
+export async function signUp(email, password) {
+  const { data, error } = await sync.client.auth.signUp({ email, password, options: { emailRedirectTo: redirect() } });
+  if (error) throw error; return { needsConfirm: !data.session };
+}
+export async function sendReset(email) { const { error } = await sync.client.auth.resetPasswordForEmail(email, { redirectTo: redirect() + "#more" }); if (error) throw error; }
+export async function setPassword(password) { const { error } = await sync.client.auth.updateUser({ password }); if (error) throw error; }
+export async function signOut() { await sync.client.auth.signOut(); }

@@ -1,0 +1,197 @@
+// Koti data model, migrations from earlier versions, and the local store.
+// The model mirrors the Supabase tables: lists, items and one settings row.
+
+export const PRIOS = ["Essential", "Soon", "Later"];
+
+export const ZONES = {
+  K:       { label: "Kitchen",     name: "Kitchen",       poly: [[80,530],[240,530],[240,840],[80,840]], lab: [144,566] },
+  OH:      { label: "Living room", name: "Living room",   poly: [[80,248],[425,248],[425,640],[240,640],[240,530],[80,530]], lab: [104,292] },
+  MH:      { label: "Bedroom",     name: "Bedroom",       poly: [[438,248],[660,248],[660,575],[438,575]], lab: [462,292] },
+  KPH:     { label: "Bathroom",    name: "Bathroom",      poly: [[438,648],[660,648],[660,840],[438,840]], lab: [458,684] },
+  ET:      { label: "Entrance",    name: "Entrance hall", poly: [[240,640],[425,640],[425,780],[240,780]], lab: [256,672] },
+  PARVEKE: { label: "Balcony",     name: "Balcony",       poly: [[85,30],[645,30],[645,205],[85,205]], lab: [110,72] },
+};
+export const ZONE_ORDER = ["K", "OH", "MH", "KPH", "ET", "PARVEKE"];
+
+const SEED = [
+  ["Kitchen & cooking", "K", "Dish soap|Essential;Dishes and plates|Essential;Bowls|Essential;Cups and mugs|Essential;Spoons, forks and knives|Essential;Cooking spoon|Essential;Frying pan|Essential;Cooking pot|Essential;Kitchen knife|Essential;Chopping board|Essential;Spatula|Soon;Food storage containers|Soon;Dish drying rack|Soon;Colander / strainer|Soon;Baking items|Later;Oven tray|Later;Electric kettle|Soon"],
+  ["Groceries & pantry", "K", "Cooking oil|Essential;Eggs|Essential;Sugar|Soon;Milk|Essential;Juice|Later;Salt|Essential;Seasoning|Essential;Sauces|Soon;Rice|Essential;Pasta|Soon;Bread|Essential;Butter|Soon;Tea or coffee|Soon;Fruits (bananas and others)|Essential;Yogurt|Soon;Pizza bites|Later;Onions, garlic and potatoes|Soon;Frozen vegetables|Soon"],
+  ["Bathroom & personal care", "KPH", "Shower soap|Essential;Toothpaste|Essential;Shampoo and conditioner|Essential;Bath towels|Essential;Hand towels|Soon;Bath mat|Soon;Toilet paper|Essential;Toilet brush|Essential;Toilet cleaner|Soon;Hand soap|Essential;Bathroom bin|Soon;Napkins and paper towels|Soon"],
+  ["Laundry & cleaning", "ET", "Laundry soap / detergent|Essential;Laundry basket|Soon;Drying rack|Essential;Clothes pegs|Later;Mop|Essential;Vacuum cleaner|Essential;Broom and dustpan|Soon;Cleaning cloths|Essential;Cleaning brush and sponge|Essential;Rubber gloves|Later;Floor cleaner|Soon;Window cleaner|Later;Trash bags|Essential;Waste bin|Essential"],
+  ["Living room", "OH", "Blanket|Soon;Curtains|Soon;Storage boxes|Later;Sofa|Soon;Rug|Later;Floor lamp|Later"],
+  ["Bedroom", "MH", "Bed and mattress|Essential;Bedsheets|Essential;Duvet|Essential;Duvet cover|Essential;Pillows|Essential;Pillowcases|Essential;Hangers|Essential;Bedside lamp|Later"],
+  ["Tools & household", "ET", "Extension cord / power strip|Soon;Light bulbs|Soon;Scissors|Soon;Tape|Later;Screwdriver set|Soon;Measuring tape|Later;Batteries|Later;First aid kit|Soon;Small household bin|Soon;Doormat|Soon"],
+];
+const DEFAULT_ROOMS = { "Kitchen & cooking": "K", "Groceries & pantry": "K", "Living room": "OH", "Bedroom": "MH", "Bedroom & living": "MH", "Bathroom & personal care": "KPH", "Laundry & cleaning": "ET", "Tools & household": "ET" };
+const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null };
+const EPOCH = new Date(0).toISOString();
+
+export const slug = s => String(s).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "x";
+export const newId = p => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+export const now = () => new Date().toISOString();
+export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
+function cleanItem(i, listId, pos) {
+  const price = i.price === null || i.price === undefined || i.price === "" || isNaN(Number(i.price)) ? null : Math.max(0, Number(i.price));
+  return {
+    id: String(i.id || newId("item")).slice(0, 120), listId: String(listId), name: String(i.name).slice(0, 200),
+    priority: PRIOS.includes(i.priority) ? i.priority : "Soon", done: !!i.done, price,
+    boughtAt: i.boughtAt ? String(i.boughtAt).slice(0, 10) : null, position: Number.isFinite(i.position) ? i.position : pos,
+    updatedAt: i.updatedAt || EPOCH,
+  };
+}
+
+export function seedModel() {
+  const lists = [], items = [];
+  SEED.forEach(([name, room, raw], li) => {
+    const id = "list-" + slug(name);
+    lists.push({ id, name, room, position: li, updatedAt: EPOCH });
+    raw.split(";").forEach((x, k) => { const [n, p] = x.split("|"); items.push(cleanItem({ id: slug(name) + "--" + slug(n), name: n, priority: p }, id, k)); });
+  });
+  return { version: 3, lists, items, settings: { ...DEFAULT_SETTINGS, updatedAt: EPOCH } };
+}
+
+/* Version 2 (single-file dashboard / Google Sheets): categories with items + roomMap. */
+export function fromV2(s) {
+  const lists = [], items = [], used = new Set();
+  (s.categories || []).forEach((c, li) => {
+    if (!c || !c.name) return;
+    let id = "list-" + slug(c.name); while (used.has(id)) id += "-2"; used.add(id);
+    const room = (s.roomMap && ZONES[s.roomMap[c.name]]) ? s.roomMap[c.name] : (DEFAULT_ROOMS[c.name] || "OH");
+    lists.push({ id, name: String(c.name), room, position: li, updatedAt: now() });
+    (c.items || []).filter(i => i && i.name).forEach((i, k) => items.push({ ...cleanItem(i, id, k), updatedAt: now() }));
+  });
+  const settings = { ...DEFAULT_SETTINGS, budget: Number(s.budget) || 0, extraSpend: Number(s.extraSpend) || 0, carriedSpend: !!s.carriedSpend,
+    notes: s.notes || "", movedIn: s.movedIn ? String(s.movedIn).slice(0, 10) : "", updatedAt: now() };
+  return { version: 3, lists, items, settings };
+}
+
+/* Version 1 (first tracker): split "Bedroom & living", move old total into other spending. */
+export function v1ToV2(old) {
+  const cats = []; let doormat = null; const livingNames = ["blanket", "curtains", "storage boxes"];
+  old.categories.forEach(c => {
+    if (c.name !== "Bedroom & living") { cats.push({ name: c.name, items: c.items.map(i => ({ ...i })) }); return; }
+    const liv = { name: "Living room", items: [] }, bed = { name: "Bedroom", items: [] };
+    c.items.forEach(i => { const n = i.name.toLowerCase(); if (n === "doormat") doormat = { ...i }; else (livingNames.includes(n) ? liv : bed).items.push({ ...i }); });
+    [["Sofa", "Soon"], ["Rug", "Later"], ["Floor lamp", "Later"]].forEach(([n, p]) => { if (!liv.items.some(i => i.name.toLowerCase() === n.toLowerCase())) liv.items.push({ id: "living-room--" + slug(n), name: n, priority: p, done: false }); });
+    cats.push(liv, bed);
+  });
+  if (doormat) { const t = cats.find(c => c.name === "Tools & household") || cats.find(c => c.name === "Bedroom"); if (t) t.items.push(doormat); }
+  const prior = Number(old.spent) || 0;
+  return { version: 2, categories: cats, budget: old.budget ?? 500, extraSpend: prior, carriedSpend: prior > 0, notes: old.notes || "", roomMap: { ...DEFAULT_ROOMS } };
+}
+
+/* Accepts any earlier format (v1, v2, v3 backup) and returns a v3 model. */
+export function toModel(data) {
+  if (!data || typeof data !== "object") throw new Error("Not a Koti file.");
+  if (data.version === 3 && Array.isArray(data.lists) && Array.isArray(data.items)) return normalizeModel(data);
+  if (Array.isArray(data.categories)) return fromV2(data.version === 2 ? data : v1ToV2(data));
+  throw new Error("Not a Koti file.");
+}
+
+export function normalizeModel(m) {
+  const lists = (m.lists || []).filter(l => l && l.id && l.name).map((l, k) => ({ id: String(l.id), name: String(l.name), room: ZONES[l.room] ? l.room : "OH", position: Number.isFinite(l.position) ? l.position : k, updatedAt: l.updatedAt || EPOCH }));
+  const ids = new Set(lists.map(l => l.id));
+  const items = (m.items || []).filter(i => i && i.id && i.name && ids.has(String(i.listId))).map((i, k) => cleanItem(i, i.listId, k));
+  return { version: 3, lists, items, settings: { ...DEFAULT_SETTINGS, ...(m.settings || {}), updatedAt: (m.settings && m.settings.updatedAt) || EPOCH } };
+}
+
+/* ---------- Store ---------- */
+const MODEL_KEY = "koti.model", META_KEY = "koti.meta";
+const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, settings: false }, lastSync: { lists: null, items: null, settings: null } });
+const listeners = new Set();
+
+function readJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
+function writeJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full or blocked */ } }
+
+function loadInitial() {
+  const m = readJSON(MODEL_KEY);
+  if (m && m.version === 3) return { model: normalizeModel(m), migrated: false };
+  // Earlier versions on this same site
+  const v2 = readJSON("kotiTracker_v2");
+  if (v2 && Array.isArray(v2.categories)) return { model: fromV2(v2), migrated: true };
+  const v1 = readJSON("newHomeTracker_v1");
+  if (v1 && Array.isArray(v1.categories)) return { model: fromV2(v1ToV2(v1)), migrated: true };
+  return { model: seedModel(), migrated: false };
+}
+
+const init = loadInitial();
+export const store = {
+  model: init.model,
+  meta: Object.assign(emptyMeta(), readJSON(META_KEY) || {}),
+  migrated: init.migrated,
+  on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+  emit(kind = "local") { listeners.forEach(fn => fn(kind)); },
+  persist() { writeJSON(MODEL_KEY, this.model); writeJSON(META_KEY, this.meta); },
+  hasUserData() { return this.model.items.some(i => i.done || i.price != null) || this.model.settings.notes || this.model.items.some(i => i.id.startsWith("item-")); },
+
+  /* ---- local mutations: stamp, mark pending, save, notify ---- */
+  touch(kind, id) { if (kind === "settings") this.meta.pending.settings = true; else this.meta.pending[kind][id] = true; },
+  commit() { this.persist(); this.emit("local"); },
+
+  addItem(listId, name, priority = "Soon") {
+    const pos = Math.max(-1, ...this.model.items.filter(i => i.listId === listId).map(i => i.position)) + 1;
+    const it = cleanItem({ id: newId("item"), name, priority }, listId, pos); it.updatedAt = now();
+    this.model.items.push(it); this.touch("items", it.id); this.commit(); return it;
+  },
+  updateItem(id, patch) {
+    const it = this.model.items.find(i => i.id === id); if (!it) return;
+    Object.assign(it, patch);
+    if ("done" in patch) it.boughtAt = patch.done ? (patch.boughtAt || it.boughtAt || todayISO()) : null;
+    it.updatedAt = now(); this.touch("items", id); this.commit();
+  },
+  deleteItem(id) {
+    const it = this.model.items.find(i => i.id === id); if (!it) return null;
+    this.model.items = this.model.items.filter(i => i.id !== id);
+    this.meta.tomb = this.meta.tomb || { lists: {}, items: {} };
+    this.meta.tomb.items[id] = { ...it, deleted: true, updatedAt: now() };
+    this.touch("items", id); this.commit(); return it;
+  },
+  restoreItem(it) { it.updatedAt = now(); this.model.items.push(it); if (this.meta.tomb) delete this.meta.tomb.items[it.id]; this.touch("items", it.id); this.commit(); },
+  addList(name, room) {
+    let id = "list-" + slug(name); if (this.model.lists.some(l => l.id === id)) id = newId("list");
+    const l = { id, name, room, position: this.model.lists.length, updatedAt: now() };
+    this.model.lists.push(l); this.touch("lists", id); this.commit(); return l;
+  },
+  updateList(id, patch) { const l = this.model.lists.find(x => x.id === id); if (!l) return; Object.assign(l, patch); l.updatedAt = now(); this.touch("lists", id); this.commit(); },
+  deleteList(id) {
+    const l = this.model.lists.find(x => x.id === id); if (!l) return;
+    this.meta.tomb = this.meta.tomb || { lists: {}, items: {} };
+    this.model.items.filter(i => i.listId === id).forEach(i => { this.meta.tomb.items[i.id] = { ...i, deleted: true, updatedAt: now() }; this.touch("items", i.id); });
+    this.model.items = this.model.items.filter(i => i.listId !== id);
+    this.model.lists = this.model.lists.filter(x => x.id !== id);
+    this.meta.tomb.lists[id] = { ...l, deleted: true, updatedAt: now() }; this.touch("lists", id); this.commit();
+  },
+  updateSettings(patch) { Object.assign(this.model.settings, patch, { updatedAt: now() }); this.touch("settings"); this.commit(); },
+
+  /* Replace everything (restore, import, start over). Marks all rows for upload and deletes rows that disappear. */
+  replaceAll(model) {
+    const old = this.model; const m = normalizeModel(model); const t = now();
+    this.meta.tomb = this.meta.tomb || { lists: {}, items: {} };
+    const newItems = new Set(m.items.map(i => i.id)), newLists = new Set(m.lists.map(l => l.id));
+    old.items.forEach(i => { if (!newItems.has(i.id)) { this.meta.tomb.items[i.id] = { ...i, deleted: true, updatedAt: t }; this.touch("items", i.id); } });
+    old.lists.forEach(l => { if (!newLists.has(l.id)) { this.meta.tomb.lists[l.id] = { ...l, deleted: true, updatedAt: t }; this.touch("lists", l.id); } });
+    m.items.forEach(i => { i.updatedAt = t; this.touch("items", i.id); });
+    m.lists.forEach(l => { l.updatedAt = t; this.touch("lists", l.id); });
+    m.settings.updatedAt = t; this.touch("settings");
+    this.model = m; this.commit();
+  },
+  /* Forget local data entirely (used when a different account signs in on this device). */
+  resetLocal(model) { this.model = normalizeModel(model); this.meta = emptyMeta(); this.persist(); this.emit("remote"); },
+  markAllPending() { this.model.items.forEach(i => this.touch("items", i.id)); this.model.lists.forEach(l => this.touch("lists", l.id)); this.touch("settings"); this.persist(); },
+};
+if (store.migrated) { store.markAllPending(); store.persist(); }
+
+/* ---------- Derived values ---------- */
+export const listOf = id => store.model.lists.find(l => l.id === id);
+export const sortedLists = () => [...store.model.lists].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+export const itemsOf = listId => store.model.items.filter(i => i.listId === listId).sort((a, b) => a.position - b.position);
+export const itemSpend = () => store.model.items.filter(i => i.done && i.price > 0).reduce((a, i) => a + i.price, 0);
+export const totalSpent = () => itemSpend() + (Number(store.model.settings.extraSpend) || 0);
+export function zoneStats() {
+  const z = {}; ZONE_ORDER.forEach(k => z[k] = { code: k, lists: [], total: 0, done: 0, ess: 0, spent: 0, priced: 0 });
+  const roomOf = {}; store.model.lists.forEach(l => { roomOf[l.id] = l.room; z[l.room].lists.push(l.name); });
+  store.model.items.forEach(i => { const s = z[roomOf[i.listId]]; if (!s) return; s.total++; if (i.done) { s.done++; if (i.price > 0) { s.spent += i.price; s.priced++; } } else if (i.priority === "Essential") s.ess++; });
+  return z;
+}
+export function backupJSON() { const { version, lists, items, settings } = store.model; return JSON.stringify({ version, exportedAt: now(), lists, items, settings }, null, 2); }
