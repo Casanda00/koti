@@ -3,7 +3,7 @@
 import { store, todayISO, topLists, itemsOf, projectItems, projectSpent, BILLS_CAT } from "./data.js";
 import { $, esc, eur, eur0, icon, parseDay, fmtDay } from "./ui.js";
 import { periodFor, shift, totals, heroHTML, alertsHTML, bindHero, catName, catColor } from "./money.js";
-import { monthLedger } from "./ledger.js";
+import { monthLedger, effectiveBudgets } from "./ledger.js";
 import { occurrences } from "./plan.js";
 import { incomeOccurrences, nextPay } from "./income.js";
 
@@ -50,7 +50,7 @@ export function renderHome() {
   // This month by category
   const T = totals(cur), parts = Object.entries(T.byCat).filter(([k, v]) => k !== BILLS_CAT && v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k === "none" ? "No category" : catName(k), v, k === "none" ? "#9aa59f" : catColor(k)]);
   if (T.projects > 0) parts.push(["Projects", T.projects, "var(--amber)"]);
-  const sum = parts.reduce((a, p) => a + p[1], 0), budgeted = store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0);
+  const sum = parts.reduce((a, p) => a + p[1], 0), budgeted = effectiveBudgets(cur).total;
   $("#hoMonth", root).innerHTML = sum ? `<div class="card-head" style="margin:0 0 8px"><span class="k">Spent so far</span><b class="num">${eur0(sum)}${budgeted ? ` <small class="muted">of ${eur0(budgeted)} budgeted</small>` : ""}</b></div>
     <span class="stack" role="img" aria-label="${esc(parts.map(p => `${p[0]} ${eur0(p[1])}`).join(", "))}">${parts.map(p => `<i style="width:${p[1] / sum * 100}%;background:${p[2]}"></i>`).join("")}</span>
     <span class="plegend two">${parts.slice(0, 8).map(([l, v, c]) => `<span><i style="background:${c}"></i><span>${esc(l)}</span><b class="num">${eur0(v)}</b></span>`).join("")}</span>`

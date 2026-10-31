@@ -4,6 +4,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, 
 import { periodFor, totals, periodLabel, openExpense, catName, setSpendingFilter } from "./money.js";
 import { occurrences, nextDue, perYear } from "./plan.js";
 import { openScan } from "./scan.js";
+import { sync } from "./sync.js";
 
 const est = items => items.reduce((a, i) => a + (i.price > 0 ? i.price * (i.qty || 1) : 0), 0);
 const qtyText = q => (q && q !== 1 ? `${String(q).replace(".", ",")} ×` : "");
@@ -94,12 +95,12 @@ export function renderList() {
   const sugs = suggestions(l.id).filter(n => !its.some(i => i.name.toLowerCase() === n.toLowerCase())).slice(0, 8);
   lroot.innerHTML = `
     <header class="vh"><div><a class="back" href="#${parent ? "list/" + encodeURIComponent(parent.id) : "expenses"}">${icon("chev", "ic sm flip")} ${esc(parent ? parent.name : "Expenses")}</a><h1>${esc(l.name)}</h1><div class="sub">${todo.length ? `${todo.length} to buy${e ? ` · about ${eur(e)}` : ""}` : its.length ? "Everything's bought" : "Empty list"}</div></div>
-      <div class="hbtns"><button type="button" class="hbtn" data-scan aria-label="Scan a receipt for this list">${icon("cam", "ic")}</button><button type="button" class="hbtn" data-share aria-label="Send this list">${icon("share", "ic")}</button><button type="button" class="hbtn" data-list-settings aria-label="List settings">${icon("more", "ic")}</button></div></header>
+      <div class="hbtns"><button type="button" class="hbtn" data-scan aria-label="Scan a receipt for this list">${icon("cam", "ic")}</button><button type="button" class="hbtn" data-share aria-label="Share this list">${icon("share", "ic")}</button><button type="button" class="hbtn" data-list-settings aria-label="List settings">${icon("more", "ic")}</button></div></header>
     <div class="add-line"><label for="liAdd" class="sr">Add items</label><input id="liAdd" placeholder="Add items: milk, eggs, 2 × yogurt" autocomplete="off" enterkeyhint="done" value="${esc(keepVal)}"><button type="button" class="add-btn" data-add-items aria-label="Add">${icon("plus", "ic sm")}</button></div>
     ${sugs.length ? `<div class="chips sugs" aria-label="Add again">${sugs.map(n => `<button type="button" class="fchip" data-sug="${esc(n)}">+ ${esc(n)}</button>`).join("")}</div>` : ""}
     ${todo.length ? `<div class="gh"><h2>To buy</h2><span class="num">${todo.length}</span></div><div class="grp">${todo.map(row).join("")}</div>` : its.length ? "" : `<div class="empty">Nothing here yet. Type items above, separated by commas.</div>`}
     ${done.length ? `<div class="gh"><button type="button" class="link" data-toggle-done aria-expanded="${showDone}">Bought · ${done.length} ${showDone ? "▾" : "▸"}</button>${l.kind === "shopping" ? `<button type="button" class="link" data-clear>Clear bought</button>` : ""}</div>${showDone ? `<div class="grp">${done.map(row).join("")}</div>` : ""}` : ""}
-    <p class="note">Tap an item to change its amount, price or note.${l.kind === "shopping" ? " Send the list with the share button at the top." : ""}</p>`;
+    <p class="note">Tap an item to change its amount, price or note.${l.kind === "shopping" ? " Share it with the button at the top: a live link others can tick off, or as text." : ""}</p>`;
   if (hadFocus) { const inp = $("#liAdd", lroot); inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 
@@ -143,16 +144,44 @@ export function listText(id) {
   const l = listOf(id), todo = itemsOf(id).filter(i => !i.done);
   return `${l.name} (${todo.length})\n${todo.map(i => `☐ ${i.name}${i.qty && i.qty !== 1 ? ` ×${String(i.qty).replace(".", ",")}` : ""}${i.note ? ` (${i.note})` : ""}`).join("\n")}\n\nSent from Koti`;
 }
+/* Sharing: a live link others can tick off (signed in), or the list as text. */
+const shareURL = token => new URL("share.html#" + token, location.href.split("#")[0]).href;
+const newToken = () => { const b = crypto.getRandomValues(new Uint8Array(24)); return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+async function liveShare(listId) {
+  if (!sync.client || !sync.user) return null;
+  const { data, error } = await sync.client.from("list_shares").select("token").eq("list_id", listId).eq("revoked", false).order("created_at", { ascending: false }).limit(1);
+  if (error) throw new Error(error.message);
+  return data && data[0] ? data[0].token : null;
+}
 async function shareList(id) {
-  const l = listOf(id), todo = itemsOf(id).filter(i => !i.done);
-  if (!todo.length) { toast("Nothing left to buy on this list"); return; }
-  const text = listText(id);
-  openSheet({ title: "Send list", left: "Close", body: B => {
-    B.innerHTML = `<div class="msgprev" aria-label="Message preview">${esc(text).replace(/\n/g, "<br>")}</div>
-      <div class="btns">${navigator.share ? `<button type="button" class="btn primary" id="shGo">Send with…</button>` : ""}<button type="button" class="btn${navigator.share ? "" : " primary"}" id="shCopy">Copy the list</button></div>
-      <p class="note">Sends the ${todo.length} item${todo.length === 1 ? "" : "s"} still to buy. A live link they can tick off is coming next.</p>`;
-    const go = $("#shGo", B); if (go) go.onclick = async () => { try { await navigator.share({ title: l.name, text }); closeSheet(); } catch (e) { if (e && e.name !== "AbortError") toast("Couldn't open sharing. Copy the list instead."); } };
-    $("#shCopy", B).onclick = async () => { try { await navigator.clipboard.writeText(text); toast("Copied. Paste it into a message."); closeSheet(); } catch { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Copied. Paste it into a message."); closeSheet(); } };
+  const l = listOf(id), todo = itemsOf(id).filter(i => !i.done), text = listText(id);
+  openSheet({ title: `Share ${l.name}`, left: "Close", body: B => {
+    const copy = async t => { try { await navigator.clipboard.writeText(t); } catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); } };
+    const send = async (title, payload, done) => { if (navigator.share) { try { await navigator.share(payload); done && done(); return; } catch (e) { if (e && e.name === "AbortError") return; } } await copy(payload.url || payload.text); toast("Copied. Paste it into a message."); done && done(); };
+    const paint = async () => {
+      B.innerHTML = `<div class="share-live" id="shLive"><p class="note" style="margin:0">Checking…</p></div>
+        <div class="gh"><h3>Or send it as text</h3></div>
+        ${todo.length ? `<div class="msgprev" aria-label="Message preview">${esc(text).replace(/\n/g, "<br>")}</div>
+        <div class="btns"><button type="button" class="btn" id="shText">${navigator.share ? "Send the text…" : "Copy the text"}</button></div>` : `<p class="note">Nothing left to buy, so there's no text to send.</p>`}`;
+      const T = $("#shText", B); if (T) T.onclick = () => send(l.name, { title: l.name, text }, closeSheet);
+      const box = $("#shLive", B);
+      if (!sync.user) { box.innerHTML = `<b>Live link</b><p class="note" style="margin:4px 0 10px">Sign in to share a link others can tick off as they shop.</p><button type="button" class="btn" data-open="auth">Sign in</button>`; return; }
+      let token = null; try { token = await liveShare(id); } catch (e) { box.innerHTML = `<p class="msg" data-state="error">${esc(e.message)}</p>`; return; }
+      if (!token) {
+        box.innerHTML = `<b>Live link</b><p class="note" style="margin:4px 0 10px">Anyone with the link can see this list, tick items off and add items, without an account. Your list updates as they shop.</p><button type="button" class="btn primary" id="shMake">Create a live link</button>`;
+        $("#shMake", B).onclick = async () => { const t = newToken(); const { error } = await sync.client.from("list_shares").insert({ token: t, user_id: sync.user.id, list_id: id, revoked: false }); if (error) { toast("Couldn't create the link: " + error.message); return; } paint(); };
+        return;
+      }
+      const url = shareURL(token);
+      box.innerHTML = `<b>Live link is on</b><p class="note" style="margin:4px 0 8px">Anyone with this link can tick items off and add items.</p>
+        <div class="linkbox"><span class="mono">${esc(url)}</span></div>
+        <div class="btns two"><button type="button" class="btn primary" id="shSend">${navigator.share ? "Send the link…" : "Copy the link"}</button>${navigator.share ? `<button type="button" class="btn" id="shCopy">Copy</button>` : ""}</div>
+        <button type="button" class="btn danger" id="shStop" style="margin-top:8px">Stop sharing</button>`;
+      $("#shSend", B).onclick = () => send(l.name, { title: l.name, text: `${l.name} on Koti: tick things off as you shop`, url }, null);
+      const c = $("#shCopy", B); if (c) c.onclick = async () => { await copy(url); toast("Link copied"); };
+      $("#shStop", B).onclick = async () => { if (!confirm("Stop sharing? The link stops working for everyone.")) return; const { error } = await sync.client.from("list_shares").update({ revoked: true }).eq("token", token); if (error) { toast(error.message); return; } toast("Sharing stopped"); paint(); };
+    };
+    paint();
   } });
 }
 

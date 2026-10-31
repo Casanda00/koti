@@ -5,7 +5,7 @@
 //   Future months are a plan: planned income, bills, budgets and goals.
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import { parseDay } from "./ui.js";
-import { periodFor, shift, projectEntries } from "./money.js";
+import { periodFor, shift, projectEntries, totals } from "./money.js";
 import { occurrences, occurrenceOf } from "./plan.js";
 import { incomeOccurrences } from "./income.js";
 
@@ -67,7 +67,7 @@ export function awaitingIncome() {
 }
 
 const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
-const budgetsTotal = () => sum(store.model.categories, c => Number(c.budget) || 0);
+const budgetsTotal = p => effectiveBudgets(p).total;
 const goalsMonthly = () => sum(store.model.goals, g => (g.saved < g.target ? Number(g.monthly) || 0 : 0));
 const plannedIncome = p => incomeOccurrences(p).filter(o => !o.missed);
 const plannedBills = p => occurrences(p).filter(o => !o.skipped);
@@ -100,9 +100,9 @@ function planLedger(p) {
   const cur = periodFor(new Date()), L = monthLedger(cur);
   let start = L.left + L.expectedSum + sum(L.late, o => Number(o.src.amount) || 0);
   for (let m = shift(cur, 1); m.from < p.from; m = shift(m, 1)) {
-    start += sum(plannedIncome(m), o => Number(o.src.amount) || 0) - sum(plannedBills(m), o => o.amount) - budgetsTotal() - goalsMonthly();
+    start += sum(plannedIncome(m), o => Number(o.src.amount) || 0) - sum(plannedBills(m), o => o.amount) - budgetsTotal(m) - goalsMonthly();
   }
-  const bills = sum(plannedBills(p), o => o.amount), budgets = budgetsTotal(), goals = goalsMonthly();
+  const bills = sum(plannedBills(p), o => o.amount), budgets = budgetsTotal(p), goals = goalsMonthly();
   const income = plannedIncome(p);
   return { kind: "plan", p, start, bills, budgets, goals, left: start - bills - budgets - goals, income, incomeSum: sum(income, o => Number(o.src.amount) || 0), billList: plannedBills(p) };
 }
@@ -116,5 +116,15 @@ export function categoryBudget(cat, p, spentIn, depth = 0) {
   const prevBudget = categoryBudget(cat, prev, spentIn, depth + 1);
   return base + (prevBudget - spentIn(cat.id, prev));
 }
+
+/* Every category's budget for a month (with roll over when it's on), and the total. Months not yet happened have nothing spent. */
+export function effectiveBudgets(p) {
+  const byId = {}; let total = 0;
+  store.model.categories.forEach(c => { if (c.budget == null) return; const b = categoryBudget(c, p, (id, q) => (byMonth(q)[id] || 0)); byId[c.id] = b; total += Math.max(0, b); });
+  return { byId, total };
+}
+const monthCache = new Map();
+function byMonth(q) { const k = q.from; if (!monthCache.has(k)) monthCache.set(k, totals(q).byCat); return monthCache.get(k); }
+store.on && store.on(() => monthCache.clear());
 
 export { occurrenceOf };

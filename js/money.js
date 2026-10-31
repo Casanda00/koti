@@ -7,7 +7,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, 
 import { parseExpense } from "./voice.js";
 import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
 import { newId } from "./data.js";
-import { monthLedger, startPoint, categoryBudget, ADJUST_CAT, awaitingIncome } from "./ledger.js";
+import { monthLedger, startPoint, categoryBudget, effectiveBudgets, ADJUST_CAT, awaitingIncome } from "./ledger.js";
 import { markPaid, setSkipped } from "./plan.js";
 import { receive, setMissed } from "./income.js";
 
@@ -263,6 +263,7 @@ export function mountMoney(elm) {
     const s = e.target.closest("[data-shift]"); if (s) { const n = Number(s.dataset.shift); view = n === 0 ? periodFor(new Date()) : shift(view, n); renderMoney(); return; }
     if (e.target.closest("[data-goal-add]")) { openGoal(); return; }
     const g = e.target.closest("[data-goal]"); if (g) { const goal = store.model.goals.find(x => x.id === g.dataset.goal); if (goal) openGoal(goal); return; }
+    if (e.target.closest("[data-rollover]")) { const on = !store.model.settings.rollover; store.updateSettings({ rollover: on }); toast(on ? "Unspent budgets now carry over" : "Budgets start fresh each month"); return; }
     const c = e.target.closest("[data-cat]"); if (c) openCategories();
   });
 }
@@ -278,13 +279,13 @@ export function renderMoney() {
   // This month's money picture lives on Home; past and future months show it here.
   const H = $("#moHero", root); H.hidden = isCur; $(".mo-top", root).classList.toggle("solo", isCur);
   if (!isCur) H.innerHTML = heroHTML(monthLedger(view));
-  const budgeted = store.model.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0);
+  const budgeted = effectiveBudgets(view).total;
   $("#moSpendStat", root).innerHTML = `<div class="k">Everyday spending</div><div class="v">${eur0(T.everyday)}</div><div class="meter"><i style="width:${budgeted ? Math.min(100, T.everyday / budgeted * 100) : 0}%;background:${budgeted && T.everyday > budgeted ? "var(--crit)" : "var(--spruce)"}"></i></div><div class="s">${budgeted ? `of ${eur0(budgeted)} budgeted` : "No budgets set"}</div>`;
   $("#moSetupStat", root).innerHTML = `<div class="k">Bills</div><div class="v">${eur0(T.bills.total)}</div><div class="meter"><i style="width:${T.bills.total ? Math.min(100, T.billsPaid / T.bills.total * 100) : 0}%;background:var(--wall)"></i></div><div class="s">${T.bills.count ? `${T.bills.paidCount} of ${T.bills.count} paid` : "No bills this month"}</div>`;
 
   const pc = isCur ? pace(view) : isFuture ? 0 : 1;
   const spentIn = (cid, p) => (totals(p).byCat[cid] || 0);
-  const rows = store.model.categories.slice().sort((a, b) => a.position - b.position).map(c => ({ id: c.id, name: c.name, budget: c.budget == null ? null : (isFuture ? Number(c.budget) : categoryBudget(c, view, spentIn)), base: c.budget, spent: T.byCat[c.id] || 0 }));
+  const rows = store.model.categories.slice().sort((a, b) => a.position - b.position).map(c => ({ id: c.id, name: c.name, budget: c.budget == null ? null : categoryBudget(c, view, spentIn), base: c.budget, spent: T.byCat[c.id] || 0 }));
   if (T.byCat.none) rows.push({ id: "none", name: "Uncategorised", budget: null, spent: T.byCat.none });
   Object.keys(T.byCat).filter(k => k !== "none" && k !== BILLS_CAT && !store.model.categories.some(c => c.id === k)).forEach(k => rows.push({ id: k, name: "Deleted category", budget: null, spent: T.byCat[k] }));
   $("#moBudgets", root).innerHTML = rows.map(r => {
@@ -294,7 +295,8 @@ export function renderMoney() {
     return `<button type="button" class="row r2" data-cat="${esc(r.id)}" aria-label="${esc(r.name)}: ${eur(r.spent)} spent${r.budget ? ` of ${eur(r.budget)}` : ""}"><span class="rt"><span><i class="cdot" style="background:${catColor(r.id)}"></i>${esc(r.name)}</span><small class="num">${r.budget ? `${eur0(r.spent)} of ${eur0(r.budget)}${r.base != null && Math.abs(r.budget - r.base) >= 0.5 ? ` (${r.budget > r.base ? "+" : "−"}${eur0(Math.abs(r.budget - r.base))} rolled over)` : ""}` : "No budget"}</small></span><span class="rv">${right}</span>
       ${r.budget ? `<span class="bullet"><i style="width:${Math.min(100, ratio * 100)}%;background:${col}"></i>${pc > 0 && pc < 1 ? `<span class="pace" style="left:${pc * 100}%"></span>` : ""}</span>` : ""}</button>`;
   }).join("") || `<div class="row"><span class="rt muted">No categories yet</span></div>`;
-  $("#moPaceNote", root).textContent = pc > 0 && pc < 1 ? "The line on each bar marks where you'd be at an even pace through the month." : "";
+  const ro = !!store.model.settings.rollover;
+  $("#moPaceNote", root).innerHTML = `${pc > 0 && pc < 1 ? "The line on each bar marks where you'd be at an even pace through the month. " : ""}${ro ? "Unspent money carries into next month, and overspending takes from it." : "Each category starts fresh every month."} <button type="button" class="link-inline" data-rollover>${ro ? "Turn off carry over" : "Carry unspent money over"}</button>`;
 
   const projects = topLists().filter(l => l.kind === "project");
   $("#moProjWrap", root).hidden = !projects.length;
@@ -377,6 +379,7 @@ const recentPayees = () => [...new Set(store.model.transactions.slice().sort((a,
 const payeeCat = payee => { const t = store.model.transactions.filter(x => x.payee && x.payee.toLowerCase() === String(payee).toLowerCase()).sort((a, b) => b.date.localeCompare(a.date))[0]; return t ? t.categoryId : null; };
 
 export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
+  if (mode === "scan" && !tx) { import("./scan.js").then(m => m.openScan()); return; }   // scanning has one place: + → Scan or upload
   const editing = !!tx, d = tx || draft || { amount: null, categoryId: null, payee: "", date: todayISO(), note: "", kind: "expense" };
   let catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
   let lines = d.lines ? d.lines.map(l => ({ ...l })) : null, aiNote = "";   // receipt lines, each with its own category or project
@@ -387,7 +390,6 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
     body: B => {
       B.innerHTML = `
         ${editing ? "" : `<div class="seg" role="tablist" aria-label="What to add"><button type="button" aria-pressed="true">Expense</button><button type="button" data-switch="item">Checklist item</button></div>`}
-        ${editing ? "" : `<div class="seg" id="exMode" aria-label="How to add"><button type="button" data-m="type" aria-pressed="${mode === "type"}">Type</button><button type="button" data-m="scan" aria-pressed="${mode === "scan"}">${icon("cam", "ic xs")} Scan</button></div>`}
         <div id="exBody" style="display:grid;gap:12px"></div>
         <p class="msg" id="exMsg" aria-live="polite"></p>
         ${editing ? `<button type="button" class="btn danger" id="exDel">${icon("trash", "ic sm")} Delete expense</button>` : ""}`;
