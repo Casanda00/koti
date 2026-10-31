@@ -5,6 +5,7 @@ import { initSync, onSync, sync } from "./sync.js";
 import { mountSetup, renderSetup, renderPlans, renderCharts, openAdd } from "./setup.js";
 import { mountMore, renderMore, bindMore, openAuth, openNewPassword } from "./more.js";
 import { mountMoney, renderMoney, openExpense } from "./money.js";
+import { initPullToRefresh } from "./ptr.js";
 
 const ROUTES = ["setup", "money", "plan", "more"];
 let current = null;
@@ -49,6 +50,7 @@ function init() {
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "setup") { renderPlans(); renderCharts(); } if (current === "money") renderMoney(); }, 120); });
   route();
+  initPullToRefresh({ onRefreshed: () => { renderSetup(); renderMoney(); if (current === "setup") { renderPlans(); renderCharts(); } if (current === "more") renderMore(); } });
   const q = new URLSearchParams(location.search);
   if (q.get("add") === "1" || q.get("add") === "item") openAdd();
   if (q.get("add") === "expense") openExpense({ mode: q.get("mode") === "speak" ? "speak" : "type" });
