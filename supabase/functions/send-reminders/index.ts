@@ -3,6 +3,9 @@
 //   then weekly), "did your pay land?", a budget running low, and an optional "your week".
 //   Words follow the voice language setting: Finnish when it starts with "fi", English otherwise.
 //   From the app (signed-in user): {action:"key"} returns the public key; {action:"test"} sends a test.
+//   From a notification button (no sign-in): {action:"answer", token, choice}. The token is signed here when the
+//   reminder is sent, names one bill or payday of one person, and expires after 14 days.
+//   Several reminders in one hour arrive as one notification, and nobody gets more than 3 a day.
 // Notification keys are created here on first use and kept in Supabase Vault; nothing is pasted anywhere.
 import webpush from "npm:web-push@3.6.7";
 
@@ -43,6 +46,55 @@ async function keys() {
   return s as { koti_vapid_public: string; koti_vapid_private: string; koti_cron_token?: string };
 }
 
+/* ---------- Answer tokens: what a notification button may change, signed so no sign-in is needed ---------- */
+const enc = new TextEncoder();
+const fromB64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+async function hmac(secret: string) { return await crypto.subtle.importKey("raw", enc.encode("koti-answer:" + secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]); }
+export async function signAnswer(secret: string, user: string, a: Answer, days = 14) {
+  const body = b64u(enc.encode(JSON.stringify({ u: user, ...a, exp: Date.now() + days * 864e5 })).buffer as ArrayBuffer);
+  return body + "." + b64u(await crypto.subtle.sign("HMAC", await hmac(secret), enc.encode(body)));
+}
+export async function readAnswer(secret: string, token: string): Promise<(Answer & { u: string }) | null> {
+  const [body, sig] = String(token || "").split(".");
+  if (!body || !sig) return null;
+  try {
+    if (!(await crypto.subtle.verify("HMAC", await hmac(secret), fromB64u(sig), enc.encode(body)))) return null;
+    const x = JSON.parse(new TextDecoder().decode(fromB64u(body)));
+    return x.exp > Date.now() && (x.k === "bill" || x.k === "pay") ? x : null;
+  } catch { return null; }
+}
+
+/* What a button does. Rows are written the way the app writes them, so every device syncs the change. */
+async function answer(a: Answer & { u: string }, choice: string) {
+  const today = local().day, stamp = new Date().toISOString(), uid = a.u;
+  if (choice === "later") {
+    if (a.k === "pay") await fetch(`${URL_}/rest/v1/push_log?on_conflict=user_id,key`, { method: "POST", headers: { ...asServer(), "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates" }, body: JSON.stringify({ user_id: uid, key: `again:pay:${a.id}:${a.due}:${addDays(today, 1)}` }) });
+    return { ok: true };
+  }
+  const upsertTx = (row: Row) => rest("transactions?on_conflict=user_id,id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates" }, body: JSON.stringify({ user_id: uid, note: null, source: "manual", deleted: false, updated_at: stamp, ...row }) });
+  if (a.k === "bill") {
+    const b: Row = ((await rest(`bills?select=*&user_id=eq.${uid}&id=eq.${encodeURIComponent(a.id)}&deleted=eq.false`)) || [])[0];
+    if (!b) return { ok: false, error: "That bill isn't in Koti any more." };
+    const d = (b.dues || {})[a.due] || {};
+    if (choice === "paid") {
+      await upsertTx({ id: `bill:${b.id}:${a.due}`, date: today, amount: d.amount || Number(b.amount), kind: "expense", category_id: "cat-bills", payee: b.name, receipt_path: d.docPath || null, bill_id: b.id, bill_due: a.due });
+      return { ok: true };
+    }
+    if (choice === "skip") {
+      const dues = { ...(b.dues || {}), [a.due]: { amount: null, reference: null, docPath: null, ...d, skipped: true } };
+      await rest(`bills?user_id=eq.${uid}&id=eq.${encodeURIComponent(b.id)}`, { method: "PATCH", body: JSON.stringify({ dues, updated_at: stamp }) });
+      return { ok: true };
+    }
+  }
+  if (a.k === "pay" && choice === "landed") {
+    const src: Row = ((await rest(`income_sources?select=*&user_id=eq.${uid}&id=eq.${encodeURIComponent(a.id)}&deleted=eq.false`)) || [])[0];
+    if (!src || !src.amount) return { ok: false, error: "That income isn't in Koti any more." };
+    await upsertTx({ id: `inc:${src.id}:${a.due}`, date: a.due <= today ? a.due : today, amount: Number(src.amount), kind: "income", category_id: null, payee: src.name, income_id: src.id, income_due: a.due });
+    return { ok: true };
+  }
+  return { ok: false, error: "Unknown answer." };
+}
+
 /* ---------- Dates in Helsinki ---------- */
 function local(d = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23", weekday: "short" }).formatToParts(d).map((x) => [x.type, x.value]));
@@ -75,6 +127,8 @@ const W = {
     week: "Your week",
     weekBody: (a: string, next: string) => `${a} spent this week. ${next ? `Next week: ${next}.` : "No bills next week."}`,
     testT: "Koti reminders are on", testB: "Bills, paydays and budgets will reach you like this.",
+    paid: "Paid", notYet: "Not yet", iPaid: "I paid it", notOwed: "Not owed", landed: "It landed",
+    bundle: (n: number) => `${n} things today`,
   },
   fi: {
     due: (n: string, a: string) => `${n}, ${a}, erääntyy huomenna.`,
@@ -91,6 +145,8 @@ const W = {
     week: "Viikkosi",
     weekBody: (a: string, next: string) => `${a} kulutettu tällä viikolla. ${next ? `Ensi viikolla: ${next}.` : "Ensi viikolla ei laskuja."}`,
     testT: "Kotin muistutukset ovat päällä", testB: "Laskut, palkkapäivät ja budjetit tulevat näin.",
+    paid: "Maksettu", notYet: "Ei vielä", iPaid: "Maksoin", notOwed: "Ei tarvitse", landed: "Tuli",
+    bundle: (n: number) => `${n} asiaa tänään`,
   },
 };
 const langOf = (settings: Row): Lang => String(settings.voiceLang || "").toLowerCase().startsWith("fi") ? "fi" : "en";
@@ -132,8 +188,10 @@ function lastWorkingDay(y: number, m: number) {
 }
 
 /* ---------- What to remind one user about ---------- */
-type Note = { key: string; title: string; body: string; url: string };
-function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[] }, now: { day: string; hour: number; weekday: string }): Note[] {
+type Answer = { k: "bill" | "pay"; id: string; due: string };
+type Note = { key: string; title: string; body: string; url: string; actions?: { action: string; title: string }[]; answer?: Answer };
+export const DAILY_LIMIT = 3;
+function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[]; again?: Set<string> }, now: { day: string; hour: number; weekday: string }): Note[] {
   const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
   const quiet = R.quietFrom > R.quietTo ? (now.hour >= R.quietFrom || now.hour < R.quietTo) : (now.hour >= R.quietFrom && now.hour < R.quietTo);
   if (quiet) return [];
@@ -146,10 +204,12 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
     for (const due of billDuesAround(b, today, 2, 1)) {
       const d = (b.dues || {})[due] || {}, amount = d.amount || Number(b.amount);
       if (paid.has(`${b.id}|${due}`) || d.skipped) continue;
-      if (R.bills && morning && due === tomorrow && !b.autopay) out.push({ key: `due:${b.id}:${due}`, title: w.due(b.name, eur(amount)), body: (d.reference || b.reference) ? w.dueRef(d.reference || b.reference) : w.dueBody, url: "./#bills" });
+      if (R.bills && morning && due === tomorrow && !b.autopay) out.push({ key: `due:${b.id}:${due}`, title: w.due(b.name, eur(amount)), body: (d.reference || b.reference) ? w.dueRef(d.reference || b.reference) : w.dueBody, url: "./#bills",
+        actions: [{ action: "paid", title: w.paid }, { action: "later", title: w.notYet }], answer: { k: "bill", id: b.id, due } });
       if (R.overdue && morning && due < today && !b.autopay && (!start || due >= start) && (b.start_date ? due >= b.start_date : true)) {
         const late = Math.round((Date.parse(today) - Date.parse(due)) / 864e5);
-        if (lateDays(late)) out.push({ key: `od:${b.id}:${due}:${today}`, title: w.late(b.name, eur(amount), longDay(lang, due)), body: w.lateBody, url: "./#now" });
+        if (lateDays(late)) out.push({ key: `od:${b.id}:${due}:${today}`, title: w.late(b.name, eur(amount), longDay(lang, due)), body: w.lateBody, url: "./#now",
+          actions: [{ action: "paid", title: w.iPaid }, { action: "skip", title: w.notOwed }], answer: { k: "bill", id: b.id, due } });
       }
     }
   }
@@ -160,8 +220,12 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
       for (const k of [-1, 0]) {
         const due = payDue(s, y, m - 1 + k); if (!due) continue;
         const lateBy = Math.round((Date.parse(today) - Date.parse(due)) / 864e5);
-        if (lateBy < 1 || lateBy > 3 || got.has(`${s.id}|${due}`) || (s.missed || []).includes(due) || (start && due < start)) continue;
-        out.push({ key: `pay:${s.id}:${due}`, title: w.pay(w.payName(s.name), eur(Number(s.amount))), body: w.payBody(longDay(lang, due)), url: "./#now" });
+        if (lateBy < 1 || lateBy > 14 || got.has(`${s.id}|${due}`) || (s.missed || []).includes(due) || (start && due < start)) continue;
+        // The morning after payday; again on a later morning only when "Not yet" was tapped the day before.
+        const again = u.again && u.again.has(`again:pay:${s.id}:${due}:${today}`);
+        if (lateBy !== 1 && !again) continue;
+        out.push({ key: lateBy === 1 ? `pay:${s.id}:${due}` : `pay:${s.id}:${due}:${today}`, title: w.pay(w.payName(s.name), eur(Number(s.amount))), body: w.payBody(longDay(lang, due)), url: "./#now",
+          actions: [{ action: "landed", title: w.landed }, { action: "later", title: w.notYet }], answer: { k: "pay", id: s.id, due } });
       }
     }
   }
@@ -194,11 +258,13 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
 }
 
 /* ---------- Sending ---------- */
-async function sendTo(subs: Row[], note: Note) {
+async function sendTo(subs: Row[], note: Note, token?: string) {
   let ok = 0;
+  const payload = JSON.stringify({ title: note.title, body: note.body, url: note.url, tag: note.key.split(":").slice(0, 3).join(":"),
+    ...(token && note.actions ? { actions: note.actions, token, answer: `${URL_}/functions/v1/send-reminders` } : {}) });
   for (const s of subs) {
     try {
-      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify({ title: note.title, body: note.body, url: note.url, tag: note.key.split(":").slice(0, 3).join(":") }), { TTL: 6 * 3600, urgency: "normal" });
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 6 * 3600, urgency: "normal" });
       ok++;
     } catch (e) {
       const code = (e as { statusCode?: number }).statusCode;
@@ -215,26 +281,39 @@ async function firstTime(user: string, key: string) {
   const rows = await r.json(); return Array.isArray(rows) && rows.length > 0;
 }
 
-async function runAll() {
+/* Several reminders at once become one notification; a single one keeps its buttons. */
+export function bundle(notes: Note[], lang: Lang): Note {
+  if (notes.length === 1) return notes[0];
+  return { key: `bundle:${Date.now()}`, title: W[lang].bundle(notes.length), body: notes.map((n) => n.title).join("\n"), url: "./#now" };
+}
+
+async function runAll(secret: string) {
   const subs: Row[] = await rest("push_subscriptions?select=*");
   if (!subs.length) return { users: 0, sent: 0 };
-  const users = [...new Set(subs.map((s) => s.user_id))], inList = `in.(${users.join(",")})`, since = addDays(local().day, -100);
-  const [settings, bills, tx, income, cats] = await Promise.all([
+  const now = local(), users = [...new Set(subs.map((s) => s.user_id))], inList = `in.(${users.join(",")})`, since = addDays(now.day, -100);
+  const [settings, bills, tx, income, cats, log] = await Promise.all([
     rest(`settings?select=user_id,data&user_id=${inList}`),
     rest(`bills?select=*&deleted=eq.false&user_id=${inList}`),
     rest(`transactions?select=user_id,date,amount,kind,category_id,bill_id,bill_due,income_id,income_due,lines&deleted=eq.false&date=gte.${since}&user_id=${inList}`),
     rest(`income_sources?select=*&deleted=eq.false&user_id=${inList}`),
     rest(`categories?select=user_id,id,name,budget&deleted=eq.false&user_id=${inList}`),
+    rest(`push_log?select=user_id,key&user_id=${inList}&or=(key.like."again:*",key.like."n:${now.day}:*")`),
   ]);
-  const now = local(); let sent = 0;
+  let sent = 0;
   for (const uid of users) {
     const by = (rows: Row[]) => rows.filter((r) => r.user_id === uid);
-    const notes = remindersFor({ settings: (by(settings)[0] || {}).data || {}, bills: by(bills), tx: by(tx), income: by(income), cats: by(cats) }, now);
-    for (const n of notes) {
-      if (!(await firstTime(uid, n.key))) continue;
-      const ok = await sendTo(by(subs), n); sent += ok;
-      if (!ok) await rest(`push_log?user_id=eq.${uid}&key=eq.${encodeURIComponent(n.key)}`, { method: "DELETE" }).catch(() => {});   // try again next hour
-    }
+    const st = (by(settings)[0] || {}).data || {}, mine: Row[] = by(log);
+    const sentToday = mine.filter((r) => r.key.startsWith(`n:${now.day}:`)).length;
+    if (sentToday >= DAILY_LIMIT) continue;   // the rest waits; anything still true is checked again tomorrow
+    const notes = remindersFor({ settings: st, bills: by(bills), tx: by(tx), income: by(income), cats: by(cats), again: new Set(mine.map((r) => r.key)) }, now);
+    const fresh: Note[] = [];
+    for (const n of notes) if (await firstTime(uid, n.key)) fresh.push(n);
+    if (!fresh.length) continue;
+    const note = bundle(fresh, langOf(st));
+    const token = note.answer ? await signAnswer(secret, uid, note.answer) : undefined;
+    const ok = await sendTo(by(subs), note, token); sent += ok;
+    if (ok) await firstTime(uid, `n:${now.day}:${Date.now()}`);
+    else for (const n of fresh) await rest(`push_log?user_id=eq.${uid}&key=eq.${encodeURIComponent(n.key)}`, { method: "DELETE" }).catch(() => {});   // try again next hour
   }
   return { users: users.length, sent };
 }
@@ -248,14 +327,21 @@ Deno.serve(async (req) => {
     const cron = req.headers.get("x-koti-cron");
     if (cron) {
       if (!k.koti_cron_token || cron !== k.koti_cron_token) return json(401, { error: "Bad token." });
-      return json(200, await runAll());
+      return json(200, await runAll(k.koti_vapid_private));
+    }
+    const body = await req.json().catch(() => ({}));
+    // A button on a notification: the signed token is the permission, no sign-in needed.
+    if (body.action === "answer") {
+      const a = await readAnswer(k.koti_vapid_private, body.token);
+      if (!a) return json(401, { error: "This reminder has expired. Open Koti to answer it." });
+      const r = await answer(a, String(body.choice || ""));
+      return json(r.ok ? 200 : 400, r);
     }
     // From the app: who is calling?
     const auth = req.headers.get("Authorization") || "";
     const who = await fetch(`${URL_}/auth/v1/user`, { headers: { Authorization: auth, apikey: SERVICE } });
     if (!who.ok) return json(401, { error: "Sign in first.", code: "auth" });
     const user = await who.json();
-    const body = await req.json().catch(() => ({}));
     if (body.action === "key") return json(200, { publicKey: k.koti_vapid_public });
     if (body.action === "test") {
       const subs: Row[] = await rest(`push_subscriptions?select=*&user_id=eq.${user.id}`);
@@ -270,4 +356,3 @@ Deno.serve(async (req) => {
     return json(500, { error: "Reminders aren't working right now: " + (e as Error).message });
   }
 });
-

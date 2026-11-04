@@ -3,7 +3,7 @@
 // Under Month: Bills, Income, Budgets and All spending. Under Home: each list and project.
 import { store, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, initSheets, closeSheet, toast } from "./ui.js";
-import { initSync, onSync } from "./sync.js";
+import { initSync, onSync, refresh } from "./sync.js";
 import { mountSetup, renderSetup, renderPlans, renderCharts, openAdd, setProject } from "./setup.js";
 import { mountMore, renderMore, bindMore, openNewPassword } from "./more.js";
 import { mountMoney, renderMoney, mountSpending, renderSpending, openExpense } from "./money.js";
@@ -93,6 +93,8 @@ function init() {
   document.addEventListener("click", e => {
     if (e.target.closest("[data-scan]")) { e.preventDefault(); openScan(); return; }
   });
+  // A reminder was answered from its notification: fetch the change so Now and Month show it.
+  if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "koti-refresh") refresh(); });
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "project") { renderPlans(); renderCharts(); } else renderCurrent(); }, 120); });
   initComposer(() => current);
