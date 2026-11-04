@@ -94,6 +94,8 @@ export const KNOWN_PLACES = [["K-Market", "Groceries", /k[\s-]?market/i], ["K-Su
   ["Hesburger", "Eating out", /hesburger|hese/i], ["McDonald's", "Eating out", /mcdonald|mäkkäri/i], ["Subway", "Eating out", /subway/i], ["Starbucks", "Eating out", /starbucks/i], ["Robert's Coffee", "Eating out", /robert'?s/i], ["Apteekki", "Health", /apteek/i], ["Finnkino", "Fun", /finnkino/i]];
 const FI_PLACE = /^(\p{Lu}[\p{L}'&-]*?)(?:i)?(ssa|ssä|sta|stä|lla|llä|lta|ltä)$/u;
 const STOP = new Set(["for", "at", "from", "in", "on", "the", "a", "an", "i", "spent", "paid", "bought", "euros", "euro", "eur", "cents", "today", "yesterday", "and", "ja", "euroa", "senttiä", "tänään", "eilen", "toissapäivänä", "maksoin", "ostin", "käytin"]);
+/* Words after "from" or "at" that are where the money came from, not a place: "from my upcoming salary". */
+const NOT_PLACE = /^(my|your|our|his|her|their|this|that|next|mun|minun|sun)\b|\b(salary|pay|paycheck|wages?|account|card|wallet|savings|pocket|cash|loan|palkka|palkasta|tili|tililtä|kortti|kortilla|säästöt)\b/i;
 const cap = s => s.replace(/(^|[\s-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
 
 export function parseExpense(text, { categories = [], history = [], today = new Date() } = {}) {
@@ -113,7 +115,7 @@ export function parseExpense(text, { categories = [], history = [], today = new 
   const prev = [...history].reverse().find(t => t.payee && lower.includes(t.payee.toLowerCase()));
   if (prev) { out.payee = prev.payee; out.categoryId = prev.categoryId || null; }
   if (!out.payee) { const k = KNOWN_PLACES.find(([, , re]) => re.test(raw)); if (k) { out.payee = k[0]; const c = byName(k[1]); if (c) out.categoryId = c.id; } }
-  if (!out.payee) { const m = raw.match(/\b(?:at|from|in)\s+([\p{L}\p{N}'&.\- ]+?)(?:\s+(?:for|on|yesterday|today|with)\b|[,.!?]|$)/iu); if (m && !/^\d/.test(m[1]) && !STOP.has(m[1].toLowerCase())) out.payee = cap(m[1].trim()); }
+  if (!out.payee) { const m = raw.match(/\b(?:at|from|in)\s+([\p{L}\p{N}'&.\- ]+?)(?:\s+(?:for|on|yesterday|today|with)\b|[,.!?]|$)/iu); if (m && !/^\d/.test(m[1]) && !STOP.has(m[1].toLowerCase()) && !NOT_PLACE.test(m[1].trim())) out.payee = cap(m[1].trim()); }
   if (!out.payee) { for (const w of raw.split(/\s+/)) { const m = w.replace(/[,.!?]$/, "").match(FI_PLACE); if (m && !Object.values(KEYWORDS).flat().includes(w.toLowerCase())) { out.payee = m[1]; break; } } }
 
   // category: words in the phrase, then the user's own category names
