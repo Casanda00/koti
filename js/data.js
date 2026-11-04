@@ -39,6 +39,12 @@ const EPOCH = new Date(0).toISOString();
 export const slug = s => String(s).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "x";
 export const newId = p => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 export const now = () => new Date().toISOString();
+/* A real calendar date as YYYY-MM-DD (2026-02-31 isn't), between 1990 and 2100; otherwise null. */
+export function validDay(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || "")); if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3], t = new Date(y, mo - 1, d);
+  return y >= 1990 && y <= 2100 && t.getFullYear() === y && t.getMonth() === mo - 1 && t.getDate() === d ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
 export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 function cleanItem(i, listId, pos) {
@@ -46,7 +52,7 @@ function cleanItem(i, listId, pos) {
   return {
     id: String(i.id || newId("item")).slice(0, 120), listId: String(listId), name: String(i.name).slice(0, 200),
     priority: PRIOS.includes(i.priority) ? i.priority : "Soon", done: !!i.done, price,
-    boughtAt: i.boughtAt ? String(i.boughtAt).slice(0, 10) : null, position: Number.isFinite(i.position) ? i.position : pos,
+    boughtAt: validDay(i.boughtAt), position: Number.isFinite(i.position) ? i.position : pos,
     qty: i.qty === null || i.qty === undefined || i.qty === "" || !(Number(i.qty) > 0) ? null : Math.round(Number(i.qty) * 100) / 100,
     note: i.note ? String(i.note).slice(0, 300) : null,
     updatedAt: i.updatedAt || EPOCH,
@@ -61,9 +67,9 @@ function cleanList(l, pos) {
 function cleanIncome(x, pos) {
   const amount = x.amount === null || x.amount === undefined || x.amount === "" || isNaN(Number(x.amount)) ? null : Math.max(0, Number(x.amount));
   return { id: String(x.id || newId("inc")).slice(0, 80), name: String(x.name).slice(0, 80), amount, frequency: INCOME_FREQS.includes(x.frequency) ? x.frequency : "monthly",
-    payDay: Math.min(31, Math.max(-1, Math.round(Number(x.payDay) || 0))), expectedDate: x.expectedDate ? String(x.expectedDate).slice(0, 10) : null,
+    payDay: Math.min(31, Math.max(-1, Math.round(Number(x.payDay) || 0))), expectedDate: validDay(x.expectedDate),
     payer: x.payer ? String(x.payer).slice(0, 120) : null, active: x.active !== false, position: Number.isFinite(x.position) ? x.position : pos,
-    endDate: x.endDate ? String(x.endDate).slice(0, 10) : null, missed: Array.isArray(x.missed) ? [...new Set(x.missed.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort().slice(-120) : [], updatedAt: x.updatedAt || EPOCH };
+    endDate: validDay(x.endDate), missed: Array.isArray(x.missed) ? [...new Set(x.missed.map(validDay).filter(Boolean))].sort().slice(-120) : [], updatedAt: x.updatedAt || EPOCH };
 }
 
 function cleanCategory(c, pos) {
@@ -73,12 +79,12 @@ function cleanCategory(c, pos) {
 export const TX_KINDS = ["expense", "income", "refund"];
 function cleanTx(t) {
   return {
-    id: String(t.id || newId("tx")).slice(0, 120), date: String(t.date).slice(0, 10), amount: Math.round(Math.abs(Number(t.amount)) * 100) / 100,
+    id: String(t.id || newId("tx")).slice(0, 120), date: validDay(t.date) || todayISO(), amount: Math.round(Math.abs(Number(t.amount)) * 100) / 100,
     kind: TX_KINDS.includes(t.kind) ? t.kind : "expense", categoryId: t.categoryId || null,
     payee: t.payee ? String(t.payee).slice(0, 120) : null, note: t.note ? String(t.note).slice(0, 500) : null,
     source: ["manual", "voice", "bank", "receipt"].includes(t.source) ? t.source : "manual",
-    receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, billId: t.billId || null, billDue: t.billDue ? String(t.billDue).slice(0, 10) : null,
-    incomeId: t.incomeId || null, incomeDue: t.incomeDue ? String(t.incomeDue).slice(0, 10) : null,
+    receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, billId: t.billId || null, billDue: validDay(t.billDue),
+    incomeId: t.incomeId || null, incomeDue: validDay(t.incomeDue),
     lines: Array.isArray(t.lines) && t.lines.length ? t.lines.slice(0, 150).map(l => ({ name: String(l.name || "Item").slice(0, 120), nameFi: l.nameFi ? String(l.nameFi).slice(0, 120) : null, qty: Number(l.qty) > 0 ? Math.round(Number(l.qty) * 1000) / 1000 : null,
       price: Math.round((Number(l.price) || 0) * 100) / 100, categoryId: l.categoryId || null, itemId: l.itemId || null })) : null,
     updatedAt: t.updatedAt || EPOCH,
@@ -91,15 +97,15 @@ function cleanBill(b, pos) {
   if (b.startDate && b.endDate && b.endDate < b.startDate) b = { ...b, endDate: null };
   return { id: String(b.id || newId("bill")).slice(0, 80), name: String(b.name).slice(0, 80), amount: Math.round(Math.abs(num(b.amount, 0)) * 100) / 100,
     frequency: FREQS.includes(b.frequency) ? b.frequency : "monthly", dueDay: Math.min(31, Math.max(1, Math.round(num(b.dueDay, 1)))), anchorMonth: Math.min(12, Math.max(1, Math.round(num(b.anchorMonth, 1)))),
-    autopay: !!b.autopay, autoThrough: b.autoThrough ? String(b.autoThrough).slice(0, 10) : null, active: b.active !== false,
+    autopay: !!b.autopay, autoThrough: validDay(b.autoThrough), active: b.active !== false,
     payee: b.payee ? String(b.payee).slice(0, 120) : null, note: b.note ? String(b.note).slice(0, 500) : null, position: Number.isFinite(b.position) ? b.position : pos,
-    dueDate: b.dueDate ? String(b.dueDate).slice(0, 10) : null, startDate: b.startDate ? String(b.startDate).slice(0, 10) : null, endDate: b.endDate ? String(b.endDate).slice(0, 10) : null, reference: b.reference ? String(b.reference).slice(0, 60) : null, iban: b.iban ? String(b.iban).replace(/\s+/g, " ").trim().slice(0, 40) : null,
+    dueDate: validDay(b.dueDate), startDate: validDay(b.startDate), endDate: validDay(b.endDate), reference: b.reference ? String(b.reference).slice(0, 60) : null, iban: b.iban ? String(b.iban).replace(/\s+/g, " ").trim().slice(0, 40) : null,
     dues: cleanDues(b.dues), updatedAt: b.updatedAt || EPOCH };
 }
 /* Per due date (YYYY-MM-DD): the amount on that month's bill, its reference and the saved document. */
 function cleanDues(d) {
   const out = {}; if (!d || typeof d !== "object") return out;
-  Object.keys(d).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort().slice(-36).forEach(k => { const x = d[k] || {};
+  Object.keys(d).filter(k => validDay(k) === k).sort().slice(-60).forEach(k => { const x = d[k] || {};
     const amount = Number(x.amount) > 0 ? Math.round(Number(x.amount) * 100) / 100 : null;
     out[k] = { amount, reference: x.reference ? String(x.reference).slice(0, 60) : null, docPath: x.docPath ? String(x.docPath).slice(0, 300) : null, skipped: !!x.skipped }; });
   return out;
@@ -114,7 +120,7 @@ function cleanReminder(r, pos) {
   const kinds = { before: ["bill", "payday", "monthend"], amount: ["category", "left"] }[when] || ["list", "goal"];
   const aboutKind = kinds.includes(r.aboutKind) ? r.aboutKind : when === "before" ? "payday" : when === "amount" ? "left" : null;
   return { id: String(r.id || newId("rem")).slice(0, 80), title: String(r.title || "Reminder").slice(0, 120), note: r.note ? String(r.note).slice(0, 300) : null, when,
-    date: when === "once" && r.date ? String(r.date).slice(0, 10) : null, monthDay: when === "monthly" ? int(r.monthDay, -2, 31, 1) : null,
+    date: when === "once" ? validDay(r.date) : null, monthDay: when === "monthly" ? int(r.monthDay, -2, 31, 1) : null,
     weekday: when === "weekly" ? int(r.weekday, 0, 6, 1) : null, beforeDays: when === "before" ? int(r.beforeDays, 0, 60, 3) : null,
     aboutKind, aboutId: aboutKind && aboutKind !== "payday" && aboutKind !== "monthend" && aboutKind !== "left" && r.aboutId ? String(r.aboutId).slice(0, 80) : null,
     amount: when === "amount" ? Math.max(0, Math.round((Number(r.amount) || 0) * 100) / 100) : null,
@@ -122,7 +128,7 @@ function cleanReminder(r, pos) {
 }
 function cleanGoal(g, pos) {
   return { id: String(g.id || newId("goal")).slice(0, 80), name: String(g.name).slice(0, 80), target: Math.max(0.01, num(g.target, 1)), saved: Math.max(0, num(g.saved, 0)),
-    targetDate: g.targetDate ? String(g.targetDate).slice(0, 10) : null, monthly: num(g.monthly) == null ? null : Math.max(0, num(g.monthly)), position: Number.isFinite(g.position) ? g.position : pos, updatedAt: g.updatedAt || EPOCH };
+    targetDate: validDay(g.targetDate), monthly: num(g.monthly) == null ? null : Math.max(0, num(g.monthly)), position: Number.isFinite(g.position) ? g.position : pos, updatedAt: g.updatedAt || EPOCH };
 }
 export function seedCategories() { return DEFAULT_CATEGORIES.map(([name, budget], k) => cleanCategory({ id: "cat-" + slug(name), name, budget }, k)); }
 
@@ -207,8 +213,8 @@ export function upgradeModel(m) {
 
 /* ---------- Store ---------- */
 const MODEL_KEY = "koti.model", META_KEY = "koti.meta";
-const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, reminders: {}, settings: false }, lastSync: { lists: null, items: null, categories: null, transactions: null, bills: null, goals: null, income: null, reminders: null, settings: null }, tomb: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, reminders: {} } });
-function fixMeta(m) { const e = emptyMeta(); m = Object.assign(e, m || {}); ["pending", "lastSync", "tomb"].forEach(k => { m[k] = Object.assign(emptyMeta()[k], m[k] || {}); }); return m; }
+const emptyMeta = () => ({ owner: null, failed: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, reminders: {} }, pending: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, reminders: {}, settings: false }, lastSync: { lists: null, items: null, categories: null, transactions: null, bills: null, goals: null, income: null, reminders: null, settings: null }, tomb: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, reminders: {} } });
+function fixMeta(m) { const e = emptyMeta(); m = Object.assign(e, m || {}); ["pending", "lastSync", "tomb", "failed"].forEach(k => { m[k] = Object.assign(emptyMeta()[k], m[k] || {}); }); return m; }
 const listeners = new Set();
 
 function readJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }

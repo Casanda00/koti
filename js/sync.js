@@ -41,7 +41,7 @@ function mergeSettings(r) {
   for (const k of Object.keys(data)) {
     if (k === "_t") continue;
     const tt = t(theirs[k]), mt = t(mine[k]);
-    if (tt ? tt >= mt : !mt) { if (JSON.stringify(S[k]) !== JSON.stringify(data[k])) { S[k] = data[k]; changed = true; } if (tt) mine[k] = theirs[k]; }
+    if (tt ? tt > mt : !mt) { if (JSON.stringify(S[k]) !== JSON.stringify(data[k])) { S[k] = data[k]; changed = true; } if (tt) mine[k] = theirs[k]; }
   }
   S._t = mine;
   if (t(r.updated_at) > t(S.updatedAt)) S.updatedAt = r.updated_at;
@@ -84,20 +84,30 @@ function explain(e) {
 function fail(e) { const [s, txt, d] = explain(e); setStatus(s, txt, d); }
 
 /* ---------- Pull ---------- */
+// Rows come in order of (synced_at, id), so rows that share a time are never skipped at a page edge. Each pull
+// starts 30 seconds before the last one ended: a row written just before, whose upload committed late, still
+// arrives. Rows already here are recognised and skipped.
+const OVERLAP = 30e3, PAGE = 1000;
+const q2 = v => `"${String(v).replace(/"/g, '\\"')}"`;
 export async function pull() {
   const c = sync.client, uid = sync.user && sync.user.id; if (!c || !uid) return;
   for (const kind of TABLES) {
-    let since = store.meta.lastSync[kind];
+    const last = store.meta.lastSync[kind];
+    let at = last ? new Date(Date.parse(last) - OVERLAP).toISOString() : null, id = null, newest = last;
     for (;;) {
-      let q = c.from(TABLE(kind)).select("*").order("synced_at", { ascending: true }).limit(1000);
-      if (since) q = q.gt("synced_at", since);
+      let q = c.from(TABLE(kind)).select("*").order("synced_at", { ascending: true });
+      if (kind !== "settings") q = q.order("id", { ascending: true });
+      q = q.limit(PAGE);
+      if (at && id != null && kind !== "settings") q = q.or(`(synced_at.gt.${q2(at)},and(synced_at.eq.${q2(at)},id.gt.${q2(id)}))`);
+      else if (at) q = q.gt("synced_at", at);
       const { data, error } = await q;
       if (error) throw error;
       if (!data.length) break;
       applyRows(kind, data);
-      since = data[data.length - 1].synced_at;
-      store.meta.lastSync[kind] = since; store.persist();
-      if (data.length < 1000) break;
+      const end = data[data.length - 1]; at = end.synced_at; id = end.id ?? null;
+      if (!newest || Date.parse(at) > Date.parse(newest)) newest = at;
+      store.meta.lastSync[kind] = newest; store.persist();
+      if (data.length < PAGE) break;
     }
   }
 }
@@ -129,19 +139,47 @@ export async function flush() {
   if (ROWS.every(k => !batches[k].length) && !settings) { flushing = false; okStatus(); return; }
   setStatus("busy", "Saving…");
   try {
-    const send = async (table, batch) => { for (let k = 0; k < batch.length; k += 500) { const { error } = await c.from(table).upsert(batch.slice(k, k + 500).map(b => b.row), { onConflict: "user_id,id" }); if (error) throw error; } };
-    for (const k of ROWS) if (batches[k].length) await send(TABLE(k), batches[k]);
+    // A batch the server refuses is sent again row by row. A row it refuses on its own (a value it won't take) is
+    // set aside in meta.failed, shown in You, and no longer blocks the rest. Network and sign-in errors still stop here.
+    const refused = e => e && (/^(22|23|42)/.test(String(e.code || "")) || /violates|invalid input|out of range|too long/i.test(e.message || ""));
+    const send = async (kind, batch) => {
+      const table = TABLE(kind);
+      for (let k = 0; k < batch.length; k += 500) {
+        const part = batch.slice(k, k + 500), { error } = await c.from(table).upsert(part.map(b => b.row), { onConflict: "user_id,id" });
+        if (!error) continue;
+        if (!refused(error)) throw error;
+        for (const b of part) {
+          const { error: e1 } = await c.from(table).upsert([b.row], { onConflict: "user_id,id" });
+          if (!e1) continue;
+          if (!refused(e1)) throw e1;
+          meta.failed[kind][b.id] = { error: e1.message || String(e1), at: new Date().toISOString(), version: b.version };
+          delete meta.pending[kind][b.id]; b.failed = true;
+        }
+      }
+    };
+    for (const k of ROWS) if (batches[k].length) await send(k, batches[k]);
     if (settings) { const { error } = await c.from("settings").upsert(settings.row, { onConflict: "user_id" }); if (error) throw error; }
     const settle = (kind, sent) => sent.forEach(s => {
       const cur = store.model[kind].find(x => x.id === s.id) || (store.meta.tomb && store.meta.tomb[kind] && store.meta.tomb[kind][s.id]);
       if (!cur || cur.updatedAt === s.version) { delete store.meta.pending[kind][s.id]; if (store.meta.tomb && store.meta.tomb[kind]) delete store.meta.tomb[kind][s.id]; }
     });
-    ROWS.forEach(k => settle(k, batches[k]));
+    ROWS.forEach(k => settle(k, batches[k].filter(b => !b.failed)));
+    ROWS.forEach(k => batches[k].forEach(b => { if (!b.failed && meta.failed[k]) delete meta.failed[k][b.id]; }));
     if (settings && store.model.settings.updatedAt === settings.version) store.meta.pending.settings = false;
     store.persist(); sync.lastSync = new Date(); okStatus();
+    const nFailed = failedCount(); if (nFailed) setStatus("error", `${nFailed} change${nFailed === 1 ? "" : "s"} couldn't be saved`, "Open You → Sync to see which, and fix or remove them.");
   } catch (e) { fail(e); }
   finally { flushing = false; if (again) { again = false; flush(); } }
 }
+
+/* Changes the server refused, kept on this device: kind, id, the record and why. */
+export const failedCount = () => ROWS.reduce((n, k) => n + Object.keys((store.meta.failed || {})[k] || {}).length, 0);
+export function failedChanges() {
+  return ROWS.flatMap(k => Object.entries((store.meta.failed || {})[k] || {}).map(([id, f]) => ({ kind: k, id, error: f.error, at: f.at, obj: store.model[k].find(x => x.id === id) || null })));
+}
+/* Try a set-aside change again (after it was corrected), or give it up. */
+export function retryFailed(kind, id) { delete store.meta.failed[kind][id]; store.touch(kind, id); store.commit(); }
+export function dropFailed(kind, id) { delete store.meta.failed[kind][id]; store.persist(); }
 
 /* ---------- Status helpers ---------- */
 export const pendingCount = () => ROWS.reduce((n, k) => n + Object.keys(store.meta.pending[k]).length, 0) + (store.meta.pending.settings ? 1 : 0);
