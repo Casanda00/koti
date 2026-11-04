@@ -1,6 +1,6 @@
 // Receipts: shrink the photo, read it on the device (Tesseract, English + Finnish), keep it on the device
 // until it's uploaded to the private "receipts" bucket, and show it again later.
-import { store, topLists, roomsOf, itemsOf } from "./data.js";
+import { store, topLists, roomsOf, itemsOf, validDay } from "./data.js";
 import { sync, onSync } from "./sync.js";
 import { KNOWN_PLACES, parseExpense } from "./voice.js";
 
@@ -99,7 +99,8 @@ async function readWithAI(prepared, hint) {
   const sums = {}; lines.forEach(l => { if (l.categoryId) sums[l.categoryId] = (sums[l.categoryId] || 0) + l.price; });
   let main = Object.entries(sums).sort((a, b) => b[1] - a[1])[0];
   const fromShop = R.shop ? parseExpense(R.shop, { categories: cats, history: store.model.transactions }).categoryId : null;
-  return { text: "", ai: true, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, parsed: { amount: R.total, date: R.date, payee: R.shop, categoryId: main ? main[0] : fromShop, lines } };
+  if (data.limit) { try { localStorage.setItem("koti.aiLimit", String(data.limit)); } catch {} }
+  return { text: "", ai: true, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, parsed: { amount: R.total, date: validDay(R.date), payee: R.shop, categoryId: main ? main[0] : fromShop, lines, currency: String(R.currency || "EUR").toUpperCase() } };
 }
 
 /* hint: "receipt" or "bill" when you already chose where it goes. PDFs are read by AI only. */

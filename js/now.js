@@ -44,6 +44,7 @@ export function mountNow(el) {
     if (t.closest("[data-how]")) { openPayments("today"); return; }
     if (t.closest("[data-start-setup]")) { import("./onboarding.js").then(m => m.openOnboarding()); return; }
     if (t.closest("[data-bal]")) { openStartBalance(); return; }
+    if (t.closest("[data-add-pay]")) { import("./income.js").then(m => m.openSource(null, { name: "Salary", frequency: "monthly" })); return; }
     const got = t.closest("[data-got]"); if (got) { const src = store.model.income.find(x => x.id === got.dataset.got); if (src) { const tx = receive({ src, due: got.dataset.due }, src.amount); toast(`Added ${eur(tx.amount)} from ${src.name}`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); } return; }
     const ny = t.closest("[data-notyet]"); if (ny) { snooze(ny.dataset.notyet); renderNow(); return; }
     const pd = t.closest("[data-paid]"); if (pd) { const o = findOverdue(pd.dataset.paid, pd.dataset.due); if (o) { const tx = markPaid(o, todayISO(), true); toast(`${o.bill.name} marked paid`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); } return; }
@@ -98,9 +99,9 @@ export function renderNow() {
   const rowBill = o => `<a class="trow" href="#bills"><span>${esc(o.bill.name)}<small>${o.due === today ? "Due today" : "Due tomorrow"}</small></span><b class="num">${eur(o.amount)}</b></a>`;
 
   root.innerHTML = `${wantsStrip() ? stripHTML() : ""}<section class="now-top">
-      <p class="now-k">${big < 0 ? "Over today" : "Left to spend today"}</p>
+      <p class="now-k">${todayLeft == null ? (big < 0 ? "Over, after bills" : "In your account, after bills") : big < 0 ? "Over today" : "Left to spend today"}</p>
       <div class="now-big num" style="--n:${money(big).length}">${money(big)}</div>
-      ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : ""}
+      ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : `<button type="button" class="now-how" data-add-pay>When is your payday? Add it for a daily amount</button>`}
       <p class="now-pd">${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}</p>
     </section>
     <section class="now-sheet">

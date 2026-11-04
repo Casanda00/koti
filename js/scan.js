@@ -207,6 +207,7 @@ function receiptReview(S) {
     const total = E.total ?? (P.amount != null ? money2(P.amount) : "");
     B.innerHTML = `
       ${r.docType === "bill" ? `<div class="suggest warn">${icon("bill", "ic")}<div><b>This looks like a bill</b><small>Bills go to Bills with their due date and reference.</small></div><button type="button" class="btn sm" id="rvToBill">Add as a bill</button></div>` : ""}
+      ${P.currency && P.currency !== "EUR" ? `<div class="suggest warn">${icon("alert", "ic")}<div><b>This receipt is in ${esc(P.currency)}</b><small>Koti counts in euros. Change the total to what your bank charged.</small></div></div>` : ""}
       <div class="rv-top"><div class="rv-big num" id="rvBig"></div>${S.file ? `<span class="scan-thumb">${thumb(S)}</span>` : ""}</div>
       <p class="rv-s" id="rvS"></p>
       <details class="rv-more"${total ? "" : " open"}><summary>Shop, date and total</summary>
@@ -237,7 +238,8 @@ function paintHead(S, B) {
   const tv = parseMoney(t); $("#rvBig", B).textContent = eur(tv && !Number.isNaN(tv) ? tv : 0);
   const day = !date || date === todayISO() ? "today" : parseDay(date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const n = S.lines.length, g = groupsOf(S).length;
-  $("#rvS", B).innerHTML = `${shop ? `at <b>${esc(shop)}</b>, ` : ""}${esc(day)}.${n ? ` ${n} line${n === 1 ? "" : "s"}${g > 1 ? `, sorted ${g === 2 ? "two" : g === 3 ? "three" : g} ways` : ""}.` : ""}`;
+  const noDate = S.r && S.r.parsed && !S.r.parsed.date && !S.edits.date;
+  $("#rvS", B).innerHTML = `${shop ? `at <b>${esc(shop)}</b>, ` : ""}${esc(day)}${noDate ? " (the date couldn't be read)" : ""}.${n ? ` ${n} line${n === 1 ? "" : "s"}${g > 1 ? `, sorted ${g === 2 ? "two" : g === 3 ? "three" : g} ways` : ""}.` : ""}`;
 }
 function paintLines(S, B) {
   const d = S.dest, L = $("#rvLines", B), lines = S.lines, r = S.r || {};
@@ -272,6 +274,10 @@ async function saveReceipt(S, B) {
   const total = parseMoney($("#rvTotal", B).value), date = $("#rvDate", B).value || todayISO(), shop = $("#rvShop", B).value.trim(), keep = $("#rvKeep", B).checked;
   if (total == null || Number.isNaN(total) || total <= 0) return msg("Type the total, like 24,90.");
   if (["list", "project"].includes(d.kind) && !listOf(d.id)) return msg("That list was deleted. Tap the title to choose another place.");
+  if (date > todayISO()) return msg("That date is in the future. Check the date.");
+  // The same receipt twice: same day, same total, same shop (or no shop)
+  const twin = store.model.transactions.find(t => t.date === date && Math.abs(t.amount - total) < 0.005 && t.kind === "expense" && (!shop || !t.payee || t.payee.toLowerCase() === shop.toLowerCase()));
+  if (twin && !S.twinOk) { S.twinOk = true; return msg(`You already have ${twin.payee || "an expense"}, ${eur(twin.amount)}, on this day. Tap Save again to keep both.`); }
   S.busy = true;
   const id = newId("tx"), unit = l => Math.round(l.price / (l.qty && l.qty > 0 && Number.isInteger(l.qty) ? l.qty : 1) * 100) / 100;
   const before = [], created = [], txLines = [];

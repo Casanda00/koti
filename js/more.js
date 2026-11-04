@@ -96,7 +96,8 @@ function setLook(patch) {
 }
 async function aiUse() {
   if (!sync.client || !sync.user) return "Sign in to use AI";
-  try { const { data, error } = await sync.client.from("ai_usage").select("count").eq("day", new Date().toISOString().slice(0, 10)); if (error) return null; return `${(data && data[0] && data[0].count) || 0} of 30`; } catch { return null; }
+  try { const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Helsinki" }).format(new Date());   // the AI day runs on Helsinki time
+    const { data, error } = await sync.client.from("ai_usage").select("count").eq("day", day); if (error) return null; let lim = 30; try { lim = Number(localStorage.getItem("koti.aiLimit")) || 30; } catch {} return `${(data && data[0] && data[0].count) || 0} of ${lim}`; } catch { return null; }
 }
 
 /* ---------- Profile ---------- */

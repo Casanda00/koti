@@ -59,6 +59,20 @@ function schema(categories: string[], places: string[]) {
   };
 }
 
+/* A real calendar date (2026-02-31 isn't), no later than tomorrow; otherwise null. */
+function realDay(v: unknown, latest: string) {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const d = new Date(v + "T12:00:00Z");
+  return d.toISOString().slice(0, 10) === v && v >= "1990-01-01" && v <= latest ? v : null;
+}
+const tomorrow = () => new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+/* Gives one AI use back (the reading failed), with the server's own key so a user can't do it themselves. */
+async function giveBack(url: string, userId: string) {
+  const key = (() => { try { const k = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); if (k.default) return k.default; } catch { /* legacy */ } return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""; })();
+  if (!key) return;
+  await fetch(`${url}/rest/v1/rpc/koti_ai_refund`, { method: "POST", headers: { apikey: key, ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), "Content-Type": "application/json" }, body: JSON.stringify({ u: userId }) }).catch(() => {});
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json(405, { error: "Use POST." });
@@ -67,6 +81,7 @@ Deno.serve(async (req) => {
   const url = Deno.env.get("SUPABASE_URL") || "", key = projectKey();
   const who = await fetch(`${url}/auth/v1/user`, { headers: { Authorization: auth, apikey: key } });
   if (!who.ok) return json(401, { error: "Your session ended. Sign in again.", code: "auth" });
+  const me = await who.json().catch(() => ({})) as { id?: string };
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openaiKey) return json(503, { error: "AI isn't set up yet. Add OPENAI_API_KEY in Supabase → Edge Functions → Secrets.", code: "no_key" });
 
@@ -85,7 +100,8 @@ Deno.serve(async (req) => {
   if (!use.ok) return json(429, { error: `That's today's ${LIMIT} AI uses (scans and the microphone together). The microphone still works on this phone.`, code: "limit" });
   const used = await use.json().catch(() => null);
 
-  const fail = (res: Response, e: { error?: { message?: string } }) => {
+  const fail = async (res: Response, e: { error?: { message?: string } }) => {
+    if (me.id) await giveBack(url, me.id);
     const msg = e.error?.message || res.statusText;
     return json(502, { error: res.status === 401 ? "OpenAI didn't accept the key." : res.status === 429 ? "OpenAI is out of credit or busy. Try again in a minute." : `OpenAI couldn't do it: ${msg}`, code: "openai" });
   };
@@ -100,7 +116,7 @@ Deno.serve(async (req) => {
     form.append("language", lang);
     form.append("prompt", lang === "fi" ? "Ostos ja hinta euroina, esim. Lidl 23,40 tai Prisma 86 euroa." : "A purchase and its price in euros, like Lidl 23,40 or Prisma 86 euros.");
     const res = await fetch(`${OPENAI_BASE}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${openaiKey}` }, body: form });
-    if (!res.ok) return fail(res, await res.json().catch(() => ({})));
+    if (!res.ok) return await fail(res, await res.json().catch(() => ({})));
     text = String((await res.json()).text || "").trim().slice(0, 500);
     if (!text) return json(200, { transcript: "", intent: "unclear", spend: null, range: null, items: [], used, limit: LIMIT });
   }
@@ -115,9 +131,9 @@ They said: ${JSON.stringify(text)}`;
     body: JSON.stringify({ model: MODEL, temperature: 0, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }],
       response_format: { type: "json_schema", json_schema: { name: "heard", strict: true, schema: schema(categories, places) } } }),
   });
-  if (!res.ok) return fail(res, await res.json().catch(() => ({})));
+  if (!res.ok) return await fail(res, await res.json().catch(() => ({})));
   let r: Record<string, unknown>;
-  try { r = JSON.parse((await res.json()).choices?.[0]?.message?.content || "{}"); } catch { return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
+  try { r = JSON.parse((await res.json()).choices?.[0]?.message?.content || "{}"); } catch { if (me.id) await giveBack(url, me.id); return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
 
   const catSet = new Map(categories.map((c) => [c.toLowerCase(), c])), placeSet = new Map(places.map((c) => [c.toLowerCase(), c]));
   const intent = ["spend", "question", "remind", "list"].includes(String(r.intent)) ? String(r.intent) : "unclear";
@@ -130,7 +146,7 @@ They said: ${JSON.stringify(text)}`;
       place: typeof l.place === "string" ? placeSet.get(l.place.toLowerCase()) || null : null,
     })).filter((l) => l.price !== 0);
     const total = money(s.total) ?? (lines.length ? Math.round(lines.reduce((a, l) => a + l.price, 0) * 100) / 100 : null);
-    const date = typeof s.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.date) && s.date <= today ? s.date : null;
+    const date = realDay(s.date, today);
     spend = { total, payee: str(s.payee, 120), date, note: str(s.note, 200), lines };
   }
   const items = intent === "list" ? (Array.isArray(r.items) ? r.items : []).slice(0, 40).map((x: Record<string, unknown>) => ({ name: String(x.name || "").trim().slice(0, 120), qty: money(x.qty) })).filter((x) => x.name) : [];
