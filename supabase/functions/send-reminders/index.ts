@@ -440,7 +440,7 @@ async function runAll(secret: string) {
   const [settings, bills, tx, income, cats, log, mineAll, lists, events] = await Promise.all([
     rest(`settings?select=user_id,data&user_id=${inList}`),
     rest(`bills?select=*&deleted=eq.false&user_id=${inList}`),
-    rest(`transactions?select=user_id,date,amount,kind,category_id,bill_id,bill_due,income_id,income_due,lines,updated_at&deleted=eq.false&date=gte.${since}&user_id=${inList}`),
+    rest(`transactions?select=user_id,date,amount,kind,category_id,payee,bill_id,bill_due,income_id,income_due,lines,updated_at&deleted=eq.false&date=gte.${since}&user_id=${inList}`),
     rest(`income_sources?select=*&deleted=eq.false&user_id=${inList}`),
     rest(`categories?select=user_id,id,name,budget&deleted=eq.false&user_id=${inList}`),
     rest(`push_log?select=user_id,key&user_id=${inList}&or=(key.like."again:*",key.like."n:${now.day}:*")`),
