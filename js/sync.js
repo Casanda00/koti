@@ -10,8 +10,8 @@ export const sync = { status: "local", text: "Saved on this device", detail: "",
 export function onSync(fn) { listeners.add(fn); fn(sync); return () => listeners.delete(fn); }
 function setStatus(status, text, detail = "") { Object.assign(sync, { status, text, detail }); listeners.forEach(f => f(sync)); }
 
-const TABLES = ["lists", "items", "categories", "transactions", "bills", "goals", "income", "settings"];
-const ROWS = ["lists", "items", "categories", "transactions", "bills", "goals", "income"];
+const TABLES = ["lists", "items", "categories", "transactions", "bills", "goals", "income", "reminders", "settings"];
+const ROWS = ["lists", "items", "categories", "transactions", "bills", "goals", "income", "reminders"];
 const TABLE = k => ({ income: "income_sources" }[k] || k);   // model key → database table
 const t = s => (s ? Date.parse(s) : 0);
 const rowOfList = (l, uid) => ({ user_id: uid, id: l.id, name: l.name, room: l.room, kind: l.kind || "room", parent_id: l.parentId || null, budget: l.budget ?? null, extra_spend: l.extraSpend || 0, plan: l.plan || null, category_id: l.categoryId || null, position: l.position, deleted: !!l.deleted, updated_at: l.updatedAt });
@@ -27,8 +27,10 @@ const billOfRow = r => ({ id: r.id, name: r.name, amount: Number(r.amount), freq
 const rowOfBill = (b, uid) => ({ user_id: uid, id: b.id, name: b.name, amount: b.amount, frequency: b.frequency, due_day: b.dueDay, anchor_month: b.anchorMonth, autopay: !!b.autopay, auto_through: b.autoThrough, active: b.active !== false, payee: b.payee, note: b.note, position: b.position, due_date: b.dueDate || null, start_date: b.startDate || null, end_date: b.endDate || null, reference: b.reference || null, iban: b.iban || null, dues: b.dues || {}, deleted: !!b.deleted, updated_at: b.updatedAt });
 const goalOfRow = r => ({ id: r.id, name: r.name, target: Number(r.target), saved: Number(r.saved), targetDate: r.target_date, monthly: r.monthly == null ? null : Number(r.monthly), position: r.position, updatedAt: r.updated_at });
 const rowOfGoal = (g, uid) => ({ user_id: uid, id: g.id, name: g.name, target: g.target, saved: g.saved, target_date: g.targetDate, monthly: g.monthly, position: g.position, deleted: !!g.deleted, updated_at: g.updatedAt });
-const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, transactions: rowOfTx, bills: rowOfBill, goals: rowOfGoal, income: rowOfInc };
-const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow, bills: billOfRow, goals: goalOfRow, income: incOfRow };
+const remOfRow = r => ({ id: r.id, title: r.title, note: r.note || null, when: r.schedule, date: r.on_date || null, monthDay: r.month_day, weekday: r.weekday, beforeDays: r.before_days, aboutKind: r.about_kind || null, aboutId: r.about_id || null, hour: r.hour, active: r.active !== false, position: r.position, updatedAt: r.updated_at });
+const rowOfRem = (x, uid) => ({ user_id: uid, id: x.id, title: x.title, note: x.note || null, schedule: x.when, on_date: x.date || null, month_day: x.monthDay ?? null, weekday: x.weekday ?? null, before_days: x.beforeDays ?? null, about_kind: x.aboutKind || null, about_id: x.aboutId || null, hour: x.hour, active: x.active !== false, position: x.position, deleted: !!x.deleted, updated_at: x.updatedAt });
+const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, transactions: rowOfTx, bills: rowOfBill, goals: rowOfGoal, income: rowOfInc, reminders: rowOfRem };
+const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow, bills: billOfRow, goals: goalOfRow, income: incOfRow, reminders: remOfRow };
 const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, qty: r.qty == null ? null : Number(r.qty), note: r.note || null, position: r.position, updatedAt: r.updated_at });
 
 /* ---------- Apply rows from the server ---------- */

@@ -52,7 +52,7 @@ export async function renderReminders(el) {
   const sub = await current().catch(() => null), on = !!sub && Notification.permission === "granted";
   const why = !supported() ? (standaloneIOS() ? "On iPhone, add Koti to your home screen (iOS 16.4 or later), then turn this on there." : "This browser can't receive reminders.") : !sync.user ? "Sign in to use reminders." : Notification.permission === "denied" ? "Notifications are blocked. Allow them for Koti in your phone's settings." : "";
   const hours = (sel) => Array.from({ length: 24 }, (_, h) => `<option value="${h}"${Number(sel) === h ? " selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("");
-  el.innerHTML = `<div class="gh"><h2>Reminders</h2></div>
+  el.innerHTML = `<div class="mhead"><h2>From Koti</h2></div>
     <div class="grp">
       <label class="row"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders on this phone<small>${on ? "On" : why || "Off"}</small></span><input type="checkbox" class="switch" id="rmOn" ${on ? "checked" : ""} ${why && !on ? "disabled" : ""}></label>
       ${TYPES.map(([k, t, sub]) => `<label class="row"><span class="rt">${t}<small>${sub}${k === "bills" || k === "payday" || k === "overdue" ? ` · ${String(R.billHour).padStart(2, "0")}:00` : ""}</small></span><input type="checkbox" class="switch" data-rm="${k}" ${R[k] ? "checked" : ""}></label>`).join("")}

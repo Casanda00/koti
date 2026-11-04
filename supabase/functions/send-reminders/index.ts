@@ -60,13 +60,17 @@ export async function readAnswer(secret: string, token: string): Promise<(Answer
   try {
     if (!(await crypto.subtle.verify("HMAC", await hmac(secret), fromB64u(sig), enc.encode(body)))) return null;
     const x = JSON.parse(new TextDecoder().decode(fromB64u(body)));
-    return x.exp > Date.now() && (x.k === "bill" || x.k === "pay") ? x : null;
+    return x.exp > Date.now() && (x.k === "bill" || x.k === "pay" || x.k === "cr") ? x : null;
   } catch { return null; }
 }
 
 /* What a button does. Rows are written the way the app writes them, so every device syncs the change. */
 async function answer(a: Answer & { u: string }, choice: string) {
   const today = local().day, stamp = new Date().toISOString(), uid = a.u;
+  if (a.k === "cr") {   // your own reminder: Done, or again tomorrow at the same hour
+    if (choice === "later") await fetch(`${URL_}/rest/v1/push_log?on_conflict=user_id,key`, { method: "POST", headers: { ...asServer(), "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates" }, body: JSON.stringify({ user_id: uid, key: `again:cr:${a.id}:${addDays(today, 1)}` }) });
+    return { ok: true };
+  }
   if (choice === "later") {
     if (a.k === "pay") await fetch(`${URL_}/rest/v1/push_log?on_conflict=user_id,key`, { method: "POST", headers: { ...asServer(), "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates" }, body: JSON.stringify({ user_id: uid, key: `again:pay:${a.id}:${a.due}:${addDays(today, 1)}` }) });
     return { ok: true };
@@ -127,7 +131,10 @@ const W = {
     week: "Your week",
     weekBody: (a: string, next: string) => `${a} spent this week. ${next ? `Next week: ${next}.` : "No bills next week."}`,
     testT: "Koti reminders are on", testB: "Bills, paydays and budgets will reach you like this.",
-    paid: "Paid", notYet: "Not yet", iPaid: "I paid it", notOwed: "Not owed", landed: "It landed",
+    paid: "Paid", notYet: "Not yet", iPaid: "I paid it", notOwed: "Not owed", landed: "It landed", done: "Done", tomorrow: "Tomorrow",
+    dueIn: (n: string, a: string, d: number) => d === 0 ? `${n}, ${a}, is due today.` : `${n}, ${a}, is due in ${d} day${d === 1 ? "" : "s"}.`,
+    payIn: (d: number) => d === 0 ? "Payday is today." : `Payday is in ${d} day${d === 1 ? "" : "s"}.`,
+    endIn: (d: number) => d === 0 ? "The month ends today." : `The month ends in ${d} day${d === 1 ? "" : "s"}.`,
     bundle: (n: number) => `${n} things today`,
   },
   fi: {
@@ -145,7 +152,10 @@ const W = {
     week: "Viikkosi",
     weekBody: (a: string, next: string) => `${a} kulutettu tällä viikolla. ${next ? `Ensi viikolla: ${next}.` : "Ensi viikolla ei laskuja."}`,
     testT: "Kotin muistutukset ovat päällä", testB: "Laskut, palkkapäivät ja budjetit tulevat näin.",
-    paid: "Maksettu", notYet: "Ei vielä", iPaid: "Maksoin", notOwed: "Ei tarvitse", landed: "Tuli",
+    paid: "Maksettu", notYet: "Ei vielä", iPaid: "Maksoin", notOwed: "Ei tarvitse", landed: "Tuli", done: "Tehty", tomorrow: "Huomenna",
+    dueIn: (n: string, a: string, d: number) => d === 0 ? `${n}, ${a}, erääntyy tänään.` : `${n}, ${a}, erääntyy ${d} päivän päästä.`,
+    payIn: (d: number) => d === 0 ? "Tänään on palkkapäivä." : `Palkkapäivään on ${d} päivää.`,
+    endIn: (d: number) => d === 0 ? "Kuukausi loppuu tänään." : `Kuukausi loppuu ${d} päivän päästä.`,
     bundle: (n: number) => `${n} asiaa tänään`,
   },
 };
@@ -188,14 +198,57 @@ function lastWorkingDay(y: number, m: number) {
 }
 
 /* ---------- What to remind one user about ---------- */
-type Answer = { k: "bill" | "pay"; id: string; due: string };
+type Answer = { k: "bill" | "pay" | "cr"; id: string; due: string };
 type Note = { key: string; title: string; body: string; url: string; actions?: { action: string; title: string }[]; answer?: Answer };
 export const DAILY_LIMIT = 3;
-function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[]; again?: Set<string> }, now: { day: string; hour: number; weekday: string }): Note[] {
+/* The day your main pay lands in a month: the biggest monthly income, the same choice as the app. */
+function mainPayDue(income: Row[], y: number, m: number) {
+  const main = income.filter((s) => s.active && s.frequency !== "once").sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))[0];
+  return main ? payDue(main, y, m) : null;
+}
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/* Your own reminders that are due this hour. They come at the hour you chose, quiet hours or not. */
+export function customFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; reminders?: Row[]; again?: Set<string> }, now: { day: string; hour: number; weekday: string }): Note[] {
+  const out: Note[] = [], today = now.day, lang = langOf(u.settings), w = W[lang], eur = (n: number) => money(lang, n);
+  const [y, m, d] = today.split("-").map(Number), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const paid = new Set(u.tx.filter((t) => t.bill_id).map((t) => `${t.bill_id}|${t.bill_due}`));
+  for (const r of u.reminders || []) {
+    if (!r.active || r.deleted || Number(r.hour) !== now.hour) continue;
+    const again = !!u.again && u.again.has(`again:cr:${r.id}:${today}`);
+    let hit = again, body = r.note || "", answerTo: Answer = { k: "cr", id: r.id, due: today }, bill = false;
+    if (r.schedule === "once") hit = hit || r.on_date === today;
+    if (r.schedule === "weekly") hit = hit || WD[Number(r.weekday)] === now.weekday;
+    if (r.schedule === "monthly") {
+      const md = Number(r.month_day);
+      hit = hit || (md > 0 ? d === Math.min(md, last) : md === -1 ? d === lastWorkingDay(y, m - 1) : mainPayDue(u.income, y, m - 1) === today);
+    }
+    if (r.schedule === "before") {
+      const n = Number(r.before_days) || 0;
+      if (r.about_kind === "bill") {
+        const b = u.bills.find((x) => x.id === r.about_id && x.active);
+        const due = b && billDuesAround(b, today, 0, 2).find((x) => addDays(x, -n) === today && !paid.has(`${b.id}|${x}`) && !((b.dues || {})[x] || {}).skipped);
+        if (b && due) { hit = true; bill = true; body = body || w.dueIn(b.name, eur(((b.dues || {})[due] || {}).amount || Number(b.amount)), n); answerTo = { k: "bill", id: b.id, due }; }
+      } else if (r.about_kind === "payday") {
+        const pd = [0, 1].map((k) => mainPayDue(u.income, y, m - 1 + k)).find((x) => x && addDays(x, -n) === today);
+        if (pd) { hit = true; body = body || w.payIn(n); }
+      } else if (r.about_kind === "monthend") {
+        const ends = [ymd(y, m - 1, 31), ymd(y, m, 31)].find((x) => addDays(x, -n) === today);
+        if (ends) { hit = true; body = body || w.endIn(n); }
+      }
+    }
+    if (!hit) continue;
+    out.push({ key: `cr:${r.id}:${today}`, title: r.title, body, url: bill ? "./#bills" : "./#reminders", answer: answerTo,
+      actions: bill ? [{ action: "paid", title: w.paid }, { action: "later", title: w.notYet }] : [{ action: "done", title: w.done }, { action: "later", title: w.tomorrow }] });
+  }
+  return out;
+}
+
+function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[]; reminders?: Row[]; again?: Set<string> }, now: { day: string; hour: number; weekday: string }): Note[] {
   const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
   const quiet = R.quietFrom > R.quietTo ? (now.hour >= R.quietFrom || now.hour < R.quietTo) : (now.hour >= R.quietFrom && now.hour < R.quietTo);
-  if (quiet) return [];
-  const out: Note[] = [], today = now.day, tomorrow = addDays(today, 1), morning = now.hour === Number(R.billHour);
+  const mine = R.custom === false ? [] : customFor(u, now);
+  if (quiet) return mine;
+  const out: Note[] = [...mine], today = now.day, tomorrow = addDays(today, 1), morning = now.hour === Number(R.billHour);
   const start = u.settings.startDate || null, lang = langOf(u.settings), w = W[lang], eur = (n: number) => money(lang, n);
   const paid = new Set(u.tx.filter((t) => t.bill_id).map((t) => `${t.bill_id}|${t.bill_due}`));
   const got = new Set(u.tx.filter((t) => t.income_id).map((t) => `${t.income_id}|${t.income_due}`));
@@ -291,13 +344,14 @@ async function runAll(secret: string) {
   const subs: Row[] = await rest("push_subscriptions?select=*");
   if (!subs.length) return { users: 0, sent: 0 };
   const now = local(), users = [...new Set(subs.map((s) => s.user_id))], inList = `in.(${users.join(",")})`, since = addDays(now.day, -100);
-  const [settings, bills, tx, income, cats, log] = await Promise.all([
+  const [settings, bills, tx, income, cats, log, mineAll] = await Promise.all([
     rest(`settings?select=user_id,data&user_id=${inList}`),
     rest(`bills?select=*&deleted=eq.false&user_id=${inList}`),
     rest(`transactions?select=user_id,date,amount,kind,category_id,bill_id,bill_due,income_id,income_due,lines&deleted=eq.false&date=gte.${since}&user_id=${inList}`),
     rest(`income_sources?select=*&deleted=eq.false&user_id=${inList}`),
     rest(`categories?select=user_id,id,name,budget&deleted=eq.false&user_id=${inList}`),
     rest(`push_log?select=user_id,key&user_id=${inList}&or=(key.like."again:*",key.like."n:${now.day}:*")`),
+    rest(`reminders?select=*&deleted=eq.false&active=eq.true&user_id=${inList}`),
   ]);
   let sent = 0;
   for (const uid of users) {
@@ -305,7 +359,7 @@ async function runAll(secret: string) {
     const st = (by(settings)[0] || {}).data || {}, mine: Row[] = by(log);
     const sentToday = mine.filter((r) => r.key.startsWith(`n:${now.day}:`)).length;
     if (sentToday >= DAILY_LIMIT) continue;   // the rest waits; anything still true is checked again tomorrow
-    const notes = remindersFor({ settings: st, bills: by(bills), tx: by(tx), income: by(income), cats: by(cats), again: new Set(mine.map((r) => r.key)) }, now);
+    const notes = remindersFor({ settings: st, bills: by(bills), tx: by(tx), income: by(income), cats: by(cats), reminders: by(mineAll), again: new Set(mine.map((r) => r.key)) }, now);
     const fresh: Note[] = [];
     for (const n of notes) if (await firstTime(uid, n.key)) fresh.push(n);
     if (!fresh.length) continue;

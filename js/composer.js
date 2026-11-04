@@ -18,7 +18,7 @@ const listMode = () => ["home", "list", "project"].includes(getView());
 
 export function paintComposer() {
   if (!form) return;
-  const v = getView(), off = ["settings", "list", "project"].includes(v);   // lists and projects have their own add box
+  const v = getView(), off = ["settings", "reminders", "list", "project"].includes(v);   // lists and projects have their own add box
   document.body.classList.toggle("no-dock", off);
   if (off) return;
   const lm = listMode(), t = lm ? listTarget() : null;

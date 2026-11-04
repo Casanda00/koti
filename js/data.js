@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, note
   reminders: { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9 } };
 export const DEFAULT_CATEGORIES = [["Groceries", 400], ["Eating out", 120], ["Transport", 70], ["Shopping", 150], ["Health", 50], ["Fun", 100], ["Other", 60]];
 export const HOME_SETUP_CAT = "home-setup";   // derived from checklist purchases, not stored
-export const KINDS = ["lists", "items", "categories", "transactions", "bills", "goals", "income"];
+export const KINDS = ["lists", "items", "categories", "transactions", "bills", "goals", "income", "reminders"];
 export const LIST_KINDS = ["shopping", "project", "room"];
 export const HOME_PROJECT = "proj-home-setup", HOME_PLAN = "koti-apartment";
 export const INCOME_FREQS = ["monthly", "varies", "once"];
@@ -104,6 +104,19 @@ function cleanDues(d) {
     out[k] = { amount, reference: x.reference ? String(x.reference).slice(0, 60) : null, docPath: x.docPath ? String(x.docPath).slice(0, 300) : null, skipped: !!x.skipped }; });
   return out;
 }
+/* Your own reminder. when: once (date), monthly (day 1-31, -1 last working day, -2 payday), weekly (0 = Sunday),
+   before (N days before a bill, payday or the end of the month). hour: 0-23, Helsinki time. */
+export const REMINDER_WHEN = ["once", "monthly", "weekly", "before"];
+function cleanReminder(r, pos) {
+  const int = (v, lo, hi, d = null) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? d : Math.min(hi, Math.max(lo, Math.round(Number(v)))));
+  const when = REMINDER_WHEN.includes(r.when) ? r.when : "once";
+  return { id: String(r.id || newId("rem")).slice(0, 80), title: String(r.title || "Reminder").slice(0, 120), note: r.note ? String(r.note).slice(0, 300) : null, when,
+    date: when === "once" && r.date ? String(r.date).slice(0, 10) : null, monthDay: when === "monthly" ? int(r.monthDay, -2, 31, 1) : null,
+    weekday: when === "weekly" ? int(r.weekday, 0, 6, 1) : null, beforeDays: when === "before" ? int(r.beforeDays, 0, 60, 3) : null,
+    aboutKind: when === "before" && ["bill", "payday", "monthend"].includes(r.aboutKind) ? r.aboutKind : when === "before" ? "payday" : null,
+    aboutId: when === "before" && r.aboutKind === "bill" && r.aboutId ? String(r.aboutId).slice(0, 80) : null,
+    hour: int(r.hour, 0, 23, 9), active: r.active !== false, position: Number.isFinite(r.position) ? r.position : pos, updatedAt: r.updatedAt || EPOCH };
+}
 function cleanGoal(g, pos) {
   return { id: String(g.id || newId("goal")).slice(0, 80), name: String(g.name).slice(0, 80), target: Math.max(0.01, num(g.target, 1)), saved: Math.max(0, num(g.saved, 0)),
     targetDate: g.targetDate ? String(g.targetDate).slice(0, 10) : null, monthly: num(g.monthly) == null ? null : Math.max(0, num(g.monthly)), position: Number.isFinite(g.position) ? g.position : pos, updatedAt: g.updatedAt || EPOCH };
@@ -118,7 +131,7 @@ export function seedModel() {
     lists.push(cleanList({ id, name, room, kind: "room", parentId: HOME_PROJECT, position: li, updatedAt: EPOCH }, li));
     raw.split(";").forEach((x, k) => { const [n, p] = x.split("|"); items.push(cleanItem({ id: slug(name) + "--" + slug(n), name: n, priority: p }, id, k)); });
   });
-  return { version: 3, lists, items, categories: seedCategories(), transactions: [], bills: [], goals: [], income: [], settings: { ...DEFAULT_SETTINGS, updatedAt: EPOCH } };
+  return { version: 3, lists, items, categories: seedCategories(), transactions: [], bills: [], goals: [], income: [], reminders: [], settings: { ...DEFAULT_SETTINGS, updatedAt: EPOCH } };
 }
 
 /* Version 2 (single-file dashboard / Google Sheets): categories with items + roomMap. */
@@ -169,7 +182,8 @@ export function normalizeModel(m) {
   const bills = (m.bills || []).filter(b => b && b.id && b.name && Number(b.amount) > 0).map((b, k) => cleanBill(b, k));
   const goals = (m.goals || []).filter(g => g && g.id && g.name && Number(g.target) > 0).map((g, k) => cleanGoal(g, k));
   const income = (m.income || []).filter(x => x && x.id && x.name).map((x, k) => cleanIncome(x, k));
-  return { version: 3, lists, items, categories, transactions, bills, goals, income, settings: { ...DEFAULT_SETTINGS, ...(m.settings || {}), updatedAt: (m.settings && m.settings.updatedAt) || EPOCH } };
+  const reminders = (m.reminders || []).filter(x => x && x.id && x.title).map((x, k) => cleanReminder(x, k));
+  return { version: 3, lists, items, categories, transactions, bills, goals, income, reminders, settings: { ...DEFAULT_SETTINGS, ...(m.settings || {}), updatedAt: (m.settings && m.settings.updatedAt) || EPOCH } };
 }
 
 /* Brings older data into the Budgets/Income/Expenses shape. Same ids as the database migration, so devices agree.
@@ -190,7 +204,7 @@ export function upgradeModel(m) {
 
 /* ---------- Store ---------- */
 const MODEL_KEY = "koti.model", META_KEY = "koti.meta";
-const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, settings: false }, lastSync: { lists: null, items: null, categories: null, transactions: null, bills: null, goals: null, income: null, settings: null }, tomb: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {} } });
+const emptyMeta = () => ({ owner: null, pending: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, reminders: {}, settings: false }, lastSync: { lists: null, items: null, categories: null, transactions: null, bills: null, goals: null, income: null, reminders: null, settings: null }, tomb: { lists: {}, items: {}, categories: {}, transactions: {}, bills: {}, goals: {}, income: {}, reminders: {} } });
 function fixMeta(m) { const e = emptyMeta(); m = Object.assign(e, m || {}); ["pending", "lastSync", "tomb"].forEach(k => { m[k] = Object.assign(emptyMeta()[k], m[k] || {}); }); return m; }
 const listeners = new Set();
 
@@ -266,7 +280,7 @@ export const store = {
   /* Generic rows (categories, transactions) */
   put(kind, obj) {
     const arr = this.model[kind], i = arr.findIndex(x => x.id === obj.id);
-    const clean = ({ transactions: o => cleanTx(o), categories: o => cleanCategory(o, arr.length), bills: o => cleanBill(o, arr.length), goals: o => cleanGoal(o, arr.length), income: o => cleanIncome(o, arr.length), lists: o => cleanList(o, arr.length) })[kind]({ ...obj, updatedAt: now() });
+    const clean = ({ transactions: o => cleanTx(o), categories: o => cleanCategory(o, arr.length), bills: o => cleanBill(o, arr.length), goals: o => cleanGoal(o, arr.length), income: o => cleanIncome(o, arr.length), lists: o => cleanList(o, arr.length), reminders: o => cleanReminder(o, arr.length) })[kind]({ ...obj, updatedAt: now() });
     if (i >= 0) arr[i] = clean; else arr.push(clean);
     delete this.meta.tomb[kind][clean.id]; this.touch(kind, clean.id); this.commit(); return clean;
   },
@@ -280,7 +294,7 @@ export const store = {
     const old = this.model; const m = normalizeModel(model); const t = now();
     
     if (!Array.isArray(model.categories)) m.categories = old.categories.map(c => ({ ...c }));       // older backups: keep current categories
-    ["transactions", "bills", "goals", "income"].forEach(k => { if (!Array.isArray(model[k])) m[k] = old[k].map(x => ({ ...x })); });
+    ["transactions", "bills", "goals", "income", "reminders"].forEach(k => { if (!Array.isArray(model[k])) m[k] = old[k].map(x => ({ ...x })); });
     KINDS.forEach(kind => {
       const keep = new Set(m[kind].map(x => x.id));
       old[kind].forEach(x => { if (!keep.has(x.id)) { this.meta.tomb[kind][x.id] = { ...x, deleted: true, updatedAt: t }; this.touch(kind, x.id); } });
@@ -321,4 +335,4 @@ export function zoneStats(pid = HOME_PROJECT) {
   store.model.items.forEach(i => { const s = z[roomOf[i.listId]]; if (!s) return; s.total++; if (i.done) { s.done++; if (i.price > 0) { s.spent += i.price; s.priced++; } } else if (i.priority === "Essential") s.ess++; });
   return z;
 }
-export function backupJSON() { const { version, lists, items, categories, transactions, bills, goals, income, settings } = store.model; return JSON.stringify({ version, exportedAt: now(), lists, items, categories, transactions, bills, goals, income, settings }, null, 2); }
+export function backupJSON() { const { version, lists, items, categories, transactions, bills, goals, income, reminders, settings } = store.model; return JSON.stringify({ version, exportedAt: now(), lists, items, categories, transactions, bills, goals, income, reminders, settings }, null, 2); }

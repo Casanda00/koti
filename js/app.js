@@ -17,12 +17,13 @@ import { openScan } from "./scan.js";
 import { mountNow, renderNow } from "./now.js";
 import { mountMonth, renderMonth } from "./month.js";
 import { mountPlace, renderPlace } from "./place.js";
+import { mountReminders, renderReminders } from "./reminders.js";
 import { initComposer, paintComposer } from "./composer.js";
 import { shouldOnboard, openOnboarding, dismissIfAnswered } from "./onboarding.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills", more: "settings", expenses: "home" };   // links from earlier versions
-const TAB = { now: "now", month: "month", budgets: "month", income: "month", spending: "month", bills: "month", home: "home", list: "home", project: "home", settings: "settings" };
-const TITLE = { now: "Now", month: "Month", home: "Home", budgets: "Budgets", income: "Income", spending: "All spending", bills: "Bills", settings: "You" };
+const TAB = { now: "now", month: "month", budgets: "month", income: "month", spending: "month", bills: "month", home: "home", list: "home", project: "home", settings: "settings", reminders: "settings" };
+const TITLE = { now: "Now", month: "Month", home: "Home", budgets: "Budgets", income: "Income", spending: "All spending", bills: "Bills", settings: "You", reminders: "Reminders" };
 let current = null, currentKey = null;
 
 function parse() {
@@ -32,7 +33,7 @@ function parse() {
   return { view: TITLE[h] ? h : "now" };
 }
 function renderCurrent() {
-  ({ now: renderNow, month: renderMonth, home: renderPlace, budgets: renderMoney, income: renderIncome, spending: renderSpending, bills: renderPlanView, list: renderList, settings: renderMore,
+  ({ now: renderNow, month: renderMonth, home: renderPlace, reminders: renderReminders, budgets: renderMoney, income: renderIncome, spending: renderSpending, bills: renderPlanView, list: renderList, settings: renderMore,
      project: () => { renderSetup(); } })[current]?.();
 }
 function route() {
@@ -74,7 +75,7 @@ function syncLook() {
 }
 function init() {
   initSheets();
-  mountNow($("#view-now")); mountMonth($("#view-month")); mountPlace($("#view-home")); mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountSpending($("#view-spending"));
+  mountNow($("#view-now")); mountMonth($("#view-month")); mountPlace($("#view-home")); mountReminders($("#view-reminders")); mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountSpending($("#view-spending"));
   mountPlan($("#view-bills")); mountList($("#view-list")); mountSetup($("#view-project"));
   mountMore($("#view-more")); bindMore();
   runAutopay();

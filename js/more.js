@@ -15,7 +15,11 @@ const ord = d => d + (d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12
 
 export function mountMore(el) { root = el; renderMore(); }
 
-let lastReminders = "";   // shown straight away on redraw, so the page keeps its height
+/* One line for You: how many reminders of your own, and what comes next. */
+function remSummary() {
+  const n = store.model.reminders.filter(r => r.active).length;
+  return n ? `${n} of your own, plus Koti's` : "Bills, payday, budgets and your own";
+}
 const COLOURS = ["#16794f", "#b55334", "#c7841a", "#3a6ea5", "#7a4f9e", "#23302b"];
 const PALETTES = [["koti", "Lake", "#2442D6", "#F7F8F6"], ["clay", "Clay", "#b55334", "#faf1e8"]];
 export function renderMore() {
@@ -49,7 +53,8 @@ export function renderMore() {
     <div class="row"><span class="rt">AI scans today</span><span class="rv num" id="moAiUse">–</span></div>
   </div>
 
-  <div id="moReminders">${lastReminders}</div>
+  <div class="gh"><h2>Reminders</h2></div>
+  <div class="grp"><a class="row" href="#reminders"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders<small>${remSummary()}</small></span>${chev}</a></div>
 
   <div class="gh"><h2>Appearance</h2></div>
   <div class="swatches" role="radiogroup" aria-label="Colours">${PALETTES.map(([v, t, a, b]) => `<button type="button" class="swt" role="radio" aria-checked="${look.palette === v}" data-palette="${v}"><span class="sw2" style="background:linear-gradient(135deg,${a} 50%,${b} 50%)"></span><b>${t}</b></button>`).join("")}</div>
@@ -81,7 +86,6 @@ export function renderMore() {
   $$("[data-mode]", root).forEach(b => b.onclick = () => setLook({ mode: b.dataset.mode }));
   aiUse().then(t => { const e = $("#moAiUse", root); if (e && t) e.textContent = t; });
   if (keepY && !root.hidden) window.scrollTo(0, keepY);
-  import("./push.js").then(m => { const r = $("#moReminders", root); if (r) m.renderReminders(r).then(() => { lastReminders = r.innerHTML; }); }).catch(() => {});
 }
 /* Colours and light/dark: applied on this device right away, and synced so your other devices follow. */
 function setLook(patch) {
