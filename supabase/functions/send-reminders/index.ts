@@ -198,7 +198,8 @@ function billDuesAround(b: Row, today: string, back: number, ahead: number) {
 function payDue(src: Row, y: number, m: number) {
   if (src.frequency === "once") return null;
   const mm = ((m % 12) + 12) % 12, yy = y + Math.floor(m / 12), last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
-  const s = ymd(yy, mm, src.pay_day === -1 ? lastWorkingDay(yy, mm) : src.pay_day === 0 ? last : src.pay_day);
+  let s = ymd(yy, mm, src.pay_day === -1 ? lastWorkingDay(yy, mm) : src.pay_day === 0 ? last : src.pay_day);
+  while (!workingDay(s)) s = addDays(s, -1);   // a weekend or holiday payday arrives the working day before
   return src.end_date && s > src.end_date ? null : s;
 }
 /* Last weekday of the month that isn't a Finnish public holiday (the same rule as js/paydays.js). */
@@ -207,10 +208,18 @@ function easter(y: number) {
   const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
   return new Date(Date.UTC(y, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1));
 }
-function lastWorkingDay(y: number, m: number) {
+function holidays(y: number) {
   const fixed = new Set(["1-1", "1-6", "5-1", "12-6", "12-24", "12-25", "12-26"]), es = easter(y);
   for (const n of [-2, 1, 39]) { const x = new Date(es.getTime() + n * 864e5); fixed.add(`${x.getUTCMonth() + 1}-${x.getUTCDate()}`); }
   for (let d = 19; d <= 25; d++) if (new Date(Date.UTC(y, 5, d)).getUTCDay() === 5) fixed.add(`6-${d}`);
+  return fixed;
+}
+function workingDay(s: string) {
+  const x = new Date(s + "T12:00:00Z"), w = x.getUTCDay();
+  return w !== 0 && w !== 6 && !holidays(x.getUTCFullYear()).has(`${x.getUTCMonth() + 1}-${x.getUTCDate()}`);
+}
+function lastWorkingDay(y: number, m: number) {
+  const fixed = holidays(y);
   let day = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
   for (;;) { const x = new Date(Date.UTC(y, m, day)), w = x.getUTCDay(); if (w !== 0 && w !== 6 && !fixed.has(`${m + 1}-${day}`)) return day; day--; }
 }
@@ -239,7 +248,7 @@ function snapshotOf(settings: Row, from: string) {
 function spentByCategory(tx: Row[], from: string, to: string) {
   const spent: Record<string, number> = {};
   for (const t of tx) {
-    if (t.date < from || t.date > to || t.kind === "income" || t.category_id === "adjust") continue;
+    if (t.date < from || t.date > to || t.kind === "income" || t.category_id === "adjust" || t.category_id === "savings") continue;
     const sign = t.kind === "refund" ? -1 : 1;
     if (Array.isArray(t.lines) && t.lines.length) { let rest = Number(t.amount); for (const l of t.lines) { const c = l.categoryId || t.category_id; if (c) spent[c] = (spent[c] || 0) + sign * l.price; rest -= l.price; } if (Math.abs(rest) >= .005 && t.category_id) spent[t.category_id] = (spent[t.category_id] || 0) + sign * rest; }
     else if (t.category_id) spent[t.category_id] = (spent[t.category_id] || 0) + sign * Number(t.amount);
@@ -327,7 +336,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
     const from = d >= ms ? ymd(y, m - 1, ms) : ymd(y, m - 2, ms), to = addDays(d >= ms ? ymd(y, m, ms) : ymd(y, m - 1, ms), -1);
     const spent: Record<string, number> = {};
     for (const t of u.tx) {
-      if (t.date < from || t.date > to || t.kind === "income" || t.category_id === "adjust") continue;
+      if (t.date < from || t.date > to || t.kind === "income" || t.category_id === "adjust" || t.category_id === "savings") continue;
       const sign = t.kind === "refund" ? -1 : 1;
       if (Array.isArray(t.lines) && t.lines.length) { let rest = Number(t.amount); for (const l of t.lines) { const c = l.categoryId || t.category_id; if (c) spent[c] = (spent[c] || 0) + sign * l.price; rest -= l.price; } if (Math.abs(rest) >= .005 && t.category_id) spent[t.category_id] = (spent[t.category_id] || 0) + sign * rest; }
       else if (t.category_id) spent[t.category_id] = (spent[t.category_id] || 0) + sign * Number(t.amount);
@@ -380,7 +389,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
   }
   // Today's payments, in the evening: the payments made today (purchases and bills paid), and their total.
   if (R.daily && now.hour === Number(R.dailyHour)) {
-    const todays = u.tx.filter((t) => t.date === today && (t.kind === "expense" || t.kind === "refund") && t.category_id !== "adjust");
+    const todays = u.tx.filter((t) => t.date === today && (t.kind === "expense" || t.kind === "refund") && t.category_id !== "adjust" && t.category_id !== "savings");
     if (todays.length) {
       const total = todays.reduce((a, t) => a + (t.kind === "refund" ? -1 : 1) * Number(t.amount), 0);
       const billName = (id: string) => ((u.bills || []).find((b) => b.id === id) || {}).name;

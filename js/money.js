@@ -7,7 +7,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, 
 import { parseExpense } from "./voice.js";
 import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
 import { newId } from "./data.js";
-import { monthLedger, startPoint, categoryBudget, effectiveBudgets, ADJUST_CAT, awaitingIncome } from "./ledger.js";
+import { monthLedger, startPoint, categoryBudget, effectiveBudgets, ADJUST_CAT, SAVINGS_CAT, awaitingIncome } from "./ledger.js";
 import { markPaid, setSkipped } from "./plan.js";
 import { receive, setMissed } from "./income.js";
 
@@ -33,6 +33,7 @@ export function navHTML(prefix) {
 export const catName = id => {
   if (id === BILLS_CAT) return "Bills";
   if (id === ADJUST_CAT) return "Balance correction";
+  if (id === SAVINGS_CAT) return "Savings";
   if (id && id.startsWith("proj:")) return (listOf(id.slice(5)) || {}).name || "Project";
   return (store.model.categories.find(c => c.id === id) || {}).name || "Uncategorised";
 };
@@ -47,7 +48,7 @@ export function totals(p) {
   const byCat = {}, byProject = {}; let spend = 0, incomeLoose = 0, projects = 0;
   const add = (k, v) => { if (k.startsWith("proj:")) { byProject[k.slice(5)] = (byProject[k.slice(5)] || 0) + v; projects += v; } else { byCat[k] = (byCat[k] || 0) + v; spend += v; } };
   tx.forEach(t => {
-    if (t.categoryId === ADJUST_CAT) return;   // corrections change the balance, not spending or income
+    if (t.categoryId === ADJUST_CAT || t.categoryId === SAVINGS_CAT) return;   // corrections and savings transfers change the balance, not spending or income
     if (t.kind === "income") { if (!t.incomeId) incomeLoose += t.amount; return; }
     if (t.kind === "refund") { add(t.categoryId || "none", -t.amount); return; }
     if (t.lines && t.lines.length) {   // a receipt split by line: each line counts in its own category or project

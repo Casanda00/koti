@@ -11,7 +11,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, c
 import { prepareFile, readReceipt, attach } from "./receipts.js";
 import { catName, periodFor, totals } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
-import { alignDue, occurrenceOf, markPaid, runAutopay, bindCopy, FREQ_LABEL } from "./plan.js";
+import { alignDue, occurrenceOf, markPaid, bindCopy, FREQ_LABEL } from "./plan.js";
 
 const cats = () => store.model.categories.filter(c => c.id !== BILLS_CAT).sort((a, b) => a.position - b.position);
 const keepDefault = kind => (kind === "bill" ? !!store.model.settings.keepBills : !!store.model.settings.keepReceipts);   // off unless switched on: storage costs
@@ -337,7 +337,7 @@ function billReview(S) {
         </div>
         ${m ? (W.amount && Math.abs(W.amount - m.amount) >= 0.005 ? `<div class="grp"><label class="row"><span class="rt">Make ${eur(W.amount)} the usual amount<small>Now ${eur(m.amount)}. Off: only this month's bill is ${eur(W.amount)}.</small></span><input type="checkbox" class="switch" id="bvUsual" ${W.usual ? "checked" : ""}></label></div>` : "")
           : `<div class="field"><span class="flabel">Repeats</span><div class="seg" id="bvFreq">${["monthly", "quarterly", "yearly", "once"].map(f => `<button type="button" data-f="${f}" aria-pressed="${f === W.freq}">${FREQ_LABEL[f]}</button>`).join("")}</div></div>
-          <div class="grp"><label class="row"><span class="rt">Paid automatically<small>Direct debit or e-invoice: Koti marks it paid on the due date</small></span><input type="checkbox" class="switch" id="bvAuto" ${W.autopay ? "checked" : ""}></label></div>`}
+          <div class="grp"><label class="row"><span class="rt">Paid automatically<small>Direct debit or e-invoice: on the due date Koti asks if it went out</small></span><input type="checkbox" class="switch" id="bvAuto" ${W.autopay ? "checked" : ""}></label></div>`}
         <div class="seg big" id="bvPaid"><button type="button" data-p="0" aria-pressed="${!W.paid}">${due ? `To pay by ${esc(fmtDay(due))}` : "To pay"}</button><button type="button" data-p="1" aria-pressed="${W.paid}">Already paid</button></div>
         <div class="grp"><div class="row rc-row"><span class="scan-thumb">${S.file && S.file.type === "application/pdf" ? `<span class="pdf">PDF</span>` : S.file ? `<img alt="" src="${URL.createObjectURL(S.file.blob)}">` : ""}</span>
           <label class="rt" for="rvKeep">Keep the bill<small>${S.keep ? "Saved privately with this month's bill" : "Only used for reading. Not saved."}</small></label><input type="checkbox" class="switch" id="rvKeep" ${S.keep ? "checked" : ""}></div></div>
@@ -377,7 +377,6 @@ async function saveBill(S, B) {
   const o = occurrenceOf(bill, key);
   if (W.paid) markPaid(o);
   else if (o.paid && Math.abs(o.paid.amount - W.amount) >= 0.005) store.put("transactions", { ...o.paid, amount: W.amount });
-  if (bill.autopay) runAutopay();
   closeSheet(); S.busy = false;
   toast(`Added as a bill · ${bill.name} ${eur(W.amount)} ${W.paid ? "paid" : "due " + fmtDay(due)}`, { label: "Open", run: () => { location.hash = "#bills"; } });
 }

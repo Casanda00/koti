@@ -195,13 +195,18 @@ let channel = null, starting = null;
 async function begin() {
   const c = sync.client, uid = sync.user.id;
   setStatus("busy", "Syncing…");
-  if (store.meta.owner && store.meta.owner !== uid) store.resetLocal(seedModel());
+  // Another account was signed in here: keep its data (and its unsent changes) aside, and bring back this one's.
+  if (store.meta.owner && store.meta.owner !== uid) {
+    store.stashAccount(store.meta.owner);
+    if (!store.loadAccount(uid)) store.resetLocal(seedModel());
+  }
   if (store.meta.owner !== uid) {
     const { count, error } = await c.from("lists").select("id", { count: "exact", head: true });
     if (error) throw error;
     if (!count) {
       store.meta.owner = uid; store.markAllPending(); // first device: upload what's here
     } else {
+      // The account already has data: what was on this device is kept aside, and You offers to add it.
       if (store.hasUserData()) { try { localStorage.setItem("koti.beforeSignIn", JSON.stringify(store.model)); } catch {} }
       store.resetLocal({ version: 3, lists: [], items: [], categories: [], transactions: [], bills: [], goals: [], income: [], settings: {} });
       store.meta.owner = uid; store.persist();

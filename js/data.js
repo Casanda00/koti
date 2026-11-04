@@ -107,7 +107,7 @@ function cleanDues(d) {
   const out = {}; if (!d || typeof d !== "object") return out;
   Object.keys(d).filter(k => validDay(k) === k).sort().slice(-60).forEach(k => { const x = d[k] || {};
     const amount = Number(x.amount) > 0 ? Math.round(Number(x.amount) * 100) / 100 : null;
-    out[k] = { amount, reference: x.reference ? String(x.reference).slice(0, 60) : null, docPath: x.docPath ? String(x.docPath).slice(0, 300) : null, skipped: !!x.skipped }; });
+    out[k] = { amount, reference: x.reference ? String(x.reference).slice(0, 60) : null, docPath: x.docPath ? String(x.docPath).slice(0, 300) : null, skipped: !!x.skipped, failed: !!x.failed }; });
   return out;
 }
 /* Your own reminder. when: once (date), monthly (day 1-31, -1 last working day, -2 payday), weekly (0 = Sunday),
@@ -244,7 +244,32 @@ export const store = {
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   emit(kind = "local") { listeners.forEach(fn => fn(kind)); },
   persist() { writeJSON(MODEL_KEY, this.model); writeJSON(META_KEY, this.meta); },
-  hasUserData() { return this.model.items.some(i => i.done || i.price != null) || this.model.settings.notes || this.model.items.some(i => i.id.startsWith("item-")); },
+  /* Anything a person put here: money records of any kind, a balance, notes, or list items they ticked, priced or added. */
+  hasUserData() {
+    const m = this.model;
+    return ["transactions", "bills", "goals", "income", "reminders"].some(k => m[k].length) || m.settings.startBalance != null || !!m.settings.notes
+      || m.items.some(i => i.done || i.price != null || i.id.startsWith("item-")) || KINDS.some(k => Object.keys(this.meta.pending[k] || {}).length);
+  },
+  /* Each account's data on this device is kept on its own, so switching accounts loses nothing, unsent changes included. */
+  stashAccount(owner) { if (owner) writeJSON("koti.account." + owner, { model: this.model, meta: this.meta }); },
+  loadAccount(owner) {
+    const s = readJSON("koti.account." + owner);
+    if (s && s.model) { this.model = normalizeModel(s.model); this.meta = fixMeta(s.meta); this.meta.owner = owner; try { localStorage.removeItem("koti.account." + owner); } catch {} this.persist(); this.emit("remote"); return true; }
+    return false;
+  },
+  /* Data that was on this device before it was signed in to an account that already had data. */
+  beforeSignIn() { const s = readJSON("koti.beforeSignIn"); return s && s.lists ? normalizeModel(s) : null; },
+  /* Adds those records to the account. Only records the account doesn't have are added; the account's own win. */
+  addBeforeSignIn() {
+    const old = this.beforeSignIn(); if (!old) return 0;
+    let n = 0;
+    KINDS.forEach(k => old[k].forEach(x => { if (!this.model[k].some(y => y.id === x.id)) { this.model[k].push({ ...x, updatedAt: now() }); this.touch(k, x.id); n++; } }));
+    const S = this.model.settings;
+    if (S.startBalance == null && old.settings.startBalance != null) this.updateSettings({ startBalance: old.settings.startBalance, startDate: old.settings.startDate, askedStart: true });
+    try { localStorage.removeItem("koti.beforeSignIn"); } catch {}
+    this.commit(); return n;
+  },
+  dropBeforeSignIn() { try { localStorage.removeItem("koti.beforeSignIn"); } catch {} this.emit("local"); },
 
   /* ---- local mutations: stamp, mark pending, save, notify ---- */
   touch(kind, id) { if (kind === "settings") this.meta.pending.settings = true; else this.meta.pending[kind][id] = true; },
