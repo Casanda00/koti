@@ -1,7 +1,7 @@
 // Now: what's yours to spend until payday, in one number on a colour that says how the month is going,
 // then at most two questions Koti needs answered and a few plain sentences about what's next.
 import { store, todayISO, BILLS_CAT } from "./data.js";
-import { $, esc, eur, eur0, parseDay, openSheet, closeSheet, toast } from "./ui.js";
+import { $, esc, eur, eur0, icon, parseDay, openSheet, closeSheet, toast } from "./ui.js";
 import { periodFor, totals, catName, openStartBalance, openCheckBank } from "./money.js";
 import { setSpendingFilter } from "./spent.js";
 import { monthLedger, startPoint, effectiveBudgets, awaitingIncome } from "./ledger.js";
@@ -96,11 +96,11 @@ export function renderNow() {
       <p class="now-k">${big < 0 ? "Over today" : "Left to spend today"}</p>
       <div class="now-big num" style="--n:${money(big).length}">${money(big)}</div>
       ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : ""}
-      <button type="button" class="now-how" data-how>${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}</button>
+      <p class="now-pd">${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}</p>
     </section>
     <section class="now-sheet">
       ${qs.slice(0, 2).join("")}
-      <div class="tlist"><div class="tl-h"><b>Spent today</b><a href="#spending/week">This week ${eur0(week)}</a></div>
+      <div class="tlist"><div class="tl-h"><button type="button" class="tl-t" data-how>Today's payments ${icon("chev", "ic xs")}</button><a href="#spending/week">This week ${eur0(week)}</a></div>
         ${tx.map(rowTx).join("") || `<p class="tl-none">Nothing yet.</p>`}
         ${soon.map(rowBill).join("")}
       </div>

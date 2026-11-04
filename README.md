@@ -17,7 +17,7 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 
 ## How it's laid out (2.1)
 
-Two tabs at the top, and a swipe between them: **Today** (what's left to spend today: what was left until payday this morning, shared over the days to payday, minus what you've spent today; the colour shows how today is going) and the month, named after it (**November**: income, bills, savings and living expenses, then each budget). **Projects** (your home with its floor plan, other projects and your lists) opens from the month. Your initial opens **You** (settings). The amount under today's number opens **Today's payments**, a receipt for any period you pick from its title, custom dates included; it also arrives as a notification each evening at 20:00. A box at the bottom takes what you spent, like "Lidl 23,40", and shows what it understood before saving; in Projects it adds to your list.
+Two tabs at the top, and a swipe between them: **Today** (what's left to spend today: what was left until payday this morning, shared over the days to payday, minus what you've spent today; the colour shows how today is going) and the month, named after it (**November**: income, bills, savings and living expenses, then each budget). **Projects** (your home with its floor plan, other projects and your lists) opens from the month. Your initial opens **You** (settings). **Today's payments** lists the payments you made, for any period you pick from its title, custom dates included; it also arrives as a notification each evening at 20:00. A box at the bottom takes what you spent, like "Lidl 23,40", and shows what it understood before saving; in Projects it adds to your list.
 
 ## Files
 
@@ -35,7 +35,7 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 | `js/spent.js` | Spent: today, yesterday, this week, last week, this month and last month, compared with what's usual, by category, a bar a day, the purchases; the Today / Yesterday / This week row on Now |
 | `js/hear.js` | The microphone with AI: records, sends to `hear`, turns the answer into a purchase, a question, a reminder or list items |
 | `js/period.js` | The period picker: a title with a down arrow, Today to last month, and custom dates |
-| `js/receipt.js` | Today's payments: the receipt for a period, and today's share |
+| `js/receipt.js` | Today's payments: every payment in a period, as a receipt; and today's share |
 | `js/install.js` | Getting Koti onto the Home Screen: one tap on Android and desktop, a guide on iPhone, open-in-browser help inside Instagram or WhatsApp, the strip on Now |
 | `js/paydays.js` | Pay dates, including the last working day (weekdays, not Finnish public holidays) |
 | `js/lists.js` | An opened list, sending a list, new list and list settings |

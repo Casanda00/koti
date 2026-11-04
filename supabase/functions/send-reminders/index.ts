@@ -144,8 +144,7 @@ const W = {
     leftUnder: (a: string) => `${a} is yours to spend until payday.`,
     bundle: (n: number) => `${n} things today`,
     daily: "Today's payments",
-    dailyBody: (spent: string, items: string, left: string | null, share: string | null) => `${spent} spent${items ? `: ${items}` : ""}.${left != null && share != null ? ` ${left} left of today's ${share}.` : ""}`,
-    dailyNone: (share: string) => `Nothing spent today. ${share} goes into tomorrow.`,
+    dailyBody: (items: string, total: string, n: number) => n > 1 ? `${items.charAt(0).toUpperCase() + items.slice(1)}. ${total} in total.` : `${items.charAt(0).toUpperCase() + items.slice(1)}.`,
   },
   fi: {
     due: (n: string, a: string) => `${n}, ${a}, erääntyy huomenna.`,
@@ -175,8 +174,7 @@ const W = {
     leftUnder: (a: string) => `${a} käytettävissä palkkapäivään asti.`,
     bundle: (n: number) => `${n} asiaa tänään`,
     daily: "Tämän päivän maksut",
-    dailyBody: (spent: string, items: string, left: string | null, share: string | null) => `${spent} käytetty${items ? `: ${items}` : ""}.${left != null && share != null ? ` Päivän ${share}:sta jäljellä ${left}.` : ""}`,
-    dailyNone: (share: string) => `Tänään ei kulunut mitään. ${share} siirtyy huomiselle.`,
+    dailyBody: (items: string, total: string, n: number) => n > 1 ? `${items.charAt(0).toUpperCase() + items.slice(1)}. Yhteensä ${total}.` : `${items.charAt(0).toUpperCase() + items.slice(1)}.`,
   },
 };
 const langOf = (settings: Row): Lang => String(settings.voiceLang || "").toLowerCase().startsWith("fi") ? "fi" : "en";
@@ -380,15 +378,17 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
       out.push({ key: `ls:${lid}:${Math.max(...evs.map((e) => Number(e.id)))}`, title: w.listAdded(list(lang, shown), items.length > 1, name), body: w.listBody, url: `./#list/${encodeURIComponent(lid)}` });
     }
   }
-  // Today's payments, in the evening: what went out today (bills not counted), and what's left of today's share.
+  // Today's payments, in the evening: the payments made today (purchases and bills paid), and their total.
   if (R.daily && now.hour === Number(R.dailyHour)) {
-    const todays = u.tx.filter((t) => t.date === today && (t.kind === "expense" || t.kind === "refund") && !t.bill_id && t.category_id !== "adjust");
-    const spent = todays.reduce((a, t) => a + (t.kind === "refund" ? -1 : 1) * Number(t.amount), 0);
-    const s = snapshotOf(u.settings, periodOf(u.settings, today).from), share = s && s.day === today && s.share != null ? Number(s.share) : null;
-    const names = todays.filter((t) => t.kind === "expense").sort((a, b) => Number(b.amount) - Number(a.amount)).map((t) => `${t.payee || (lang === "fi" ? "ostos" : "a purchase")} ${eur(Number(t.amount))}`);
-    const items = list(lang, names.length > 3 ? [...names.slice(0, 2), lang === "fi" ? `${names.length - 2} muuta` : `${names.length - 2} more`] : names);
-    if (todays.length) out.push({ key: `dy:${today}`, title: w.daily, body: w.dailyBody(eur(spent), items, share != null ? eur(Math.round(share - spent)) : null, share != null ? eur(share) : null), url: "./?payments=today#now" });
-    else if (share != null && share > 0) out.push({ key: `dy:${today}`, title: w.daily, body: w.dailyNone(eur(share)), url: "./?payments=today#now" });
+    const todays = u.tx.filter((t) => t.date === today && (t.kind === "expense" || t.kind === "refund") && t.category_id !== "adjust");
+    if (todays.length) {
+      const total = todays.reduce((a, t) => a + (t.kind === "refund" ? -1 : 1) * Number(t.amount), 0);
+      const billName = (id: string) => ((u.bills || []).find((b) => b.id === id) || {}).name;
+      const names = todays.filter((t) => t.kind === "expense").sort((a, b) => Number(b.amount) - Number(a.amount))
+        .map((t) => `${t.payee || (t.bill_id && billName(t.bill_id)) || ((u.cats || []).find((c) => c.id === t.category_id) || {}).name || (lang === "fi" ? "ostos" : "a purchase")} ${eur(Number(t.amount))}`);
+      const items = list(lang, names.length > 4 ? [...names.slice(0, 3), lang === "fi" ? `${names.length - 3} muuta` : `${names.length - 3} more`] : names);
+      out.push({ key: `dy:${today}`, title: w.daily, body: w.dailyBody(items, eur(total), todays.length), url: "./?payments=today#now" });
+    }
   }
   if (R.weekly && now.weekday === "Sun" && now.hour === 19) {
     const from = addDays(today, -6); let s = 0, n = 0;

@@ -14,7 +14,7 @@ const TYPES = [
   ["autopay", "Pays itself", "The morning before an automatic bill, if your account may not cover it"],
   ["plan", "Plan the month", "On the day your pay lands"],
   ["lists", "List changes", "When someone adds to a list through its shared link"],
-  ["daily", "Today's payments", "Every evening at 20:00"],
+  ["daily", "Today's payments", "Every evening at 20:00: what you paid today"],
 ];
 const supported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const standaloneIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia("(display-mode: standalone)").matches || navigator.standalone);
