@@ -54,21 +54,34 @@ function openItems() {
   const out = []; topLists().forEach(l => { (l.kind === "project" ? [l, ...roomsOf(l.id)] : [l]).forEach(x => itemsOf(x.id).filter(i => !i.done).forEach(i => out.push(i))); });
   return out;
 }
-/* How you filed products before: newest first, one per name. Sent to the AI as examples, and applied after reading so your own choices win. */
+/* Home projects and their rooms, as the reader sees them: "Home setup" and "Home setup › Living room". */
+export function places() {
+  const out = [];
+  topLists().filter(l => l.kind === "project").forEach(p => { out.push({ id: p.id, name: p.name }); roomsOf(p.id).forEach(r => out.push({ id: r.id, name: `${p.name} › ${r.name}` })); });
+  return out;
+}
+/* How you filed products before: newest first, one per name, to a category or to a place in a project (the room
+   the bought item went into). Sent to the AI as examples, and applied after reading so your own choices win. */
 export function filedBefore() {
   const seen = new Map();
   store.model.transactions.slice().sort((a, b) => b.date.localeCompare(a.date)).forEach(t => (t.lines || []).forEach(l => {
-    if (!l.categoryId || String(l.categoryId).startsWith("proj:")) return;
-    [l.name, l.nameFi].filter(Boolean).forEach(n => { const k = n.toLowerCase(); if (!seen.has(k)) seen.set(k, { name: n, categoryId: l.categoryId }); });
+    if (!l.categoryId) return;
+    let rec;
+    if (String(l.categoryId).startsWith("proj:")) {
+      const it = l.itemId && store.model.items.find(i => i.id === l.itemId);
+      rec = { placeId: it ? it.listId : l.categoryId.slice(5) };
+    } else rec = { categoryId: l.categoryId };
+    [l.name, l.nameFi].filter(Boolean).forEach(n => { const k = n.toLowerCase(); if (!seen.has(k)) seen.set(k, { name: n, ...rec }); });
   }));
   return seen;
 }
 export const aiPossible = () => !!(sync.client && sync.user && navigator.onLine && sync.client.functions);
 async function readWithAI(prepared, hint) {
   const image = await blobToDataURL(prepared.blob);
-  const cats = store.model.categories, open = openItems(), filed = filedBefore();
-  const examples = [...filed.values()].slice(0, 80).map(x => ({ name: x.name, category: (cats.find(c => c.id === x.categoryId) || {}).name })).filter(x => x.category);
-  const { data, error } = await sync.client.functions.invoke("read-receipt", { body: { image, hint, categories: cats.map(c => c.name), listItems: [...new Set(open.map(i => i.name))], bills: store.model.bills.map(b => b.name), examples } });
+  const cats = store.model.categories, open = openItems(), filed = filedBefore(), P = places();
+  const placeName = id => (P.find(x => x.id === id) || {}).name;
+  const examples = [...filed.values()].slice(0, 80).map(x => ({ name: x.name, category: x.placeId ? placeName(x.placeId) : (cats.find(c => c.id === x.categoryId) || {}).name })).filter(x => x.category);
+  const { data, error } = await sync.client.functions.invoke("read-receipt", { body: { image, hint, categories: cats.map(c => c.name), places: P.map(x => x.name), listItems: [...new Set(open.map(i => i.name))], bills: store.model.bills.map(b => b.name), examples } });
   if (error) {
     let info = {}; try { info = error.context && error.context.json ? await error.context.json() : {}; } catch {}
     const e = new Error(info.error || (/Failed to fetch|network/i.test(error.message) ? "Couldn't reach the receipt reader." : error.message)); e.code = info.code || "network"; throw e;
@@ -80,7 +93,8 @@ async function readWithAI(prepared, hint) {
     if (x.list_item) { const hit = open.find(i => !used.has(i.id) && i.name.toLowerCase() === x.list_item.toLowerCase()); if (hit) { itemId = hit.id; used.add(hit.id); } }
     if (!itemId && x.name_fi) { const hit = open.find(i => !used.has(i.id) && i.name.toLowerCase() === x.name_fi.toLowerCase()); if (hit) { itemId = hit.id; used.add(hit.id); } }
     const mine = filed.get(String(x.name).toLowerCase()) || (x.name_fi && filed.get(String(x.name_fi).toLowerCase()));
-    return { name: x.name, nameFi: x.name_fi || null, qty: x.qty, price: x.price, categoryId: (mine && cats.some(c => c.id === mine.categoryId) ? mine.categoryId : null) || catId(x.category), itemId };
+    const placeId = mine ? (mine.placeId && P.some(p => p.id === mine.placeId) ? mine.placeId : null) : (P.find(p => p.name.toLowerCase() === String(x.place || "").toLowerCase()) || {}).id || null;
+    return { name: x.name, nameFi: x.name_fi || null, qty: x.qty, price: x.price, categoryId: (mine && cats.some(c => c.id === mine.categoryId) ? mine.categoryId : null) || catId(x.category), itemId, placeId };
   });
   const sums = {}; lines.forEach(l => { if (l.categoryId) sums[l.categoryId] = (sums[l.categoryId] || 0) + l.price; });
   let main = Object.entries(sums).sort((a, b) => b[1] - a[1])[0];

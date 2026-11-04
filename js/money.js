@@ -1,4 +1,4 @@
-// Budgets (what's left until payday, categories, projects, savings goals, spending by month) and All spending.
+// Budgets (what's left until payday, categories, projects, savings goals, spending by month). Spent is in spent.js.
 // Also the add/edit expense, categories and receipt sheets.
 import { store, todayISO, TX_KINDS, BILLS_CAT, projectOf, listOf, topLists, projectSpent, paidByReceipt } from "./data.js";
 import { billTotals, openBill, goalsHTML, openGoal } from "./plan.js";
@@ -329,48 +329,6 @@ function drawCols() {
     hit.addEventListener("mousemove", show); hit.addEventListener("touchstart", show, { passive: true }); hit.addEventListener("mouseleave", () => hideTip(tip));
   });
   if (income) { el("line", { x1: m.l, x2: W - m.r, y1: Y(income), y2: Y(income), stroke: "var(--amber)", "stroke-width": 2 }, svg); el("text", { x: W - m.r + 6, y: Y(income) + 4, style: "font:12px var(--body);fill:var(--ink-2)" }, svg).textContent = "Income"; }
-}
-
-/* ---------- All spending ---------- */
-let sroot = null, sview = null;
-function dayLabel(d) {
-  const t = todayISO(), y = new Date(); y.setDate(y.getDate() - 1);
-  if (d === t) return "Today"; if (d === iso(y)) return "Yesterday";
-  return parseDay(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-}
-export function mountSpending(elm) {
-  sroot = elm; sview = periodFor(new Date());
-  sroot.innerHTML = `<header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} Month</a><h1>All spending</h1><div class="sub" id="spSub"></div></div></header>
-    ${navHTML("sshift")}<div id="moTx"></div>`;
-  sroot.addEventListener("click", e => {
-    const sf = e.target.closest("[data-sf]"); if (sf) { sfilter = sf.dataset.sf || null; renderSpending(); return; }
-    const s = e.target.closest("[data-sshift]"); if (s) { const n = Number(s.dataset.sshift); sview = n === 0 ? periodFor(new Date()) : shift(sview, n); renderSpending(); return; }
-    const t = e.target.closest("[data-tx]"); if (t) { const tx = store.model.transactions.find(x => x.id === t.dataset.tx); if (tx && tx.billId) { const b = store.model.bills.find(x => x.id === tx.billId); if (b) { openBill(b); return; } } if (tx && tx.incomeId) { import("./income.js").then(m => m.openSource(store.model.income.find(x => x.id === tx.incomeId))); return; } if (tx) openExpense({ tx }); return; }
-    const it = e.target.closest("[data-item]"); if (it) { import("./setup.js").then(m => { const item = store.model.items.find(i => i.id === it.dataset.item); if (item) m.openItem(item); }); }
-  });
-}
-let sfilter = null;   // a category (or proj:<id>) to show on its own
-export function setSpendingFilter(k) { sfilter = k || null; }
-const inCat = (t, k) => t.categoryId === k || (t.lines || []).some(l => (l.categoryId || t.categoryId) === k);
-export function renderSpending() {
-  if (!sroot) return;
-  const T = totals(sview), cur = periodFor(new Date());
-  $("[data-period]", sroot).textContent = periodLabel(sview); $(".mo-today", sroot).hidden = sview.from === cur.from;
-  $("#spSub", sroot).textContent = `${eur(T.total)} spent${T.inc.received + T.incomeLoose ? ` · ${eur0(T.inc.received + T.incomeLoose)} income` : ""}`;
-  const cats = Object.entries(T.byCat).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).concat(Object.entries(T.byProject).filter(([, v]) => v > 0).map(([k, v]) => ["proj:" + k, v]));
-  if (sfilter && !cats.some(([k]) => k === sfilter)) cats.push([sfilter, 0]);
-  const chips = cats.length ? `<div class="chips sp-chips" role="radiogroup" aria-label="Category"><button type="button" class="fchip" data-sf="" aria-pressed="${!sfilter}">All</button>${cats.map(([k, v]) => `<button type="button" class="fchip" data-sf="${esc(k)}" aria-pressed="${sfilter === k}">${esc(catName(k))} ${eur0(v)}</button>`).join("")}</div>` : "";
-  const all = [...T.tx.map(t => ({ ...t })), ...projectEntries(sview)].filter(t => !sfilter || (t.fromProject ? t.categoryId === sfilter : inCat(t, sfilter))).sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-  if (!all.length) { $("#moTx", sroot).innerHTML = chips + `<div class="empty">Nothing recorded for ${esc(periodLabel(sview))}. Tap <b>+</b> to add an expense or scan a receipt.</div>`; return; }
-  let html = "", day = null;
-  all.forEach(t => {
-    if (t.date !== day) { if (day) html += `</div>`; day = t.date; const sum = all.filter(x => x.date === day && x.kind !== "income").reduce((a, x) => a + (x.kind === "refund" ? -x.amount : x.amount), 0); html += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span><span class="num">${eur(sum)}</span></div><div class="grp">`; }
-    const sign = t.kind === "expense" ? "" : "+", title = t.payee || catName(t.categoryId);
-    const lineCats = t.lines ? [...new Set(t.lines.map(l => catName(l.categoryId || t.categoryId)))] : null;
-    const sub = [t.lines ? `${t.lines.length} item${t.lines.length === 1 ? "" : "s"}` : null, t.payee ? (t.kind === "income" ? "Income" : lineCats ? lineCats.slice(0, 3).join(", ") : catName(t.categoryId)) : null, t.note, t.kind === "refund" ? "Refund" : null].filter(Boolean).join(" · ");
-    html += `<button type="button" class="row" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind !== "expense" ? " good" : ""}">${sign}${eur(t.amount)}</span></button>`;
-  });
-  $("#moTx", sroot).innerHTML = chips + html + `</div>`;
 }
 
 /* ---------- Add / edit expense ---------- */

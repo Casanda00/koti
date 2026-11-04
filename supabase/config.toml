@@ -11,3 +11,7 @@ verify_jwt = false
 [functions.send-reminders]
 # Called hourly by pg_cron with a token kept in Vault, or by a signed-in user (checked inside).
 verify_jwt = false
+
+[functions.hear]
+# Speech and typed phrases from the add box. The function checks the signed-in user itself.
+verify_jwt = false

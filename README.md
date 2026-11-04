@@ -12,6 +12,7 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 | Data | Supabase project `koti` (`dghcrcneikxuaacsyhpy`): tables `lists` (shopping lists, projects and their room lists), `items`, `settings`, `categories`, `transactions`, `bills`, `goals`, `income_sources`, each locked to the signed-in user with row level security. |
 | Receipts | Private Storage bucket `receipts`; each user can only reach `{user id}/…`. Read on the device with Tesseract (English + Finnish), bundled in `js/vendor/tesseract-7.0.0/` and loaded only when scanning. |
 | Receipt reading | Edge Function `read-receipt` (`supabase/functions/read-receipt`): checks the signed-in user, counts the daily limit, sends the photo to OpenAI and returns shop, date, total and every line. Needs the secret `OPENAI_API_KEY`; optional `OPENAI_MODEL` and `AI_DAILY_LIMIT`. Without it, receipts are read on the device (total only). |
+| The microphone | Edge Function `hear` (`supabase/functions/hear`): a recording from the add box is written down by OpenAI (`OPENAI_TRANSCRIBE_MODEL`, default `gpt-4o-mini-transcribe`, Finnish or English), then read for what was meant: a purchase with its lines, a question about spending, a reminder or things for a list. Typed phrases the on-device rules can't read go the same way. Counts in the same daily AI limit as receipts. Offline or signed out, the phone's own speech recognition is used. |
 | Database changes | `supabase/migrations/`. Applied through the Supabase connector; the optional `Update database` workflow applies them too if its secrets are set. |
 
 ## How it's laid out (2.0)
@@ -29,8 +30,10 @@ Three places, named at the top: **Now** (what's yours to spend until payday, on 
 | `js/now.js` | Now: yours to spend until payday, the mood colour, questions and what's next, "How we got there" |
 | `js/month.js` | Month: the plan sentence, living money by category, money left to plan, match to bank |
 | `js/place.js` | Home: the floor plan and your lists |
-| `js/composer.js` | The add box: reads "Lidl 23,40" and confirms before saving; adds to a list on Home |
+| `js/composer.js` | The add box: reads "Lidl 23,40" and confirms before saving; answers "what did I spend last week?"; adds to a list on Home |
 | `js/onboarding.js` | The three first-time questions |
+| `js/spent.js` | Spent: today, yesterday, this week, last week, this month and last month, compared with what's usual, by category, a bar a day, the purchases; the Today / Yesterday / This week row on Now |
+| `js/hear.js` | The microphone with AI: records, sends to `hear`, turns the answer into a purchase, a question, a reminder or list items |
 | `js/install.js` | Getting Koti onto the Home Screen: one tap on Android and desktop, a guide on iPhone, open-in-browser help inside Instagram or WhatsApp, the strip on Now |
 | `js/paydays.js` | Pay dates, including the last working day (weekdays, not Finnish public holidays) |
 | `js/lists.js` | An opened list, sending a list, new list and list settings |
@@ -38,7 +41,7 @@ Three places, named at the top: **Now** (what's yours to spend until payday, on 
 | `js/setup.js` | Project view (Home setup with its floor plan, other projects), item and add sheets |
 | `js/more.js` | You: account, month settings, import, backup, install help |
 | `js/charts.js` | Floor plans and charts |
-| `js/money.js` | Budgets screen, All spending screen, add/edit expense, categories, receipts list |
+| `js/money.js` | Budgets screen, add/edit expense, categories, receipts list |
 | `js/ledger.js` | Running balance month to month, what's left until payday |
 | `js/plan.js` | Bills screen (calendar, paid tracking, autopay) and savings goals |
 | `js/receipts.js` | Receipts: shrink photos, read total/date/shop, keep on the device until uploaded, private viewing links |

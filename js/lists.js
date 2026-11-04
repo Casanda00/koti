@@ -1,7 +1,8 @@
 // Expenses screen (spending, bills, list cards), an opened list, sending a list, new list and list settings, and the + menu.
 import { store, listCategory, topLists, roomsOf, itemsOf, listOf, projectItems, projectSpent, todayISO, HOME_PLAN, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
-import { periodFor, totals, periodLabel, openExpense, catName, setSpendingFilter } from "./money.js";
+import { periodFor, totals, periodLabel, openExpense, catName } from "./money.js";
+import { setSpendingFilter } from "./spent.js";
 import { occurrences, nextDue, perYear } from "./plan.js";
 import { openScan } from "./scan.js";
 import { sync } from "./sync.js";
@@ -26,7 +27,7 @@ export function renderExpenses() {
   const p = periodFor(new Date()), T = totals(p), today = todayISO();
   const n = T.tx.filter(t => t.kind !== "income").length, rc = T.tx.filter(t => t.receiptPath).length;
   $("#exSub", eroot).textContent = periodLabel(p);
-  $("#exSpend", eroot).innerHTML = `<div class="card-head" style="margin:0"><span class="k">Spent in ${p.start.toLocaleDateString("en-GB", { month: "long" })}</span><span class="go">All spending ${icon("chev", "ic xs")}</span></div>
+  $("#exSpend", eroot).innerHTML = `<div class="card-head" style="margin:0"><span class="k">Spent in ${p.start.toLocaleDateString("en-GB", { month: "long" })}</span><span class="go">Spent ${icon("chev", "ic xs")}</span></div>
     <b class="big" style="font-size:34px">${eur0(T.total)}</b><span class="s">${n} expense${n === 1 ? "" : "s"}${rc ? ` · ${rc} with receipts` : ""}${T.projects ? ` · ${eur0(T.projects)} on projects` : ""}</span>
     ${Object.keys(T.byCat).length ? `<span class="catchips">${Object.entries(T.byCat).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `<span class="cchip" data-cat-filter="${esc(k)}">${esc(catName(k))} <b>${eur0(v)}</b></span>`).join("")}</span>` : ""}`;
   const occ = occurrences(p), paid = occ.filter(o => o.paid).length, monthly = store.model.bills.filter(b => b.active).reduce((a, b) => a + perYear(b), 0) / 12;

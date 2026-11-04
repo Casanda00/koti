@@ -2,7 +2,8 @@
 // then at most two questions Koti needs answered and a few plain sentences about what's next.
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import { $, esc, eur, eur0, parseDay, openSheet, closeSheet, toast } from "./ui.js";
-import { periodFor, totals, catName, openStartBalance, openCheckBank, setSpendingFilter } from "./money.js";
+import { periodFor, totals, catName, openStartBalance, openCheckBank } from "./money.js";
+import { setSpendingFilter, quickHTML } from "./spent.js";
 import { monthLedger, startPoint, effectiveBudgets, awaitingIncome } from "./ledger.js";
 import { occurrences, markPaid, setSkipped } from "./plan.js";
 import { nextPay, receive } from "./income.js";
@@ -96,6 +97,7 @@ export function renderNow() {
       <button type="button" class="now-how" data-how>How we got there</button>
     </section>
     <section class="now-sheet">
+      ${quickHTML()}
       ${qs.slice(0, 2).join("")}
       ${qs.length && lines.length ? `<hr class="now-hr">` : ""}
       ${lines.map(l => `<p class="now-line${l.startsWith('<span class="dot') ? " has-dot" : ""}">${l}</p>`).join("") || (qs.length ? "" : `<p class="now-line">Nothing needs you today.</p>`)}

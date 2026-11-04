@@ -30,7 +30,7 @@ export function renderMore() {
   const profile = sync.configured && !sync.user
     ? `<button type="button" class="prof" data-open="auth"><span class="avatar big"${S.avatarColor ? ` style="background:${esc(S.avatarColor)}"` : ""}>${initial}</span><span class="pt"><b>${name ? esc(name) : "Sign in or create account"}</b><small>Keep your phone and computer in step</small></span>${chev}</button>`
     : `<button type="button" class="prof" data-open="profile"><span class="avatar big"${S.avatarColor ? ` style="background:${esc(S.avatarColor)}"` : ""}>${initial}</span><span class="pt"><b>${name ? esc(name) : "Add your name"}</b><small>${sync.user ? esc(sync.user.email) : "This device"}</small><span class="okline" data-state="${esc(sync.status || "")}">${syncLine}</span></span>${chev}</button>`;
-  const scanOpts = [["auto", "Let Koti decide"], ["spending", "Everyday spending"], ["bill", "A bill"]];
+  const scanOpts = [["auto", "Sorted by Koti"], ["spending", "Everyday spending"], ["bill", "A bill"]];
 
   const keepY = window.scrollY;   // redraws must not move the page
   root.innerHTML = `
@@ -44,13 +44,14 @@ export function renderMore() {
   </div>
   <p class="note">Categories, budgets and carry over are in Month → Budgets.</p>
 
-  <div class="gh"><h2>Scanning</h2></div>
+  <div class="gh"><h2>Scanning and the microphone</h2></div>
   <div class="grp">
     <label class="row"><span class="rt">First choice when scanning</span><select class="inl" data-set="scanDefault">${scanOpts.map(([v, t]) => `<option value="${v}"${(S.scanDefault || "auto") === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
     <label class="row"><span class="rt">Keep receipt photos<small>Off: receipts are read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
     <label class="row"><span class="rt">Keep bill documents<small>Off: bills are read, the document isn't stored</small></span><input type="checkbox" class="switch" data-set="keepBills" ${S.keepBills ? "checked" : ""}></label>
-    <div class="row"><span class="rt">AI scans today</span><span class="rv num" id="moAiUse">–</span></div>
+    <div class="row"><span class="rt">AI uses today<small>Scans and the microphone together</small></span><span class="rv num" id="moAiUse">–</span></div>
   </div>
+  <p class="note">When you're signed in and online, receipts and what you say to the microphone are sent to OpenAI to be read and written down. They aren't kept there or in Koti, unless you switch on keeping photos. Offline, the phone does it itself.</p>
 
   <div class="gh"><h2>Reminders</h2></div>
   <div class="grp"><a class="row" href="#reminders"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders<small>${remSummary()}</small></span>${chev}</a></div>

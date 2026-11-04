@@ -2,7 +2,8 @@
 // what's still left to plan, and a way to match the balance to the bank.
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import { $, esc, eur0, toast } from "./ui.js";
-import { periodFor, totals, openCategories, openCheckBank, setSpendingFilter } from "./money.js";
+import { periodFor, totals, openCategories, openCheckBank } from "./money.js";
+import { setSpendingFilter } from "./spent.js";
 import { monthLedger, effectiveBudgets, startPoint } from "./ledger.js";
 import { billTotals } from "./plan.js";
 import { incomeTotals, openSource } from "./income.js";
@@ -53,6 +54,6 @@ export function renderMonth() {
     <div class="mrows">${rows || `<button type="button" class="pill" data-plan-cats>Set budgets</button>`}</div>
     ${income > 0 && unplanned > 0 && !kept ? `<div class="mplan2"><p>You have ${eur0(unplanned)} left to plan.</p><div class="btns"><button type="button" class="pill" data-plan-cats>Add to a category</button><button type="button" class="pill ghost" data-keep>Keep for ${esc(nextMonthName(p))}</button></div></div>` : ""}
     ${income > 0 && unplanned < 0 ? `<div class="mplan2 warn"><p>Your budgets are ${eur0(-unplanned)} more than your living money.</p><div class="btns"><button type="button" class="pill" data-plan-cats>Change budgets</button></div></div>` : ""}
-    <nav class="mlinks" aria-label="More in Month"><a href="#bills">Bills</a><a href="#income">Income</a><a href="#spending">All spending</a><a href="#budgets">Budgets and savings</a></nav>
+    <nav class="mlinks" aria-label="More in Month"><a href="#bills">Bills</a><a href="#income">Income</a><a href="#spending/week">Spent</a><a href="#budgets">Budgets and savings</a></nav>
     ${L.kind === "current" ? `<p class="mbank">${startPoint().set ? `Koti thinks you have ${eur0(L.now)} right now.` : "Koti doesn't know your bank balance yet."} <button type="button" class="tlink" data-bank>${startPoint().set ? "Check against my bank" : "Tell Koti"}</button></p>` : ""}`;
 }

@@ -1,12 +1,13 @@
 // Koti app entry: routing, views, sync status, offline support.
 // Main places: Now, Month and Home, named at the top. "You" (settings) is behind your initial.
-// Under Month: Bills, Income, Budgets and All spending. Under Home: each list and project.
+// Under Month: Bills, Income, Budgets and Spent. Under Home: each list and project.
 import { store, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, initSheets, closeSheet, toast } from "./ui.js";
 import { initSync, onSync, refresh } from "./sync.js";
 import { mountSetup, renderSetup, renderPlans, renderCharts, openAdd, setProject } from "./setup.js";
 import { mountMore, renderMore, bindMore, openNewPassword } from "./more.js";
-import { mountMoney, renderMoney, mountSpending, renderSpending, openExpense } from "./money.js";
+import { mountMoney, renderMoney, openExpense } from "./money.js";
+import { mountSpending, renderSpending } from "./spent.js";
 import { initPullToRefresh } from "./ptr.js";
 import { mountPlan, renderPlanView, openBill, runAutopay } from "./plan.js";
 import { mountIncome, renderIncome, openSource } from "./income.js";
@@ -24,12 +25,13 @@ import { startInstall, openInstall, snoozeStrip } from "./install.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills", more: "settings", expenses: "home" };   // links from earlier versions
 const TAB = { now: "now", month: "month", budgets: "month", income: "month", spending: "month", bills: "month", home: "home", list: "home", project: "home", settings: "settings", reminders: "settings" };
-const TITLE = { now: "Now", month: "Month", home: "Home", budgets: "Budgets", income: "Income", spending: "All spending", bills: "Bills", settings: "You", reminders: "Reminders" };
+const TITLE = { now: "Now", month: "Month", home: "Home", budgets: "Budgets", income: "Income", spending: "Spent", bills: "Bills", settings: "You", reminders: "Reminders" };
 let current = null, currentKey = null;
 
 function parse() {
   let h = decodeURIComponent((location.hash || "").slice(1)) || "now";
   if (OLD[h]) { h = OLD[h]; history.replaceState(null, "", "#" + h); }
+  if (h.startsWith("spending/")) return { view: "spending", id: h.slice(9) };
   if (h.startsWith("list/")) { const id = h.slice(5), l = listOf(id); return { view: l && l.kind === "project" ? "project" : "list", id }; }
   return { view: TITLE[h] ? h : "now" };
 }

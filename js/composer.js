@@ -7,6 +7,9 @@ import { periodFor, totals, openExpense } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
 import { parseItems, currentList } from "./lists.js";
 import { isReminderPhrase, parseReminder } from "./remindparse.js";
+import { spendQuestion } from "./spent.js";
+import { aiVoice, record, understand, toParsed } from "./hear.js";
+import { aiPossible } from "./receipts.js";
 
 let getView = () => "now", form, input, stop = null;
 
@@ -33,15 +36,55 @@ export function initComposer(viewGetter) {
   getView = viewGetter; form = $("#dock"); input = $("#dockIn");
   form.addEventListener("submit", e => { e.preventDefault(); go(); });
   const mic = $("#dockMic");
-  if (speechSupported()) {
+  if (speechSupported() || aiVoice()) {
     mic.hidden = false;
     mic.addEventListener("click", () => {
       if (stop) { stop(); stop = null; mic.classList.remove("listening"); return; }
+      if (aiVoice()) { recordAndAct(mic); return; }
+      if (!speechSupported()) { toast("Sign in and go online to use the microphone."); return; }
       mic.classList.add("listening");
       stop = listen({ lang: store.model.settings.voiceLang || "en-GB", onText: (t, fin) => { input.value = t; if (fin && !listMode()) setTimeout(go, 250); }, onEnd: () => { stop = null; mic.classList.remove("listening"); }, onError: () => { stop = null; mic.classList.remove("listening"); toast("Couldn't hear that. Try typing it."); } });
     });
   }
   paintComposer();
+}
+
+/* Tap to talk, tap again when you're done (it stops by itself after 20 seconds). */
+async function recordAndAct(mic) {
+  const ph = input.placeholder;
+  const reset = () => { stop = null; mic.classList.remove("listening"); mic.disabled = false; input.placeholder = ph; };
+  let r;
+  try {
+    r = await record({ maxMs: 20000, onStop: async blob => {
+      stop = null; mic.classList.remove("listening"); mic.disabled = true; input.placeholder = "Working out what you said…";
+      try { await ask({ audio: blob }); } finally { reset(); }
+    } });
+  } catch (e) { reset(); toast(/denied|NotAllowed/i.test(String(e && (e.name || e.message))) ? "Koti can't use the microphone. Allow it in your browser's settings." : "Couldn't start the microphone."); return; }
+  mic.classList.add("listening"); input.placeholder = "Listening… tap the microphone when you're done";
+  stop = () => r.stop();
+}
+
+/* Sends a recording or a phrase to the AI and does what it meant. Saving always goes through a sheet to check. */
+async function ask({ audio = null, text = "" }) {
+  let d;
+  try { d = await understand({ audio, text }); }
+  catch (e) { toast(String(e.message || e)); if (text) input.focus(); return; }
+  const said = d.transcript || text;
+  if (d.intent === "question" && d.range) { input.value = ""; location.hash = "#spending/" + d.range; return; }
+  if (d.intent === "remind") { input.value = ""; import("./reminders.js").then(m => m.openReminder(null, parseReminder(said, { bills: store.model.bills }))); return; }
+  if (d.intent === "list" && d.items.length) {
+    let l = listTarget();
+    if (!l) { const id = newId("list"); store.put("lists", { id, name: "Groceries", kind: "shopping", position: store.model.lists.length }); l = listOf(id); }
+    d.items.forEach(x => store.addItem(l.id, x.name, "Soon", { qty: x.qty && Number.isInteger(x.qty) && x.qty > 1 ? x.qty : null }));
+    input.value = ""; toast(`Added ${d.items.length === 1 ? d.items[0].name : d.items.length + " things"} to ${l.name}`); return;
+  }
+  if (d.intent === "spend" && d.spend && d.spend.total) {
+    const P = toParsed(d.spend); input.value = "";
+    if (P.lines.length > 1 || P.lines.some(l => l.placeId)) { import("./scan.js").then(m => m.openParsed(P)); return; }
+    showHeard({ amount: P.amount, payee: P.payee, date: P.date, note: P.note, categoryId: P.categoryId }, said); return;
+  }
+  input.value = said; input.focus();
+  toast(said ? `Heard “${said.length > 60 ? said.slice(0, 57) + "…" : said}”. Add an amount, like “Lidl 23,40”.` : "Didn't catch that. Try again, or type it.");
 }
 
 function go() {
@@ -50,6 +93,8 @@ function go() {
     const preset = parseReminder(text, { bills: store.model.bills });
     input.value = ""; import("./reminders.js").then(m => m.openReminder(null, preset)); return;
   }
+  const ask = !listMode() && spendQuestion(text);   // "what did I spend last week?" opens Spent on last week
+  if (ask) { input.value = ""; location.hash = "#spending/" + ask; return; }
   if (listMode()) {
     if (!text) { input.focus(); return; }
     let l = listTarget();
@@ -62,7 +107,10 @@ function go() {
   if (!text) { openExpense(); return; }
   const cats = store.model.categories;
   const heard = parseExpense(text, { categories: cats, history: store.model.transactions });
-  if (!heard.amount) { toast("Add an amount, like “Lidl 23,40”."); input.focus(); return; }
+  if (!heard.amount) {
+    if (aiPossible()) { ask({ text }); return; }   // the rules couldn't read it: let the AI try
+    toast("Add an amount, like “Lidl 23,40”."); input.focus(); return;
+  }
   showHeard(heard);
 }
 
