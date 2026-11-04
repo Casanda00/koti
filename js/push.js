@@ -10,6 +10,10 @@ const TYPES = [
   ["payday", "Did your pay land?", "The morning after payday, if you haven't said yet"],
   ["budget", "Running low", "Once a month, when a category reaches 85%"],
   ["weekly", "Your week", "Sunday evening: what you spent and what's due next week"],
+  ["tight", "Money's tight", "Once a month, when Now turns orange or red"],
+  ["autopay", "Pays itself", "The morning before an automatic bill, if your account may not cover it"],
+  ["plan", "Plan the month", "On the day your pay lands"],
+  ["lists", "List changes", "When someone adds to a list through its shared link"],
 ];
 const supported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const standaloneIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia("(display-mode: standalone)").matches || navigator.standalone);
@@ -48,7 +52,7 @@ export async function turnOff() {
 }
 
 export async function renderReminders(el) {
-  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9, ...(store.model.settings.reminders || {}) };
+  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, tight: true, autopay: false, plan: false, lists: true, quietFrom: 21, quietTo: 8, billHour: 9, ...(store.model.settings.reminders || {}) };
   const sub = await current().catch(() => null), on = !!sub && Notification.permission === "granted";
   const why = !supported() ? (standaloneIOS() ? "On iPhone, add Koti to your home screen (iOS 16.4 or later), then turn this on there." : "This browser can't receive reminders.") : !sync.user ? "Sign in to use reminders." : Notification.permission === "denied" ? "Notifications are blocked. Allow them for Koti in your phone's settings." : "";
   const hours = (sel) => Array.from({ length: 24 }, (_, h) => `<option value="${h}"${Number(sel) === h ? " selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("");

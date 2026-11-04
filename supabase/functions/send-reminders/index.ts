@@ -135,6 +135,13 @@ const W = {
     dueIn: (n: string, a: string, d: number) => d === 0 ? `${n}, ${a}, is due today.` : `${n}, ${a}, is due in ${d} day${d === 1 ? "" : "s"}.`,
     payIn: (d: number) => d === 0 ? "Payday is today." : `Payday is in ${d} day${d === 1 ? "" : "s"}.`,
     endIn: (d: number) => d === 0 ? "The month ends today." : `The month ends in ${d} day${d === 1 ? "" : "s"}.`,
+    tight: (a: string, d: number, pd: string) => `${a} is yours to spend for ${d} day${d === 1 ? "" : "s"}. About ${pd} a day.`,
+    overNow: (a: string) => `You're ${a} over until payday.`,
+    autoT: (n: string, a: string) => `${n}, ${a}, comes out tomorrow.`, autoB: (a: string) => `You have ${a} in your account.`,
+    planT: "Your pay landed", planB: "Take a minute to plan the month in Koti.",
+    listAdded: (items: string, many: boolean, l: string) => `${items.charAt(0).toUpperCase() + items.slice(1)} ${many ? "were" : "was"} added to ${l}.`, listBody: "Through your shared link.",
+    catPassed: (c: string, sp: string, a: string) => `${c} is at ${sp} this month, past your ${a}.`,
+    leftUnder: (a: string) => `${a} is yours to spend until payday.`,
     bundle: (n: number) => `${n} things today`,
   },
   fi: {
@@ -156,6 +163,13 @@ const W = {
     dueIn: (n: string, a: string, d: number) => d === 0 ? `${n}, ${a}, erääntyy tänään.` : `${n}, ${a}, erääntyy ${d} päivän päästä.`,
     payIn: (d: number) => d === 0 ? "Tänään on palkkapäivä." : `Palkkapäivään on ${d} päivää.`,
     endIn: (d: number) => d === 0 ? "Kuukausi loppuu tänään." : `Kuukausi loppuu ${d} päivän päästä.`,
+    tight: (a: string, d: number, pd: string) => `${a} käytettävissä ${d} päiväksi. Noin ${pd} päivässä.`,
+    overNow: (a: string) => `Olet ${a} miinuksella palkkapäivään asti.`,
+    autoT: (n: string, a: string) => `${n}, ${a}, veloitetaan huomenna.`, autoB: (a: string) => `Tililläsi on ${a}.`,
+    planT: "Palkka tuli", planB: "Käy kuukauden suunnitelma läpi Kotissa.",
+    listAdded: (items: string, _many: boolean, l: string) => `${l}: lisätty ${items}.`, listBody: "Jaetun linkin kautta.",
+    catPassed: (c: string, sp: string, a: string) => `${c}: ${sp} tässä kuussa, yli rajasi ${a}.`,
+    leftUnder: (a: string) => `${a} käytettävissä palkkapäivään asti.`,
     bundle: (n: number) => `${n} asiaa tänään`,
   },
 };
@@ -207,6 +221,27 @@ function mainPayDue(income: Row[], y: number, m: number) {
   return main ? payDue(main, y, m) : null;
 }
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/* This budget month (the same as the app's: from the month-start day). */
+function periodOf(settings: Row, today: string) {
+  const ms = Number(settings.monthStart) || 1, [y, m, d] = today.split("-").map(Number);
+  const from = d >= ms ? ymd(y, m - 1, ms) : ymd(y, m - 2, ms), to = addDays(d >= ms ? ymd(y, m, ms) : ymd(y, m - 1, ms), -1);
+  return { from, to };
+}
+/* What Now showed when the app last drew it. Trusted for 36 hours and only in the same budget month. */
+function snapshotOf(settings: Row, from: string) {
+  const s = settings.snapshot;
+  return s && s.period === from && s.at && Date.now() - Date.parse(s.at) < 36 * 3600e3 ? s : null;
+}
+function spentByCategory(tx: Row[], from: string, to: string) {
+  const spent: Record<string, number> = {};
+  for (const t of tx) {
+    if (t.date < from || t.date > to || t.kind === "income" || t.category_id === "adjust") continue;
+    const sign = t.kind === "refund" ? -1 : 1;
+    if (Array.isArray(t.lines) && t.lines.length) { let rest = Number(t.amount); for (const l of t.lines) { const c = l.categoryId || t.category_id; if (c) spent[c] = (spent[c] || 0) + sign * l.price; rest -= l.price; } if (Math.abs(rest) >= .005 && t.category_id) spent[t.category_id] = (spent[t.category_id] || 0) + sign * rest; }
+    else if (t.category_id) spent[t.category_id] = (spent[t.category_id] || 0) + sign * Number(t.amount);
+  }
+  return spent;
+}
 /* Your own reminders that are due this hour. They come at the hour you chose, quiet hours or not. */
 export function customFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; reminders?: Row[]; again?: Set<string> }, now: { day: string; hour: number; weekday: string }): Note[] {
   const out: Note[] = [], today = now.day, lang = langOf(u.settings), w = W[lang], eur = (n: number) => money(lang, n);
@@ -237,14 +272,15 @@ export function customFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: R
       }
     }
     if (!hit) continue;
-    out.push({ key: `cr:${r.id}:${today}`, title: r.title, body, url: bill ? "./#bills" : "./#reminders", answer: answerTo,
+    const url = bill ? "./#bills" : r.about_kind === "list" && r.about_id ? `./#list/${encodeURIComponent(r.about_id)}` : r.about_kind === "goal" ? "./#budgets" : "./#reminders";
+    out.push({ key: `cr:${r.id}:${today}`, title: r.title, body, url, answer: answerTo,
       actions: bill ? [{ action: "paid", title: w.paid }, { action: "later", title: w.notYet }] : [{ action: "done", title: w.done }, { action: "later", title: w.tomorrow }] });
   }
   return out;
 }
 
-function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[]; reminders?: Row[]; again?: Set<string> }, now: { day: string; hour: number; weekday: string }): Note[] {
-  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
+function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[]; reminders?: Row[]; again?: Set<string>; lists?: Row[]; events?: Row[] }, now: { day: string; hour: number; weekday: string }): Note[] {
+  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, tight: true, autopay: false, plan: false, lists: true, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
   const quiet = R.quietFrom > R.quietTo ? (now.hour >= R.quietFrom || now.hour < R.quietTo) : (now.hour >= R.quietFrom && now.hour < R.quietTo);
   const mine = R.custom === false ? [] : customFor(u, now);
   if (quiet) return mine;
@@ -297,6 +333,47 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
       out.push({ key: `bud:${c.id}:${from}`, title: s > b ? w.over(c.name, eur(s - b)) : w.low(c.name, eur(b - s)), body: w.budBody(Math.round(s / b * 100), eur(b)), url: "./#month" });
     }
   }
+  const P = periodOf(u.settings, today), snap = snapshotOf(u.settings, P.from);
+  // Money's tight: once a month when Now turns orange, and once when it turns red.
+  if (R.tight && snap && (snap.mood === "tight" || snap.mood === "over")) {
+    if (snap.mood === "over") out.push({ key: `over:${P.from}`, title: w.overNow(eur(-snap.left)), body: "", url: "./#now" });
+    else out.push({ key: `tight:${P.from}`, title: w.tight(eur(snap.left), Number(snap.days) || 1, eur(Number(snap.perDay) || 0)), body: "", url: "./#now" });
+  }
+  // Pays itself: an automatic bill tomorrow that the account may not cover.
+  if (R.autopay && morning && snap) for (const b of u.bills) {
+    if (!b.active || !b.autopay) continue;
+    for (const due of billDuesAround(b, today, 0, 1)) {
+      const amount = ((b.dues || {})[due] || {}).amount || Number(b.amount);
+      if (due === tomorrow && !paid.has(`${b.id}|${due}`) && Number(snap.now) < amount) out.push({ key: `auto:${b.id}:${due}`, title: w.autoT(b.name, eur(amount)), body: w.autoB(eur(Number(snap.now))), url: "./#now" });
+    }
+  }
+  // Plan the month: on the day your main pay is marked as landed.
+  if (R.plan) {
+    const main = u.income.filter((x) => x.active && x.frequency !== "once").sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))[0];
+    const t = main && u.tx.find((x) => x.income_id === main.id && x.updated_at && Date.now() - Date.parse(x.updated_at) < 24 * 3600e3);
+    if (t) out.push({ key: `plan:${main.id}:${t.income_due}`, title: w.planT, body: w.planB, url: "./#month" });
+  }
+  // Your own amount reminders: a category passing an amount, or what's yours to spend falling under one. Once a month each.
+  const spentNow = spentByCategory(u.tx, P.from, P.to);
+  for (const r of u.reminders || []) {
+    if (!r.active || r.deleted || r.schedule !== "amount" || !(Number(r.amount) > 0)) continue;
+    if (r.about_kind === "category") {
+      const c = u.cats.find((x) => x.id === r.about_id), sp = spentNow[r.about_id] || 0;
+      if (c && sp > Number(r.amount)) out.push({ key: `cr:${r.id}:${P.from}`, title: r.title, body: r.note || w.catPassed(c.name, eur(sp), eur(Number(r.amount))), url: "./#month" });
+    } else if (r.about_kind === "left" && snap && Number(snap.left) < Number(r.amount)) {
+      out.push({ key: `cr:${r.id}:${P.from}`, title: r.title, body: r.note || w.leftUnder(eur(Number(snap.left))), url: "./#now" });
+    }
+  }
+  // List changed: things added through a shared link, one line per list.
+  if (R.lists && (u.events || []).length) {
+    const quietLists = new Set(R.quietLists || []), byList: Record<string, Row[]> = {};
+    for (const e of u.events || []) if (!quietLists.has(e.list_id)) (byList[e.list_id] = byList[e.list_id] || []).push(e);
+    for (const [lid, evs] of Object.entries(byList)) {
+      const name = ((u.lists || []).find((l) => l.id === lid) || {}).name || "your list", items = evs.map((e) => e.item_name);
+      const shown = items.length > 3 ? [...items.slice(0, 2), lang === "fi" ? `${items.length - 2} muuta` : `${items.length - 2} more`] : items;
+      out.push({ key: `ls:${lid}:${Math.max(...evs.map((e) => Number(e.id)))}`, title: w.listAdded(list(lang, shown), items.length > 1, name), body: w.listBody, url: `./#list/${encodeURIComponent(lid)}` });
+    }
+  }
   if (R.weekly && now.weekday === "Sun" && now.hour === 19) {
     const from = addDays(today, -6); let s = 0, n = 0;
     for (const t of u.tx) if (t.date >= from && t.date <= today && t.kind === "expense" && !t.bill_id && t.category_id !== "adjust") { s += Number(t.amount); n++; }
@@ -344,14 +421,16 @@ async function runAll(secret: string) {
   const subs: Row[] = await rest("push_subscriptions?select=*");
   if (!subs.length) return { users: 0, sent: 0 };
   const now = local(), users = [...new Set(subs.map((s) => s.user_id))], inList = `in.(${users.join(",")})`, since = addDays(now.day, -100);
-  const [settings, bills, tx, income, cats, log, mineAll] = await Promise.all([
+  const [settings, bills, tx, income, cats, log, mineAll, lists, events] = await Promise.all([
     rest(`settings?select=user_id,data&user_id=${inList}`),
     rest(`bills?select=*&deleted=eq.false&user_id=${inList}`),
-    rest(`transactions?select=user_id,date,amount,kind,category_id,bill_id,bill_due,income_id,income_due,lines&deleted=eq.false&date=gte.${since}&user_id=${inList}`),
+    rest(`transactions?select=user_id,date,amount,kind,category_id,bill_id,bill_due,income_id,income_due,lines,updated_at&deleted=eq.false&date=gte.${since}&user_id=${inList}`),
     rest(`income_sources?select=*&deleted=eq.false&user_id=${inList}`),
     rest(`categories?select=user_id,id,name,budget&deleted=eq.false&user_id=${inList}`),
     rest(`push_log?select=user_id,key&user_id=${inList}&or=(key.like."again:*",key.like."n:${now.day}:*")`),
     rest(`reminders?select=*&deleted=eq.false&active=eq.true&user_id=${inList}`),
+    rest(`lists?select=user_id,id,name&deleted=eq.false&user_id=${inList}`),
+    rest(`share_events?select=user_id,id,list_id,item_name&sent=eq.false&user_id=${inList}&order=id`),
   ]);
   let sent = 0;
   for (const uid of users) {
@@ -359,13 +438,15 @@ async function runAll(secret: string) {
     const st = (by(settings)[0] || {}).data || {}, mine: Row[] = by(log);
     const sentToday = mine.filter((r) => r.key.startsWith(`n:${now.day}:`)).length;
     if (sentToday >= DAILY_LIMIT) continue;   // the rest waits; anything still true is checked again tomorrow
-    const notes = remindersFor({ settings: st, bills: by(bills), tx: by(tx), income: by(income), cats: by(cats), reminders: by(mineAll), again: new Set(mine.map((r) => r.key)) }, now);
+    const notes = remindersFor({ settings: st, bills: by(bills), tx: by(tx), income: by(income), cats: by(cats), reminders: by(mineAll), lists: by(lists), events: by(events), again: new Set(mine.map((r) => r.key)) }, now);
+    const told = by(events).map((e) => Number(e.id));   // shared-list changes are told once, sent or switched off
     const fresh: Note[] = [];
     for (const n of notes) if (await firstTime(uid, n.key)) fresh.push(n);
     if (!fresh.length) continue;
     const note = bundle(fresh, langOf(st));
     const token = note.answer ? await signAnswer(secret, uid, note.answer) : undefined;
     const ok = await sendTo(by(subs), note, token); sent += ok;
+    if (ok && told.length) await rest(`share_events?user_id=eq.${uid}&id=lte.${Math.max(...told)}`, { method: "PATCH", body: JSON.stringify({ sent: true }) }).catch(() => {});
     if (ok) await firstTime(uid, `n:${now.day}:${Date.now()}`);
     else for (const n of fresh) await rest(`push_log?user_id=eq.${uid}&key=eq.${encodeURIComponent(n.key)}`, { method: "DELETE" }).catch(() => {});   // try again next hour
   }

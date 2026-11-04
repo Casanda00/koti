@@ -105,16 +105,19 @@ function cleanDues(d) {
   return out;
 }
 /* Your own reminder. when: once (date), monthly (day 1-31, -1 last working day, -2 payday), weekly (0 = Sunday),
-   before (N days before a bill, payday or the end of the month). hour: 0-23, Helsinki time. */
-export const REMINDER_WHEN = ["once", "monthly", "weekly", "before"];
+   before (N days before a bill, payday or the end of the month), amount (a category passes it, or what's yours to
+   spend falls under it). about: a list or goal it's for (opens it), or what "before"/"amount" watches. hour: 0-23, Helsinki. */
+export const REMINDER_WHEN = ["once", "monthly", "weekly", "before", "amount"];
 function cleanReminder(r, pos) {
   const int = (v, lo, hi, d = null) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? d : Math.min(hi, Math.max(lo, Math.round(Number(v)))));
   const when = REMINDER_WHEN.includes(r.when) ? r.when : "once";
+  const kinds = { before: ["bill", "payday", "monthend"], amount: ["category", "left"] }[when] || ["list", "goal"];
+  const aboutKind = kinds.includes(r.aboutKind) ? r.aboutKind : when === "before" ? "payday" : when === "amount" ? "left" : null;
   return { id: String(r.id || newId("rem")).slice(0, 80), title: String(r.title || "Reminder").slice(0, 120), note: r.note ? String(r.note).slice(0, 300) : null, when,
     date: when === "once" && r.date ? String(r.date).slice(0, 10) : null, monthDay: when === "monthly" ? int(r.monthDay, -2, 31, 1) : null,
     weekday: when === "weekly" ? int(r.weekday, 0, 6, 1) : null, beforeDays: when === "before" ? int(r.beforeDays, 0, 60, 3) : null,
-    aboutKind: when === "before" && ["bill", "payday", "monthend"].includes(r.aboutKind) ? r.aboutKind : when === "before" ? "payday" : null,
-    aboutId: when === "before" && r.aboutKind === "bill" && r.aboutId ? String(r.aboutId).slice(0, 80) : null,
+    aboutKind, aboutId: aboutKind && aboutKind !== "payday" && aboutKind !== "monthend" && aboutKind !== "left" && r.aboutId ? String(r.aboutId).slice(0, 80) : null,
+    amount: when === "amount" ? Math.max(0, Math.round((Number(r.amount) || 0) * 100) / 100) : null,
     hour: int(r.hour, 0, 23, 9), active: r.active !== false, position: Number.isFinite(r.position) ? r.position : pos, updatedAt: r.updatedAt || EPOCH };
 }
 function cleanGoal(g, pos) {

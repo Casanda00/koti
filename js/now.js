@@ -24,6 +24,12 @@ export function moodOf(L, perDay, p) {
   const days = Math.round((p.end - p.start) / 864e5) + 1, planned = effectiveBudgets(p).total / days;
   return perDay < (planned > 0 ? planned * 0.6 : 10) ? "tight" : "calm";
 }
+/* What Now shows, saved with your settings so reminders can use the same numbers ("Money's tight", "Pays itself",
+   "yours to spend falls under"). The server only trusts it while it's fresh; it changes only when the numbers do. */
+function saveSnapshot(snap) {
+  const old = store.model.settings.snapshot || {};
+  if (["left", "now", "mood", "day", "period"].some(k => old[k] !== snap[k])) store.updateSettings({ snapshot: { ...snap, at: new Date().toISOString() } });
+}
 export function isSetUp() { return startPoint().set || store.model.income.length > 0; }
 
 let root = null;
@@ -48,6 +54,7 @@ export function renderNow() {
   const p = periodFor(new Date()), L = monthLedger(p), pd = nextPay(), today = todayISO();
   const days = pd ? Math.max(1, pd.days) : null, perDay = days && L.left > 0 ? L.left / days : 0;
   document.body.dataset.mood = isSetUp() ? moodOf(L, perDay, p) : "calm";
+  if (isSetUp() && L.kind === "current") saveSnapshot({ left: Math.round(L.left), now: Math.round(L.now), perDay: Math.round(perDay), days, mood: document.body.dataset.mood, day: today, period: p.from });
 
   if (!isSetUp()) {
     root.innerHTML = `<section class="now-top">
@@ -83,7 +90,7 @@ export function renderNow() {
 
   root.innerHTML = `<section class="now-top">
       <p class="now-k">${L.left < 0 ? "Over until payday" : "Yours to spend until payday"}</p>
-      <div class="now-big num">${money(L.left)}</div>
+      <div class="now-big num" style="--n:${money(L.left).length}">${money(L.left)}</div>
       <p class="now-s">${esc(sub)}</p>
       <button type="button" class="now-how" data-how>How we got there</button>
     </section>

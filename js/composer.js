@@ -6,6 +6,7 @@ import { parseExpense, speechSupported, listen } from "./voice.js";
 import { periodFor, totals, openExpense } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
 import { parseItems, currentList } from "./lists.js";
+import { isReminderPhrase, parseReminder } from "./remindparse.js";
 
 let getView = () => "now", form, input, stop = null;
 
@@ -45,6 +46,10 @@ export function initComposer(viewGetter) {
 
 function go() {
   const text = input.value.trim();
+  if (isReminderPhrase(text)) {   // "remind me to pay water on the 15th": open the reminder, filled in, to check and save
+    const preset = parseReminder(text, { bills: store.model.bills });
+    input.value = ""; import("./reminders.js").then(m => m.openReminder(null, preset)); return;
+  }
   if (listMode()) {
     if (!text) { input.focus(); return; }
     let l = listTarget();

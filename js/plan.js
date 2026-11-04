@@ -232,6 +232,7 @@ export function openBill(bill = null, preset = {}) {
         ${bill ? `<label class="row"><span class="rt">Paused<small>Hidden from the calendar and totals</small></span><input type="checkbox" id="biPaused" ${b.active ? "" : "checked"} style="width:22px;height:22px;accent-color:var(--spruce)"></label>` : ""}
       </div>
       <p class="msg" id="biMsg" aria-live="polite"></p>
+      ${bill ? `<button type="button" class="btn" id="biRemind">${icon("bell", "ic sm")} Remind me before it's due</button>` : ""}
       ${bill ? `<p class="note" style="margin-top:0">${eur(perYear(b))} a year. Past payments stay in Money if you delete this bill.</p><button type="button" class="btn danger" id="biDel">${icon("trash", "ic sm")} Delete bill</button>` : ""}`;
     const sc = $("#biScan", B); if (sc) sc.onclick = () => import("./scan.js").then(m => m.openScan({ dest: { kind: "bill" } }));
     const docs = bill ? Object.entries(bill.dues || {}).filter(([, x]) => x.docPath).slice(-3).reverse() : [];
@@ -241,6 +242,7 @@ export function openBill(bill = null, preset = {}) {
     bindCopy(B);
     showMonth();
     $("#biFreq", B).addEventListener("click", e => { const x = e.target.closest("[data-f]"); if (!x) return; freq = x.dataset.f; $$("#biFreq button", B).forEach(y => y.setAttribute("aria-pressed", y === x)); showMonth(); });
+    const rb = $("#biRemind", B); if (rb) rb.onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: `Pay ${bill.name}`, when: "before", aboutKind: "bill", aboutId: bill.id, beforeDays: 3 })), 260); };
     const del = $("#biDel", B); if (del) del.onclick = () => { if (!confirm(`Delete "${b.name}"? Its past payments stay in Money.`)) return; closeSheet(); const copy = { ...bill }; store.remove("bills", bill.id); toast(`Deleted ${bill.name}`, { label: "Undo", run: () => store.put("bills", copy) }); };
   }, onRight: B => {
     const msg = t => { $("#biMsg", B).textContent = t; $("#biMsg", B).dataset.state = "error"; };
@@ -277,10 +279,12 @@ export function openGoal(goal = null) {
         <label class="row"><span class="rt">Put aside each month<small>Optional</small></span><input class="inl" id="goMonthly" inputmode="decimal" placeholder="€0" value="${moneyField(g.monthly)}" autocomplete="off"></label>
       </div>
       <p class="msg" id="goMsg" aria-live="polite"></p>
+      ${goal ? `<button type="button" class="btn" id="goRemind">${icon("bell", "ic sm")} Remind me on payday</button>` : ""}
       ${goal ? `<button type="button" class="btn danger" id="goDel">${icon("trash", "ic sm")} Delete goal</button>` : ""}`;
     const move = sign => { const v = parseMoney($("#goMove", B).value); if (!v || Number.isNaN(v)) { $("#goMsg", B).dataset.state = "error"; $("#goMsg", B).textContent = "Type an amount first."; return; }
       const saved = Math.max(0, Math.round((goal.saved + sign * v) * 100) / 100); store.put("goals", { ...goal, saved }); closeSheet();
       toast(sign > 0 ? `Added ${eur(v)} to ${goal.name}` : `Took ${eur(v)} out of ${goal.name}`, { label: "Undo", run: () => store.put("goals", { ...goal }) }); };
+    if (goal) $("#goRemind", B).onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: goal.monthly ? `Move ${eur(goal.monthly, 0)} to ${goal.name}` : `Put money into ${goal.name}`, when: "monthly", monthDay: -2, aboutKind: "goal", aboutId: goal.id })), 260); };
     if (goal) { $("#goAdd", B).onclick = () => move(1); $("#goTake", B).onclick = () => move(-1); $("#goDel", B).onclick = () => { if (!confirm(`Delete "${goal.name}"?`)) return; closeSheet(); const copy = { ...goal }; store.remove("goals", goal.id); toast(`Deleted ${goal.name}`, { label: "Undo", run: () => store.put("goals", copy) }); }; }
   }, onRight: B => {
     const msg = t => { $("#goMsg", B).textContent = t; $("#goMsg", B).dataset.state = "error"; };
