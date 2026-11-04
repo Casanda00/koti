@@ -1,0 +1,40 @@
+name: Deploy functions
+
+# Deploys supabase/functions from main, so what runs is what's in the repository. Runs only if the
+# repository secrets SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF exist; verify_jwt comes from supabase/config.toml.
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/functions/**", "supabase/config.toml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        id: secrets
+        run: |
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF; do
+            if [ -z "${!v}" ]; then echo "::notice::Secret $v not set; skipping. Functions are deployed by hand."; echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          done
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - uses: supabase/setup-cli@v1
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          version: latest
+      - name: Deploy
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          for f in supabase/functions/*/; do supabase functions deploy "$(basename "$f")" --project-ref "$SUPABASE_PROJECT_REF"; done

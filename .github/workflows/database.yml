@@ -9,6 +9,9 @@ on:
     paths: ["supabase/migrations/**"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: database
   cancel-in-progress: false
