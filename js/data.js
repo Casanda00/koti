@@ -278,7 +278,13 @@ export const store = {
     this.model.lists = this.model.lists.filter(x => x.id !== id);
     this.meta.tomb.lists[id] = { ...l, deleted: true, updatedAt: now() }; this.touch("lists", id); this.commit();
   },
-  updateSettings(patch) { Object.assign(this.model.settings, patch, { updatedAt: now() }); this.touch("settings"); this.commit(); },
+  /* Each setting keeps its own time (settings._t), so two devices changing different settings never undo each
+     other, and a device that hasn't heard of a setting can't wipe it. The server merges the same way. */
+  updateSettings(patch) {
+    const t = now(), S = this.model.settings, stamps = { ...(S._t || {}) };
+    Object.keys(patch).forEach(k => { if (k !== "_t" && k !== "updatedAt") stamps[k] = t; });
+    Object.assign(S, patch, { _t: stamps, updatedAt: t }); this.touch("settings"); this.commit();
+  },
 
   /* Generic rows (categories, transactions) */
   put(kind, obj) {
@@ -303,11 +309,19 @@ export const store = {
       old[kind].forEach(x => { if (!keep.has(x.id)) { this.meta.tomb[kind][x.id] = { ...x, deleted: true, updatedAt: t }; this.touch(kind, x.id); } });
       m[kind].forEach(x => { x.updatedAt = t; this.touch(kind, x.id); });
     });
-    m.settings.updatedAt = t; this.touch("settings");
+    m.settings.updatedAt = t; m.settings._t = Object.fromEntries(Object.keys(m.settings).filter(k => k !== "_t" && k !== "updatedAt").map(k => [k, t])); this.touch("settings");
     this.model = m; this.commit();
   },
   /* Forget local data entirely (used when a different account signs in on this device). */
   resetLocal(model) { this.model = normalizeModel(model); this.meta = emptyMeta(); this.persist(); this.emit("remote"); },
+  /* From before settings had their own times: a bank balance typed on this device is stamped with the day it was
+     typed, so it can reach the other devices (the most recent one wins). Runs once per device. */
+  stampLegacySettings() {
+    const S = this.model.settings;
+    if ((S._t && S._t.startBalance) || S.startBalance == null || !S.startDate) return;
+    const t = S.startDate + "T00:00:00.000Z";
+    S._t = { ...(S._t || {}), startBalance: t, startDate: t, askedStart: t }; this.touch("settings"); this.persist();
+  },
   markAllPending() { KINDS.forEach(kind => this.model[kind].forEach(x => this.touch(kind, x.id))); this.touch("settings"); this.persist(); },
   upgrade() { const c = upgradeModel(this.model); c.lists.forEach(id => this.touch("lists", id)); c.income.forEach(id => this.touch("income", id)); if (c.lists.length || c.income.length) this.commit(); return c; },
   seedCategoriesIfEmpty() { if (this.model.categories.length) return false; this.model.categories = seedCategories().map(c => ({ ...c, updatedAt: now() })); this.model.categories.forEach(c => this.touch("categories", c.id)); this.commit(); return true; },

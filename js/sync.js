@@ -1,7 +1,7 @@
 // Sync between this device and Supabase.
 // Local-first: every change is saved on the device and queued; the queue is uploaded when online and signed in.
 // Pulls fetch rows changed since the last pull (by the server's synced_at); realtime pushes changes from other devices.
-// Conflicts: the newer updated_at wins, row by row.
+// Conflicts: the newer updated_at wins, row by row; settings are merged setting by setting (see mergeSettings).
 import { store, now, seedModel } from "./data.js";
 
 const CFG = window.KOTI_CONFIG || {};
@@ -33,17 +33,29 @@ const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, trans
 const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow, bills: billOfRow, goals: goalOfRow, income: incOfRow, reminders: remOfRow };
 const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, qty: r.qty == null ? null : Number(r.qty), note: r.note || null, position: r.position, updatedAt: r.updated_at });
 
+/* Settings, one by one: the server's value wins unless this device changed that setting more recently. A setting
+   the server has never had a time for (from before per-setting times) only fills in what this device hasn't set. */
+function mergeSettings(r) {
+  const S = store.model.settings, mine = S._t || {}, data = r.data || {}, theirs = data._t || {};
+  let changed = false;
+  for (const k of Object.keys(data)) {
+    if (k === "_t") continue;
+    const tt = t(theirs[k]), mt = t(mine[k]);
+    if (tt ? tt >= mt : !mt) { if (JSON.stringify(S[k]) !== JSON.stringify(data[k])) { S[k] = data[k]; changed = true; } if (tt) mine[k] = theirs[k]; }
+  }
+  S._t = mine;
+  if (t(r.updated_at) > t(S.updatedAt)) S.updatedAt = r.updated_at;
+  if (!Object.keys(mine).some(k => t(mine[k]) > t(theirs[k]))) store.meta.pending.settings = false;   // nothing newer here to send
+  return changed;
+}
+
 /* ---------- Apply rows from the server ---------- */
 export function applyRows(kind, rows) {
   let changed = false;
   const m = store.model, meta = store.meta;
   for (const r of rows) {
     if (!r) continue;
-    if (kind === "settings") {
-      if (meta.pending.settings && t(m.settings.updatedAt) >= t(r.updated_at)) continue;
-      m.settings = { ...m.settings, ...(r.data || {}), updatedAt: r.updated_at };
-      meta.pending.settings = false; changed = true; continue;
-    }
+    if (kind === "settings") { if (mergeSettings(r)) changed = true; continue; }
     const arr = m[kind];
     const idx = arr.findIndex(x => x.id === r.id);
     const local = idx >= 0 ? arr[idx] : meta.tomb && meta.tomb[kind] && meta.tomb[kind][r.id];
@@ -106,6 +118,13 @@ export async function flush() {
     return { id, version: obj.updatedAt, row: TO_ROW[kind](obj, uid) };
   }).filter(Boolean);
   const batches = Object.fromEntries(ROWS.map(k => [k, pick(k)]));
+  // Settings: first take in what other devices saved since (setting by setting), then send the whole, merged set.
+  if (meta.pending.settings) {
+    const { data: cur, error } = await c.from("settings").select("*").eq("user_id", uid).maybeSingle();
+    if (error) { flushing = false; fail(error); return; }
+    if (cur && mergeSettings(cur)) store.emit("remote");
+    meta.pending.settings = true;   // this device still has its own changes to send
+  }
   const settings = meta.pending.settings ? { version: m.settings.updatedAt, row: { user_id: uid, data: (({ updatedAt, ...rest }) => rest)(m.settings), updated_at: m.settings.updatedAt } } : null;
   if (ROWS.every(k => !batches[k].length) && !settings) { flushing = false; okStatus(); return; }
   setStatus("busy", "Saving…");
@@ -150,6 +169,7 @@ async function begin() {
       store.meta.owner = uid; store.persist();
     }
   }
+  store.stampLegacySettings();
   await pull();
   store.seedCategoriesIfEmpty();   // first time Money runs for this account
   store.upgrade();                 // older data on the server that hasn't been moved over yet
