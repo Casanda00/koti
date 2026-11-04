@@ -17,7 +17,7 @@ export function mountMore(el) { root = el; renderMore(); }
 
 let lastReminders = "";   // shown straight away on redraw, so the page keeps its height
 const COLOURS = ["#16794f", "#b55334", "#c7841a", "#3a6ea5", "#7a4f9e", "#23302b"];
-const PALETTES = [["koti", "Koti green", "#16794f", "#eef1ee"], ["clay", "Clay", "#b55334", "#faf1e8"]];
+const PALETTES = [["koti", "Lake", "#2442D6", "#F7F8F6"], ["clay", "Clay", "#b55334", "#faf1e8"]];
 export function renderMore() {
   if (!root) return;
   if (root.contains(document.activeElement) && document.activeElement.matches("input, select, textarea")) return; // don't disturb typing
@@ -31,7 +31,7 @@ export function renderMore() {
 
   const keepY = window.scrollY;   // redraws must not move the page
   root.innerHTML = `
-  <header class="vh"><div><h1>Settings</h1></div></header>
+  <header class="vh"><div><a class="back" href="#now">${icon("chev", "ic sm flip")} Now</a><h1>You</h1></div></header>
   ${profile}
 
   <div class="gh"><h2>Money</h2></div>
@@ -39,7 +39,7 @@ export function renderMore() {
     <button type="button" class="row" data-open="start"><span class="ico g">${icon("wallet")}</span><span class="rt">Starting balance<small>${st.set ? `${eur(st.amount)} at the start of ${esc(new Date(st.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }))} · carried each month` : "Not set: counting from €0"}</small></span>${chev}</button>
     <label class="row"><span class="ico w">${icon("clock")}</span><span class="rt">Budget month starts</span><select class="inl" data-set="monthStart">${days(S.monthStart)}</select>${chev}</label>
   </div>
-  <p class="note">Categories, budgets and carry over are in Income → Budgets.</p>
+  <p class="note">Categories, budgets and carry over are in Month → Budgets.</p>
 
   <div class="gh"><h2>Scanning</h2></div>
   <div class="grp">

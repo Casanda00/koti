@@ -219,7 +219,7 @@ export function openStartBalance() {
       setBalanceNow(neg * v); closeSheet(); toast("Starting balance saved"); } });
 }
 /* Sets the starting point so that today's balance equals the amount you typed. */
-function setBalanceNow(amount) {
+export function setBalanceNow(amount) {
   const today = todayISO(); let todayNet = 0;
   store.model.transactions.forEach(t => { if (t.date !== today) return; if (t.categoryId === ADJUST_CAT) todayNet += t.kind === "expense" ? -t.amount : t.amount; else if (t.kind === "income" || t.kind === "refund") todayNet += t.amount; else todayNet -= t.amount; });
   store.updateSettings({ startDate: today, startBalance: Math.round((amount - todayNet) * 100) / 100, askedStart: true });
@@ -245,7 +245,7 @@ let root = null, view = null;
 export function mountMoney(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
-  <header class="vh"><div><h1>Income</h1><div class="sub" id="moSub"></div></div><a class="sync" href="#settings" data-sync><span class="dot"></span><span class="t"></span></a></header>
+  <header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} Month</a><h1>Budgets</h1><div class="sub" id="moSub"></div></div><a class="sync" href="#settings" data-sync><span class="dot"></span><span class="t"></span></a></header>
   ${moneySwitch("budgets")}
   ${navHTML("shift")}
   <div class="mo-top">
@@ -340,7 +340,7 @@ function dayLabel(d) {
 }
 export function mountSpending(elm) {
   sroot = elm; sview = periodFor(new Date());
-  sroot.innerHTML = `<header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1>All spending</h1><div class="sub" id="spSub"></div></div></header>
+  sroot.innerHTML = `<header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} Month</a><h1>All spending</h1><div class="sub" id="spSub"></div></div></header>
     ${navHTML("sshift")}<div id="moTx"></div>`;
   sroot.addEventListener("click", e => {
     const sf = e.target.closest("[data-sf]"); if (sf) { sfilter = sf.dataset.sf || null; renderSpending(); return; }

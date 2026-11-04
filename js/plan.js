@@ -107,7 +107,7 @@ let root = null, view = null, pickedDay = null;
 export function mountPlan(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
-  <header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1>Bills</h1><div class="sub" id="plSub"></div></div><button type="button" class="btn-sm" data-act="add-bill">${icon("plus", "ic sm")} Add bill</button></header>
+  <header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} Month</a><h1>Bills</h1><div class="sub" id="plSub"></div></div><button type="button" class="btn-sm" data-act="add-bill">${icon("plus", "ic sm")} Add bill</button></header>
   <div class="mo-nav"><button type="button" class="mo-arrow" data-pshift="-1" aria-label="Previous month">${icon("chev", "ic sm flip")}</button><b id="plPeriod"></b><button type="button" class="mo-arrow" data-pshift="1" aria-label="Next month">${icon("chev", "ic sm")}</button><button type="button" class="mo-today" data-pshift="0" hidden>This month</button></div>
   <div class="pl-top">
     <section class="card" id="plSummary"></section>

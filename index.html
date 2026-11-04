@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Koti</title>
 <meta name="description" content="Koti: set up your new home and plan your money.">
-<meta name="theme-color" content="#eef1ee" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#121715" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F7F8F6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111216" media="(prefers-color-scheme: dark)">
 <script src="js/theme.js"></script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -17,7 +17,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -59,22 +59,22 @@
 </svg>
 
 <a class="sr" href="#main">Skip to content</a>
-<div class="app">
-  <aside class="side" aria-label="Main">
-    <div class="brand"><svg class="mark" aria-hidden="true"><use href="#kotiMark"/></svg><b translate="no">Koti</b></div>
-    <a class="side-link" href="#home" data-route="home"><svg class="ic"><use href="#i-home"/></svg>Home</a>
-    <a class="side-link" href="#income" data-route="income"><svg class="ic"><use href="#i-income"/></svg>Income</a>
-    <a class="side-link" href="#expenses" data-route="expenses"><svg class="ic"><use href="#i-expenses"/></svg>Expenses</a>
-    <a class="side-link" href="#settings" data-route="settings"><svg class="ic"><use href="#i-gear"/></svg>Settings</a>
-    <button class="side-add" type="button" data-action="add"><svg class="ic sm"><use href="#i-plus"/></svg>Add</button>
-    <div class="side-foot" id="sideFoot"></div>
-  </aside>
+<div class="app" id="app">
+  <header class="topbar" id="topbar">
+    <nav class="tnav" aria-label="Main">
+      <a href="#now" data-route="now">Now</a>
+      <a href="#month" data-route="month">Month</a>
+      <a href="#home" data-route="home">Home</a>
+    </nav>
+    <a class="me" href="#settings" data-route="settings" id="meLink" aria-label="You: account and settings"></a>
+  </header>
 
   <main class="views" id="main">
+    <section class="view" id="view-now" data-view="now" hidden></section>
+    <section class="view" id="view-month" data-view="month" hidden></section>
     <section class="view" id="view-home" data-view="home" hidden></section>
     <section class="view" id="view-budgets" data-view="budgets" hidden></section>
     <section class="view" id="view-income" data-view="income" hidden></section>
-    <section class="view" id="view-expenses" data-view="expenses" hidden></section>
     <section class="view" id="view-spending" data-view="spending" hidden></section>
     <section class="view" id="view-bills" data-view="bills" hidden></section>
     <section class="view" id="view-list" data-view="list" hidden></section>
@@ -82,14 +82,15 @@
     <section class="view" id="view-more" data-view="settings" hidden></section>
   </main>
 
-  <nav class="tabbar" aria-label="Main">
-    <a class="tab" href="#home" data-route="home"><svg class="ic"><use href="#i-home"/></svg>Home</a>
-    <a class="tab" href="#income" data-route="income"><svg class="ic"><use href="#i-income"/></svg>Income</a>
-    <button class="tab-add" type="button" data-action="add" aria-label="Add"><svg class="ic"><use href="#i-plus"/></svg></button>
-    <a class="tab" href="#expenses" data-route="expenses"><svg class="ic"><use href="#i-expenses"/></svg>Expenses</a>
-    <a class="tab" href="#settings" data-route="settings"><svg class="ic"><use href="#i-gear"/></svg>Settings</a>
-  </nav>
+  <form class="dock" id="dock" autocomplete="off">
+    <label class="sr" for="dockIn" id="dockLbl">Spent something?</label>
+    <input id="dockIn" type="text" enterkeyhint="done" spellcheck="false">
+    <button type="button" class="dk" id="dockMic" aria-label="Say it" hidden><svg class="ic"><use href="#i-mic"/></svg></button>
+    <button type="button" class="dk" id="dockCam" data-scan aria-label="Scan a receipt"><svg class="ic"><use href="#i-cam"/></svg></button>
+    <button type="submit" class="dk go" id="dockGo" aria-label="Add"><svg class="ic"><use href="#i-plus"/></svg></button>
+  </form>
 </div>
+<div class="onb" id="onb" hidden></div>
 
 <div class="layer" id="layer" hidden>
   <div class="backdrop" data-close></div>

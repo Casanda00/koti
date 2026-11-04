@@ -71,8 +71,21 @@ function billDuesAround(b: Row, today: string, back: number, ahead: number) {
 function payDue(src: Row, y: number, m: number) {
   if (src.frequency === "once") return null;
   const mm = ((m % 12) + 12) % 12, yy = y + Math.floor(m / 12), last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
-  const s = ymd(yy, mm, src.pay_day === 0 ? last : src.pay_day);
+  const s = ymd(yy, mm, src.pay_day === -1 ? lastWorkingDay(yy, mm) : src.pay_day === 0 ? last : src.pay_day);
   return src.end_date && s > src.end_date ? null : s;
+}
+/* Last weekday of the month that isn't a Finnish public holiday (the same rule as js/paydays.js). */
+function easter(y: number) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  return new Date(Date.UTC(y, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1));
+}
+function lastWorkingDay(y: number, m: number) {
+  const fixed = new Set(["1-1", "1-6", "5-1", "12-6", "12-24", "12-25", "12-26"]), es = easter(y);
+  for (const n of [-2, 1, 39]) { const x = new Date(es.getTime() + n * 864e5); fixed.add(`${x.getUTCMonth() + 1}-${x.getUTCDate()}`); }
+  for (let d = 19; d <= 25; d++) if (new Date(Date.UTC(y, 5, d)).getUTCDay() === 5) fixed.add(`6-${d}`);
+  let day = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  for (;;) { const x = new Date(Date.UTC(y, m, day)), w = x.getUTCDay(); if (w !== 0 && w !== 6 && !fixed.has(`${m + 1}-${day}`)) return day; day--; }
 }
 
 /* ---------- What to remind one user about ---------- */
@@ -105,7 +118,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
         const due = payDue(s, y, m - 1 + k); if (!due) continue;
         const lateBy = Math.round((Date.parse(today) - Date.parse(due)) / 864e5);
         if (lateBy < 1 || lateBy > 3 || got.has(`${s.id}|${due}`) || (s.missed || []).includes(due) || (start && due < start)) continue;
-        out.push({ key: `pay:${s.id}:${due}`, title: `Did your ${String(s.name).toLowerCase() === "salary" ? "salary" : s.name} arrive?`, body: `${eur(Number(s.amount))} was expected ${fmt(due)}. Open Koti to mark it received.`, url: "./#home" });
+        out.push({ key: `pay:${s.id}:${due}`, title: `Did your ${String(s.name).toLowerCase() === "salary" ? "salary" : s.name} land?`, body: `${eur(Number(s.amount))} was expected ${fmt(due)}. Open Koti to mark it received.`, url: "./#now" });
       }
     }
   }
@@ -127,7 +140,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
   if (R.weekly && now.weekday === "Sun" && now.hour === 19) {
     const from = addDays(today, -6); let s = 0, n = 0;
     for (const t of u.tx) if (t.date >= from && t.date <= today && t.kind === "expense" && !t.bill_id && t.category_id !== "adjust") { s += Number(t.amount); n++; }
-    out.push({ key: `wk:${today}`, title: "Your week in Koti", body: `${eur(s)} spent in ${n} expense${n === 1 ? "" : "s"} this week.`, url: "./#home" });
+    out.push({ key: `wk:${today}`, title: "Your week in Koti", body: `${eur(s)} spent in ${n} expense${n === 1 ? "" : "s"} this week.`, url: "./#month" });
   }
   return out;
 }

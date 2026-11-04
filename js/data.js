@@ -61,7 +61,7 @@ function cleanList(l, pos) {
 function cleanIncome(x, pos) {
   const amount = x.amount === null || x.amount === undefined || x.amount === "" || isNaN(Number(x.amount)) ? null : Math.max(0, Number(x.amount));
   return { id: String(x.id || newId("inc")).slice(0, 80), name: String(x.name).slice(0, 80), amount, frequency: INCOME_FREQS.includes(x.frequency) ? x.frequency : "monthly",
-    payDay: Math.min(31, Math.max(0, Math.round(Number(x.payDay) || 0))), expectedDate: x.expectedDate ? String(x.expectedDate).slice(0, 10) : null,
+    payDay: Math.min(31, Math.max(-1, Math.round(Number(x.payDay) || 0))), expectedDate: x.expectedDate ? String(x.expectedDate).slice(0, 10) : null,
     payer: x.payer ? String(x.payer).slice(0, 120) : null, active: x.active !== false, position: Number.isFinite(x.position) ? x.position : pos,
     endDate: x.endDate ? String(x.endDate).slice(0, 10) : null, missed: Array.isArray(x.missed) ? [...new Set(x.missed.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort().slice(-120) : [], updatedAt: x.updatedAt || EPOCH };
 }

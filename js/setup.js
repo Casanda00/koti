@@ -16,7 +16,7 @@ export function mountSetup(el) {
   root = el;
   root.innerHTML = `
   <div class="setup">
-    <header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1 id="suTitle">Home setup</h1><div class="sub" id="suSub"></div></div><div class="hbtns"><button type="button" class="hbtn" data-scan aria-label="Scan a receipt for this project">${icon("cam", "ic")}</button><button type="button" class="hbtn" data-proj-settings aria-label="Project settings">${icon("more", "ic")}</button></div></header>
+    <header class="vh"><div><a class="back" href="#home">${icon("chev", "ic sm flip")} Home</a><h1 id="suTitle">Home setup</h1><div class="sub" id="suSub"></div></div><div class="hbtns"><button type="button" class="hbtn" data-scan aria-label="Scan a receipt for this project">${icon("cam", "ic")}</button><button type="button" class="hbtn" data-proj-settings aria-label="Project settings">${icon("more", "ic")}</button></div></header>
     <div id="suBanner"></div>
     <div class="setup-top">
       <div>
