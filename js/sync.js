@@ -1,7 +1,7 @@
 // Sync between this device and Supabase.
 // Local-first: every change is saved on the device and queued; the queue is uploaded when online and signed in.
 // Pulls fetch rows changed since the last pull (by the server's synced_at); realtime pushes changes from other devices.
-// Conflicts: the newer updated_at wins, row by row.
+// Conflicts: the newer updated_at wins, row by row; settings are merged setting by setting (see mergeSettings).
 import { store, now, seedModel } from "./data.js";
 
 const CFG = window.KOTI_CONFIG || {};
@@ -33,17 +33,29 @@ const TO_ROW = { lists: rowOfList, items: rowOfItem, categories: rowOfCat, trans
 const FROM_ROW = { lists: r => listFromRow(r), items: r => itemFromRow(r), categories: catOfRow, transactions: txOfRow, bills: billOfRow, goals: goalOfRow, income: incOfRow, reminders: remOfRow };
 const itemFromRow = r => ({ id: r.id, listId: r.list_id, name: r.name, priority: r.priority, done: !!r.done, price: r.price == null ? null : Number(r.price), boughtAt: r.bought_at, qty: r.qty == null ? null : Number(r.qty), note: r.note || null, position: r.position, updatedAt: r.updated_at });
 
+/* Settings, one by one: the server's value wins unless this device changed that setting more recently. A setting
+   the server has never had a time for (from before per-setting times) only fills in what this device hasn't set. */
+function mergeSettings(r) {
+  const S = store.model.settings, mine = S._t || {}, data = r.data || {}, theirs = data._t || {};
+  let changed = false;
+  for (const k of Object.keys(data)) {
+    if (k === "_t") continue;
+    const tt = t(theirs[k]), mt = t(mine[k]);
+    if (tt ? tt > mt : !mt) { if (JSON.stringify(S[k]) !== JSON.stringify(data[k])) { S[k] = data[k]; changed = true; } if (tt) mine[k] = theirs[k]; }
+  }
+  S._t = mine;
+  if (t(r.updated_at) > t(S.updatedAt)) S.updatedAt = r.updated_at;
+  if (!Object.keys(mine).some(k => t(mine[k]) > t(theirs[k]))) store.meta.pending.settings = false;   // nothing newer here to send
+  return changed;
+}
+
 /* ---------- Apply rows from the server ---------- */
 export function applyRows(kind, rows) {
   let changed = false;
   const m = store.model, meta = store.meta;
   for (const r of rows) {
     if (!r) continue;
-    if (kind === "settings") {
-      if (meta.pending.settings && t(m.settings.updatedAt) >= t(r.updated_at)) continue;
-      m.settings = { ...m.settings, ...(r.data || {}), updatedAt: r.updated_at };
-      meta.pending.settings = false; changed = true; continue;
-    }
+    if (kind === "settings") { if (mergeSettings(r)) changed = true; continue; }
     const arr = m[kind];
     const idx = arr.findIndex(x => x.id === r.id);
     const local = idx >= 0 ? arr[idx] : meta.tomb && meta.tomb[kind] && meta.tomb[kind][r.id];
@@ -72,20 +84,30 @@ function explain(e) {
 function fail(e) { const [s, txt, d] = explain(e); setStatus(s, txt, d); }
 
 /* ---------- Pull ---------- */
+// Rows come in order of (synced_at, id), so rows that share a time are never skipped at a page edge. Each pull
+// starts 30 seconds before the last one ended: a row written just before, whose upload committed late, still
+// arrives. Rows already here are recognised and skipped.
+const OVERLAP = 30e3, PAGE = 1000;
+const q2 = v => `"${String(v).replace(/"/g, '\\"')}"`;
 export async function pull() {
   const c = sync.client, uid = sync.user && sync.user.id; if (!c || !uid) return;
   for (const kind of TABLES) {
-    let since = store.meta.lastSync[kind];
+    const last = store.meta.lastSync[kind];
+    let at = last ? new Date(Date.parse(last) - OVERLAP).toISOString() : null, id = null, newest = last;
     for (;;) {
-      let q = c.from(TABLE(kind)).select("*").order("synced_at", { ascending: true }).limit(1000);
-      if (since) q = q.gt("synced_at", since);
+      let q = c.from(TABLE(kind)).select("*").order("synced_at", { ascending: true });
+      if (kind !== "settings") q = q.order("id", { ascending: true });
+      q = q.limit(PAGE);
+      if (at && id != null && kind !== "settings") q = q.or(`(synced_at.gt.${q2(at)},and(synced_at.eq.${q2(at)},id.gt.${q2(id)}))`);
+      else if (at) q = q.gt("synced_at", at);
       const { data, error } = await q;
       if (error) throw error;
       if (!data.length) break;
       applyRows(kind, data);
-      since = data[data.length - 1].synced_at;
-      store.meta.lastSync[kind] = since; store.persist();
-      if (data.length < 1000) break;
+      const end = data[data.length - 1]; at = end.synced_at; id = end.id ?? null;
+      if (!newest || Date.parse(at) > Date.parse(newest)) newest = at;
+      store.meta.lastSync[kind] = newest; store.persist();
+      if (data.length < PAGE) break;
     }
   }
 }
@@ -106,23 +128,58 @@ export async function flush() {
     return { id, version: obj.updatedAt, row: TO_ROW[kind](obj, uid) };
   }).filter(Boolean);
   const batches = Object.fromEntries(ROWS.map(k => [k, pick(k)]));
+  // Settings: first take in what other devices saved since (setting by setting), then send the whole, merged set.
+  if (meta.pending.settings) {
+    const { data: cur, error } = await c.from("settings").select("*").eq("user_id", uid).maybeSingle();
+    if (error) { flushing = false; fail(error); return; }
+    if (cur && mergeSettings(cur)) store.emit("remote");
+    meta.pending.settings = true;   // this device still has its own changes to send
+  }
   const settings = meta.pending.settings ? { version: m.settings.updatedAt, row: { user_id: uid, data: (({ updatedAt, ...rest }) => rest)(m.settings), updated_at: m.settings.updatedAt } } : null;
   if (ROWS.every(k => !batches[k].length) && !settings) { flushing = false; okStatus(); return; }
   setStatus("busy", "Saving…");
   try {
-    const send = async (table, batch) => { for (let k = 0; k < batch.length; k += 500) { const { error } = await c.from(table).upsert(batch.slice(k, k + 500).map(b => b.row), { onConflict: "user_id,id" }); if (error) throw error; } };
-    for (const k of ROWS) if (batches[k].length) await send(TABLE(k), batches[k]);
+    // A batch the server refuses is sent again row by row. A row it refuses on its own (a value it won't take) is
+    // set aside in meta.failed, shown in You, and no longer blocks the rest. Network and sign-in errors still stop here.
+    const refused = e => e && (/^(22|23|42)/.test(String(e.code || "")) || /violates|invalid input|out of range|too long/i.test(e.message || ""));
+    const send = async (kind, batch) => {
+      const table = TABLE(kind);
+      for (let k = 0; k < batch.length; k += 500) {
+        const part = batch.slice(k, k + 500), { error } = await c.from(table).upsert(part.map(b => b.row), { onConflict: "user_id,id" });
+        if (!error) continue;
+        if (!refused(error)) throw error;
+        for (const b of part) {
+          const { error: e1 } = await c.from(table).upsert([b.row], { onConflict: "user_id,id" });
+          if (!e1) continue;
+          if (!refused(e1)) throw e1;
+          meta.failed[kind][b.id] = { error: e1.message || String(e1), at: new Date().toISOString(), version: b.version };
+          delete meta.pending[kind][b.id]; b.failed = true;
+        }
+      }
+    };
+    for (const k of ROWS) if (batches[k].length) await send(k, batches[k]);
     if (settings) { const { error } = await c.from("settings").upsert(settings.row, { onConflict: "user_id" }); if (error) throw error; }
     const settle = (kind, sent) => sent.forEach(s => {
       const cur = store.model[kind].find(x => x.id === s.id) || (store.meta.tomb && store.meta.tomb[kind] && store.meta.tomb[kind][s.id]);
       if (!cur || cur.updatedAt === s.version) { delete store.meta.pending[kind][s.id]; if (store.meta.tomb && store.meta.tomb[kind]) delete store.meta.tomb[kind][s.id]; }
     });
-    ROWS.forEach(k => settle(k, batches[k]));
+    ROWS.forEach(k => settle(k, batches[k].filter(b => !b.failed)));
+    ROWS.forEach(k => batches[k].forEach(b => { if (!b.failed && meta.failed[k]) delete meta.failed[k][b.id]; }));
     if (settings && store.model.settings.updatedAt === settings.version) store.meta.pending.settings = false;
     store.persist(); sync.lastSync = new Date(); okStatus();
+    const nFailed = failedCount(); if (nFailed) setStatus("error", `${nFailed} change${nFailed === 1 ? "" : "s"} couldn't be saved`, "Open You → Sync to see which, and fix or remove them.");
   } catch (e) { fail(e); }
   finally { flushing = false; if (again) { again = false; flush(); } }
 }
+
+/* Changes the server refused, kept on this device: kind, id, the record and why. */
+export const failedCount = () => ROWS.reduce((n, k) => n + Object.keys((store.meta.failed || {})[k] || {}).length, 0);
+export function failedChanges() {
+  return ROWS.flatMap(k => Object.entries((store.meta.failed || {})[k] || {}).map(([id, f]) => ({ kind: k, id, error: f.error, at: f.at, obj: store.model[k].find(x => x.id === id) || null })));
+}
+/* Try a set-aside change again (after it was corrected), or give it up. */
+export function retryFailed(kind, id) { delete store.meta.failed[kind][id]; store.touch(kind, id); store.commit(); }
+export function dropFailed(kind, id) { delete store.meta.failed[kind][id]; store.persist(); }
 
 /* ---------- Status helpers ---------- */
 export const pendingCount = () => ROWS.reduce((n, k) => n + Object.keys(store.meta.pending[k]).length, 0) + (store.meta.pending.settings ? 1 : 0);
@@ -138,18 +195,24 @@ let channel = null, starting = null;
 async function begin() {
   const c = sync.client, uid = sync.user.id;
   setStatus("busy", "Syncing…");
-  if (store.meta.owner && store.meta.owner !== uid) store.resetLocal(seedModel());
+  // Another account was signed in here: keep its data (and its unsent changes) aside, and bring back this one's.
+  if (store.meta.owner && store.meta.owner !== uid) {
+    store.stashAccount(store.meta.owner);
+    if (!store.loadAccount(uid)) store.resetLocal(seedModel());
+  }
   if (store.meta.owner !== uid) {
     const { count, error } = await c.from("lists").select("id", { count: "exact", head: true });
     if (error) throw error;
     if (!count) {
       store.meta.owner = uid; store.markAllPending(); // first device: upload what's here
     } else {
+      // The account already has data: what was on this device is kept aside, and You offers to add it.
       if (store.hasUserData()) { try { localStorage.setItem("koti.beforeSignIn", JSON.stringify(store.model)); } catch {} }
       store.resetLocal({ version: 3, lists: [], items: [], categories: [], transactions: [], bills: [], goals: [], income: [], settings: {} });
       store.meta.owner = uid; store.persist();
     }
   }
+  store.stampLegacySettings();
   await pull();
   store.seedCategoriesIfEmpty();   // first time Money runs for this account
   store.upgrade();                 // older data on the server that hasn't been moved over yet

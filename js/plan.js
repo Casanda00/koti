@@ -2,7 +2,8 @@
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { periodFor } from "./money.js";
-import { overdueBills } from "./ledger.js";
+import { overdueBills, SAVINGS_CAT } from "./ledger.js";
+import { newId } from "./data.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export const FREQ_LABEL = { monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly", once: "Once" };
@@ -41,7 +42,7 @@ export function billTotals(p) {
 export const perYear = b => (b.endDate && b.endDate < todayISO()) ? 0 : b.amount * ({ monthly: 12, quarterly: 4, yearly: 1, once: 0 }[b.frequency] ?? 12);
 /* The amount for one due date: what that month's bill said, otherwise the usual amount. */
 export const dueAmount = (b, due) => (b.dues && b.dues[due] && b.dues[due].amount) || b.amount;
-export const occurrenceOf = (b, due) => ({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null, skipped: !!(b.dues && b.dues[due] && b.dues[due].skipped) });
+export const occurrenceOf = (b, due) => ({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null, skipped: !!(b.dues && b.dues[due] && b.dues[due].skipped), failed: !!(b.dues && b.dues[due] && b.dues[due].failed) });
 export function nextDue(b, from = new Date()) {
   const t = new Date(from.getFullYear(), from.getMonth(), from.getDate());
   for (let k = 0; k < 14; k++) { const d = dueIn(b, t.getFullYear(), t.getMonth() + k); if (d && d >= t) return d; }
@@ -68,20 +69,14 @@ export function setSkipped(o, skipped = true) {
 }
 export function unmarkPaid(o) { if (o.paid) store.remove("transactions", o.paid.id); }
 
-/* Bills paid automatically: record each due date once, from the start of this month, up to today. */
-export function runAutopay() {
-  const today = todayISO(), cur = periodFor(new Date());
-  let changed = 0;
-  store.model.bills.filter(b => b.active && b.autopay).forEach(b => {
-    const from = b.autoThrough && b.autoThrough >= cur.from ? b.autoThrough : null;
-    let latest = b.autoThrough;
-    occurrences(cur).filter(o => o.bill.id === b.id && o.due <= today && (!from || o.due > from)).forEach(o => {
-      if (!o.paid && !(store.meta.tomb.transactions[payId(b.id, o.due)])) { store.put("transactions", { id: payId(b.id, o.due), date: o.due, amount: o.amount, kind: "expense", categoryId: BILLS_CAT, payee: b.name, source: "manual", billId: b.id, billDue: o.due }); changed++; }
-      if (!latest || o.due > latest) latest = o.due;
-    });
-    if (latest && latest !== b.autoThrough) { store.put("bills", { ...b, autoThrough: latest }); changed++; }
-  });
-  return changed;
+/* Bills that pay themselves (direct debit, e-invoice) aren't recorded as paid on their own: the bank may have
+   refused one. From the due date Koti asks "Did it go out?". Until then the money stays set aside. */
+export const awaitingDebit = o => o.bill.autopay && !o.paid && !o.skipped && !o.failed && o.due <= todayISO();
+/* "It didn't go out": the debit failed, so this due date is owed like any other bill. */
+export function setFailed(o, failed = true) {
+  const b = store.model.bills.find(x => x.id === o.bill.id); if (!b) return;
+  const prev = (b.dues || {})[o.due] || { amount: null, reference: null, docPath: null };
+  store.put("bills", { ...b, dues: { ...(b.dues || {}), [o.due]: { ...prev, failed } } });
 }
 
 /* ---------- Goals ---------- */
@@ -221,7 +216,7 @@ export function openBill(bill = null, preset = {}) {
       <label class="bi-name"><span class="sr">Name</span><input class="inp" id="biName" value="${esc(b.name)}" placeholder="${bill ? "Name" : "Or type a name"}" maxlength="80" autocomplete="off"></label>
       <label class="bi-amt"><span class="sr">Amount</span><span aria-hidden="true">€</span><input class="num" id="biAmt" inputmode="decimal" placeholder="0,00" value="${b.amount != null ? String(Number(b.amount).toFixed(2)).replace(".", ",").replace(",00", "") : ""}" autocomplete="off"></label>
       <p class="bi-sent" id="biSent"><span>Comes ${sel("biFreqSel", "How often", [["monthly", "every month"], ["quarterly", "every 3 months"], ["yearly", "every year"], ["once", "once"]], freq)}</span><span id="biSentDay"> on the ${sel("biDay", "Day of the month", Array.from({ length: 31 }, (_, k) => [k + 1, ord(k + 1)]), b.dueDay)}</span><span id="biMonthRow"> of ${sel("biMonth", "Month", MONTHS.map((m, k) => [k + 1, m]), b.anchorMonth)}</span><span id="biDateRow">, due <input class="bi-w" id="biDate" type="date" aria-label="Due date" value="${esc(b.dueDate || todayISO())}"></span>.</p>
-      <label class="bi-sw"><span>It pays itself<small>Direct debit or e-invoice: Koti marks it paid on the due date</small></span><input type="checkbox" class="switch" id="biAuto" ${b.autopay ? "checked" : ""}></label>
+      <label class="bi-sw"><span>It pays itself<small>Direct debit or e-invoice: on the due date Koti asks if it went out</small></span><input type="checkbox" class="switch" id="biAuto" ${b.autopay ? "checked" : ""}></label>
       <details class="bi-more"${b.reference || b.iban || b.payee || b.note || b.endDate ? " open" : ""}><summary>Reference, account and more</summary>
       <div class="grp">
         <label class="row"><span class="rt">Company</span><input class="inl" id="biPayee" value="${esc(b.payee || "")}" placeholder="Optional" maxlength="120" autocomplete="off" style="max-width:60%"></label>
@@ -249,7 +244,7 @@ export function openBill(bill = null, preset = {}) {
       const probe = { ...b, frequency: freq, dueDay: Number($("#biDay", B).value), anchorMonth: Number($("#biMonth", B).value), dueDate: once ? $("#biDate", B).value : null, startDate: once ? null : (sm ? sm + "-01" : null), endDate: null, active: true };
       let n = null; try { n = once ? (probe.dueDate ? parseDay(probe.dueDate) : null) : nextDue(probe, from); } catch { n = null; }
       const day = n ? n.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) : "";
-      $("#biNext", B).innerHTML = n ? `${bill ? "The next one is" : "The first one is"} due <b>${esc(day)}</b>${amt && !Number.isNaN(amt) ? `, ${esc(eur(amt))}` : ""}. ${$("#biAuto", B).checked ? "It pays itself, and Koti marks it paid that day." : "Koti takes it off what's yours to spend."}` : "";
+      $("#biNext", B).innerHTML = n ? `${bill ? "The next one is" : "The first one is"} due <b>${esc(day)}</b>${amt && !Number.isNaN(amt) ? `, ${esc(eur(amt))}` : ""}. ${$("#biAuto", B).checked ? "It pays itself; Koti asks that day if it went out." : "Koti takes it off what's yours to spend."}` : "";
     };
     bindCopy(B); paint();
     $("#biFreqSel", B).onchange = e => { freq = e.target.value; paint(); };
@@ -271,8 +266,8 @@ export function openBill(bill = null, preset = {}) {
     const startDate = once ? null : (sm ? sm + "-01" : null), endDate = once || !em ? null : iso(new Date(Number(em.slice(0, 4)), Number(em.slice(5, 7)), 0));
     const saved = store.put("bills", { ...(bill || {}), id: bill ? bill.id : undefined, name, amount, frequency: freq, dueDay: once ? dd.getDate() : Number($("#biDay", B).value), anchorMonth: once ? dd.getMonth() + 1 : Number($("#biMonth", B).value), dueDate, startDate, endDate,
       reference: $("#biRef", B).value.trim() || null, iban: $("#biIban", B).value.trim() || null,
-      autopay, autoThrough: bill && bill.autopay === autopay ? bill.autoThrough : null, active: bill ? !$("#biPaused", B).checked : true, payee: $("#biPayee", B).value.trim() || null, note: $("#biNote", B).value.trim() || null, position: bill ? bill.position : store.model.bills.length });
-    closeSheet(); if (autopay) runAutopay();
+      autopay, active: bill ? !$("#biPaused", B).checked : true, payee: $("#biPayee", B).value.trim() || null, note: $("#biNote", B).value.trim() || null, position: bill ? bill.position : store.model.bills.length });
+    closeSheet();
     toast(bill ? "Saved" : `Added ${saved.name}`);
   } });
 }
@@ -284,7 +279,7 @@ export function openGoal(goal = null) {
     B.innerHTML = `
       ${goal ? `<div class="card" style="display:grid;gap:10px"><div style="display:flex;justify-content:space-between;align-items:baseline"><b class="big" style="font-size:30px">${eur0(goal.saved)}</b><span class="hint">of ${eur0(goal.target)}</span></div>
         <div class="meter"><i style="width:${Math.min(100, goal.saved / goal.target * 100)}%"></i></div>
-        <div style="display:flex;gap:8px;align-items:center"><input class="inp" id="goMove" inputmode="decimal" placeholder="€ amount" autocomplete="off" style="flex:1"><button type="button" class="btn primary" id="goAdd" style="width:auto;padding:12px 14px">Add</button><button type="button" class="btn" id="goTake" style="width:auto;padding:12px 14px">Take out</button></div></div>` : ""}
+        <div style="display:flex;gap:8px;align-items:center"><input class="inp" id="goMove" inputmode="decimal" placeholder="€ amount" autocomplete="off" style="flex:1"><button type="button" class="btn primary" id="goAdd" style="width:auto;padding:12px 14px">Move in</button><button type="button" class="btn" id="goTake" style="width:auto;padding:12px 14px">Take out</button></div></div>` : ""}
       <div class="field"><label for="goName">Name</label><input class="inp" id="goName" value="${esc(g.name)}" placeholder="e.g. Emergency fund…" maxlength="80" autocomplete="off" ${goal ? "" : "autofocus"}></div>
       <div class="field"><label for="goTarget">Target</label><input class="inp" id="goTarget" inputmode="decimal" placeholder="€0" value="${moneyField(g.target)}" autocomplete="off"></div>
       ${goal ? "" : `<div class="field"><label for="goSaved">Saved so far</label><input class="inp" id="goSaved" inputmode="decimal" placeholder="€0" autocomplete="off"></div>`}
@@ -296,8 +291,12 @@ export function openGoal(goal = null) {
       ${goal ? `<button type="button" class="btn" id="goRemind">${icon("bell", "ic sm")} Remind me on payday</button>` : ""}
       ${goal ? `<button type="button" class="btn danger" id="goDel">${icon("trash", "ic sm")} Delete goal</button>` : ""}`;
     const move = sign => { const v = parseMoney($("#goMove", B).value); if (!v || Number.isNaN(v)) { $("#goMsg", B).dataset.state = "error"; $("#goMsg", B).textContent = "Type an amount first."; return; }
-      const saved = Math.max(0, Math.round((goal.saved + sign * v) * 100) / 100); store.put("goals", { ...goal, saved }); closeSheet();
-      toast(sign > 0 ? `Added ${eur(v)} to ${goal.name}` : `Took ${eur(v)} out of ${goal.name}`, { label: "Undo", run: () => store.put("goals", { ...goal }) }); };
+      // Moving money to a goal takes it out of what's yours to spend (and counts towards this month's plan);
+      // taking it out puts it back. Recorded as a transfer, not as spending.
+      const saved = Math.max(0, Math.round((goal.saved + sign * v) * 100) / 100); store.put("goals", { ...goal, saved });
+      const tx = store.put("transactions", { id: newId("sav"), date: todayISO(), amount: v, kind: sign > 0 ? "expense" : "income", categoryId: SAVINGS_CAT, payee: goal.name, note: sign > 0 ? "Moved to savings" : "Taken from savings", source: "manual" });
+      closeSheet();
+      toast(sign > 0 ? `Moved ${eur(v)} to ${goal.name}` : `Took ${eur(v)} out of ${goal.name}`, { label: "Undo", run: () => { store.put("goals", { ...goal }); store.remove("transactions", tx.id); } }); };
     if (goal) $("#goRemind", B).onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: goal.monthly ? `Move ${eur(goal.monthly, 0)} to ${goal.name}` : `Put money into ${goal.name}`, when: "monthly", monthDay: -2, aboutKind: "goal", aboutId: goal.id })), 260); };
     if (goal) { $("#goAdd", B).onclick = () => move(1); $("#goTake", B).onclick = () => move(-1); $("#goDel", B).onclick = () => { if (!confirm(`Delete "${goal.name}"?`)) return; closeSheet(); const copy = { ...goal }; store.remove("goals", goal.id); toast(`Deleted ${goal.name}`, { label: "Undo", run: () => store.put("goals", copy) }); }; }
   }, onRight: B => {

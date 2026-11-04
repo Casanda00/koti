@@ -5,7 +5,7 @@ import { $, esc, eur, eur0, icon, parseDay, openSheet, closeSheet, toast } from 
 import { periodFor, totals, catName, openStartBalance, openCheckBank } from "./money.js";
 import { setSpendingFilter } from "./spent.js";
 import { monthLedger, startPoint, effectiveBudgets, awaitingIncome } from "./ledger.js";
-import { occurrences, markPaid, setSkipped } from "./plan.js";
+import { occurrences, markPaid, setSkipped, awaitingDebit, setFailed } from "./plan.js";
 import { nextPay, receive } from "./income.js";
 import { wantsStrip, stripHTML } from "./install.js";
 import { dayShare, openPayments } from "./receipt.js";
@@ -44,9 +44,12 @@ export function mountNow(el) {
     if (t.closest("[data-how]")) { openPayments("today"); return; }
     if (t.closest("[data-start-setup]")) { import("./onboarding.js").then(m => m.openOnboarding()); return; }
     if (t.closest("[data-bal]")) { openStartBalance(); return; }
+    if (t.closest("[data-add-pay]")) { import("./income.js").then(m => m.openSource(null, { name: "Salary", frequency: "monthly" })); return; }
     const got = t.closest("[data-got]"); if (got) { const src = store.model.income.find(x => x.id === got.dataset.got); if (src) { const tx = receive({ src, due: got.dataset.due }, src.amount); toast(`Added ${eur(tx.amount)} from ${src.name}`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); } return; }
     const ny = t.closest("[data-notyet]"); if (ny) { snooze(ny.dataset.notyet); renderNow(); return; }
     const pd = t.closest("[data-paid]"); if (pd) { const o = findOverdue(pd.dataset.paid, pd.dataset.due); if (o) { const tx = markPaid(o, todayISO(), true); toast(`${o.bill.name} marked paid`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); } return; }
+    const db = t.closest("[data-debit]"); if (db) { const o = findOverdue(db.dataset.debit, db.dataset.due); if (o) { const tx = markPaid(o, o.due); toast(`${o.bill.name} went out`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); } return; }
+    const fl = t.closest("[data-failed]"); if (fl) { const o = findOverdue(fl.dataset.failed, fl.dataset.due); if (o) { setFailed(o, true); toast(`${o.bill.name} is still to pay`, { label: "Undo", run: () => setFailed(o, false) }); } return; }
     const no = t.closest("[data-notowed]"); if (no) { const o = findOverdue(no.dataset.notowed, no.dataset.due); if (o) { setSkipped(o, true); toast(`${o.bill.name} skipped this month`, { label: "Undo", run: () => setSkipped(o, false) }); } return; }
     const tr = t.closest("[data-tx]"); if (tr) { const x = store.model.transactions.find(y => y.id === tr.dataset.tx); if (x) import("./money.js").then(m => m.openExpense({ tx: x })); return; }
     const ti = t.closest("[data-item]"); if (ti) { import("./setup.js").then(m => { const it = store.model.items.find(i => i.id === ti.dataset.item); if (it) m.openItem(it); }); return; }
@@ -81,7 +84,10 @@ export function renderNow() {
   // Questions: income that should have landed, a bill that's late, a balance never set. Two at most.
   const qs = [];
   awaitingIncome().filter(o => !isSnoozed(`inc:${o.src.id}:${o.due}`)).slice(0, 2).forEach(o => qs.push(`<div class="ask2"><p>Did ${esc(sourceName(o.src))}, ${eur0(o.src.amount)}, arrive?</p><div class="btns"><button type="button" class="pill" data-got="${esc(o.src.id)}" data-due="${o.due}">Yes</button><button type="button" class="pill ghost" data-notyet="inc:${esc(o.src.id)}:${o.due}">Not yet</button></div></div>`));
-  (L.overdue || []).filter(o => !isSnoozed(`bill:${o.bill.id}:${o.due}`)).slice(0, 2).forEach(o => qs.push(`<div class="ask2"><p>Did you pay ${esc(o.bill.name.toLowerCase())}, ${eur0(o.amount)}?</p><div class="btns"><button type="button" class="pill" data-paid="${esc(o.bill.id)}" data-due="${o.due}">Paid</button><button type="button" class="pill ghost" data-notowed="${esc(o.bill.id)}" data-due="${o.due}">Not owed</button></div></div>`));
+  const lateBills = [...(L.overdue || []), ...(L.dueThisMonth || []).filter(o => o.due < today || awaitingDebit(o))];
+  lateBills.filter(o => !isSnoozed(`bill:${o.bill.id}:${o.due}`)).slice(0, 2).forEach(o => qs.push(awaitingDebit(o)
+    ? `<div class="ask2"><p>Did ${esc(o.bill.name.toLowerCase())}, ${eur0(o.amount)}, go out?</p><div class="btns"><button type="button" class="pill" data-debit="${esc(o.bill.id)}" data-due="${o.due}">It went out</button><button type="button" class="pill ghost" data-failed="${esc(o.bill.id)}" data-due="${o.due}">It didn't</button></div></div>`
+    : `<div class="ask2"><p>Did you pay ${esc(o.bill.name.toLowerCase())}, ${eur0(o.amount)}?</p><div class="btns"><button type="button" class="pill" data-paid="${esc(o.bill.id)}" data-due="${o.due}">Paid</button><button type="button" class="pill ghost" data-notowed="${esc(o.bill.id)}" data-due="${o.due}">Not owed</button></div></div>`));
   if (!startPoint().set) qs.push(`<div class="ask2"><p>How much is in your bank account?</p><div class="btns"><button type="button" class="pill" data-bal>Add it</button></div></div>`);
 
   // Spent today, then bills due today or tomorrow
@@ -93,9 +99,9 @@ export function renderNow() {
   const rowBill = o => `<a class="trow" href="#bills"><span>${esc(o.bill.name)}<small>${o.due === today ? "Due today" : "Due tomorrow"}</small></span><b class="num">${eur(o.amount)}</b></a>`;
 
   root.innerHTML = `${wantsStrip() ? stripHTML() : ""}<section class="now-top">
-      <p class="now-k">${big < 0 ? "Over today" : "Left to spend today"}</p>
+      <p class="now-k">${todayLeft == null ? (big < 0 ? "Over, after bills" : "In your account, after bills") : big < 0 ? "Over today" : "Left to spend today"}</p>
       <div class="now-big num" style="--n:${money(big).length}">${money(big)}</div>
-      ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : ""}
+      ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : `<button type="button" class="now-how" data-add-pay>When is your payday? Add it for a daily amount</button>`}
       <p class="now-pd">${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}</p>
     </section>
     <section class="now-sheet">

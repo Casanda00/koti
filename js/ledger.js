@@ -1,15 +1,19 @@
 // Running balance: money carries from month to month.
 //   Each month starts with the previous month's real end balance (positive or negative).
+//   The balance now counts what has happened up to today; anything dated later is planned, not spent.
 //   Only income you've received counts as money you have; expected income is shown on its own.
-//   Unpaid bills stay overdue in later months until they're paid or marked "Not owed".
+//   Left until payday sets aside everything owed before the next payday: unpaid bills due by then (whatever the
+//   budget month), overdue bills however old (a paused bill's too), payments dated ahead, and this month's
+//   savings plan not yet moved. Unpaid bills stay owed until they're paid or marked "Not owed".
 //   Future months are a plan: planned income, bills, budgets and goals.
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import { parseDay } from "./ui.js";
 import { periodFor, shift, projectEntries, totals } from "./money.js";
 import { occurrences, occurrenceOf } from "./plan.js";
-import { incomeOccurrences } from "./income.js";
+import { incomeOccurrences, nextPay, incId } from "./income.js";
 
 export const ADJUST_CAT = "adjust";   // "Check with bank" corrections: change the balance, not spending
+export const SAVINGS_CAT = "savings"; // money moved to or from a savings goal: changes the balance, isn't spending
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const dayBefore = s => { const d = parseDay(s); d.setDate(d.getDate() - 1); return iso(d); };
 
@@ -23,11 +27,12 @@ export function startPoint() {
 
 /* Money in and out between two dates (inclusive). */
 export function flow(from, to) {
-  let income = 0, spent = 0, bills = 0, adjust = 0, refunds = 0;
-  if (from > to) return { income, spent, bills, adjust, net: 0 };
+  let income = 0, spent = 0, bills = 0, adjust = 0, refunds = 0, saved = 0;
+  if (from > to) return { income, spent, bills, adjust, saved, net: 0 };
   store.model.transactions.forEach(t => {
     if (t.date < from || t.date > to) return;
     if (t.categoryId === ADJUST_CAT) { adjust += t.kind === "expense" ? -t.amount : t.amount; return; }
+    if (t.categoryId === SAVINGS_CAT) { saved += t.kind === "expense" ? t.amount : -t.amount; return; }
     if (t.kind === "income") income += t.amount;
     else if (t.kind === "refund") refunds += t.amount;
     else if (t.billId || t.categoryId === BILLS_CAT) bills += t.amount;
@@ -35,7 +40,7 @@ export function flow(from, to) {
   });
   projectEntries({ from, to }).forEach(e => { spent += e.amount; });
   spent -= refunds;
-  return { income, spent, bills, adjust, net: income - spent - bills + adjust };
+  return { income, spent, bills, adjust, saved, net: income - spent - bills + adjust - saved };
 }
 
 /* Balance at the end of a day (null before the starting point). */
@@ -45,12 +50,13 @@ export function balanceAt(day) {
   return st.amount + flow(st.date, day).net;
 }
 
-/* Bills from earlier months that weren't paid (and weren't marked "Not owed"). Only since you started counting. */
+/* Bills from earlier months that weren't paid (and weren't marked "Not owed"), however old, since you started
+   counting. A paused bill's unpaid past due dates still count: pausing stops the bill from now on. */
 export function overdueBills(before = periodFor(new Date()).from) {
   const st = startPoint(), today = todayISO(), out = [];
   let p = periodFor(parseDay(before)); p = shift(p, -1);
-  for (let k = 0; k < 12 && p.to >= st.date; k++, p = shift(p, -1)) {
-    occurrences(p).forEach(o => { if (!o.paid && !o.skipped && o.due >= st.date && o.due < before && o.due < today) out.push(o); });
+  for (let k = 0; k < 240 && p.to >= st.date; k++, p = shift(p, -1)) {
+    occurrences(p, { includePaused: true }).forEach(o => { if (!o.paid && !o.skipped && o.due >= st.date && o.due < before && o.due < today) out.push(o); });
   }
   const seen = new Set();
   return out.filter(o => { const k = o.bill.id + o.due; if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => a.due.localeCompare(b.due));
@@ -80,19 +86,53 @@ export function monthLedger(p) {
   const from = p.from < st.date ? st.date : p.from;
   const carried = from === st.date ? st.amount : balanceAt(dayBefore(from));
   const startsHere = from === st.date && st.set;
-  const f = flow(from, p.to), now = carried + f.net;
+  const f = flow(from, p.from < cur.from ? p.to : today), now = carried + f.net;
   if (p.from < cur.from) {   // a finished month
     const unpaid = plannedBills(p).filter(o => !o.paid && o.due >= st.date);
     const missed = plannedIncome(p).filter(o => !o.got && o.due >= st.date);
     return { kind: "past", p, carried, startsHere, ...f, end: now, unpaid, missedIncome: missed };
   }
-  const thisMonth = plannedBills(p).filter(o => !o.paid && o.due >= st.date);
+  // what's owed before the next payday
+  const until = horizon(p), thisMonth = committedBills(p, until, st.date, today);
   const overdue = overdueBills(p.from);
   const due = sum(thisMonth, o => o.amount) + sum(overdue, o => o.amount);
+  const ahead = aheadOut(today, until), savingsDue = Math.max(0, goalsMonthly() - flow(p.from, p.to).saved);
   const expected = plannedIncome(p).filter(o => !o.got && o.due >= today);
   const late = plannedIncome(p).filter(o => !o.got && o.due < today);
-  const left = now - due;
-  return { kind: "current", p, carried, startsHere, ...f, now, dueThisMonth: thisMonth, overdue, due, left, expected, late, expectedSum: sum(expected, o => Number(o.src.amount) || 0) };
+  const left = now - due - ahead.total - savingsDue;
+  return { kind: "current", p, carried, startsHere, ...f, now, dueThisMonth: thisMonth, overdue, due, ahead: ahead.list, aheadSum: ahead.total, savingsDue, until, left, expected, late, expectedSum: sum(expected, o => Number(o.src.amount) || 0) };
+}
+
+/* The last day money has to last: the day before the next payday (after today's pay, once it has arrived),
+   or the end of the budget month when no payday is known. */
+export function horizon(p = periodFor(new Date())) {
+  const today = todayISO(); let pd = nextPay();
+  if (!pd) return p.to;
+  if (pd.days === 0) {
+    const main = pd.source, got = main && store.model.transactions.some(t => t.id === incId(main.id, today));
+    if (!got) return today;   // pay is due today and hasn't arrived: only today's bills
+    const t = parseDay(today); t.setDate(t.getDate() + 1); pd = nextPay(t);
+    if (!pd) return p.to;
+  }
+  return dayBefore(iso(pd.date)) < today ? today : dayBefore(iso(pd.date));
+}
+/* Unpaid bills due from the start of this month up to that day, across budget months. Paused bills only for
+   dates already gone by. */
+function committedBills(p, until, start, today) {
+  const out = [];
+  for (let q = p, k = 0; q.from <= until && k < 3; q = shift(q, 1), k++) {
+    occurrences(q, { includePaused: true }).forEach(o => {
+      if (o.paid || o.skipped || o.due < start || o.due < p.from || o.due > until) return;
+      if (!o.bill.active && o.due >= today) return;
+      out.push(o);
+    });
+  }
+  return out;
+}
+/* Payments already entered for a later day, up to the horizon: they will go out, so they're set aside. */
+function aheadOut(today, until) {
+  const list = store.model.transactions.filter(t => t.date > today && t.date <= until && t.kind !== "income" && t.categoryId !== ADJUST_CAT);
+  return { list, total: sum(list, t => (t.kind === "refund" ? -1 : 1) * t.amount) };
 }
 
 /* A future month: start from what's left now plus income still expected, then run the plan forward. */

@@ -1,5 +1,6 @@
 // When pay arrives. A source's payDay is a day of the month (1–31), 0 for the last day of the month,
-// or -1 for the last working day: the last weekday that isn't a Finnish public holiday.
+// or -1 for the last working day: the last weekday that isn't a Finnish public holiday. A day that isn't a
+// working day moves to the working day before.
 export const LAST_DAY = 0, LAST_WORKING_DAY = -1;
 
 // Easter Sunday (Gregorian), the anonymous algorithm.
@@ -27,11 +28,14 @@ export function lastWorkingDay(y, m) {
   while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
   return d;
 }
-/* The pay date in a month (m is 0-based, and may be outside 0–11). */
+/* The pay date in a month (m is 0-based, and may be outside 0–11). Pay due on a weekend or a public holiday
+   arrives on the working day before, as Finnish payrolls pay it. */
 export function payDateFor(payDay, y, m) {
   const first = new Date(y, m, 1); y = first.getFullYear(); m = first.getMonth();
   const last = new Date(y, m + 1, 0).getDate();
   if (payDay === LAST_WORKING_DAY) return lastWorkingDay(y, m);
-  return new Date(y, m, payDay === LAST_DAY ? last : Math.min(payDay, last));
+  const d = new Date(y, m, payDay === LAST_DAY ? last : Math.min(payDay, last));
+  while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
+  return d;
 }
 export const payDayLabel = payDay => payDay === LAST_WORKING_DAY ? "Last working day of the month" : payDay === LAST_DAY ? "Last day of the month" : `Day ${payDay}`;

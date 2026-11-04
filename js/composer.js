@@ -64,11 +64,16 @@ async function recordAndAct(mic) {
   stop = () => r.stop();
 }
 
-/* Sends a recording or a phrase to the AI and does what it meant. Saving always goes through a sheet to check. */
-async function ask({ audio = null, text = "" }) {
+/* More than a shop and an amount: five words or more, or words a person uses about themselves. */
+export const isSentence = t => String(t).trim().split(/\s+/).length >= 5 || /\b(i|i'm|my|we|our|me|minä|mä|mun|maksoin|ostin|paid|bought|spent)\b/i.test(t);
+
+/* Sends a recording or a phrase to the AI and does what it meant. Saving always goes through a sheet to check.
+   fallback: what the phone's own rules read, used when the AI can't answer or isn't sure. */
+async function ask({ audio = null, text = "", fallback = null }) {
   let d;
   try { d = await understand({ audio, text }); }
-  catch (e) { toast(String(e.message || e)); if (text) input.focus(); return; }
+  catch (e) { if (fallback) { showHeard(fallback); return; } toast(String(e.message || e)); if (text) input.focus(); return; }
+  if (fallback && !(d.intent === "spend" && d.spend && d.spend.total) && d.intent !== "question" && d.intent !== "remind") { showHeard(fallback); return; }
   const said = d.transcript || text;
   if (d.intent === "question" && d.range) { input.value = ""; location.hash = "#spending/" + d.range; return; }
   if (d.intent === "remind") { input.value = ""; import("./reminders.js").then(m => m.openReminder(null, parseReminder(said, { bills: store.model.bills }))); return; }
@@ -111,6 +116,9 @@ function go() {
     if (aiPossible()) { ask({ text }); return; }   // the rules couldn't read it: let the AI try
     toast("Add an amount, like “Lidl 23,40”."); input.focus(); return;
   }
+  // A whole sentence ("I paid 11e from my upcoming salary for lunch") goes to the AI too; what the rules read
+  // is the answer if the AI can't be reached.
+  if (aiPossible() && isSentence(text)) { ask({ text, fallback: heard }); return; }
   showHeard(heard);
 }
 

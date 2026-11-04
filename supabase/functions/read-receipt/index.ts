@@ -101,6 +101,20 @@ async function translateLeftovers(openaiKey: string, names: string[]): Promise<s
   try { const out = JSON.parse((await res.json()).choices?.[0]?.message?.content || "{}").names; return Array.isArray(out) && out.length === names.length ? out.map(String) : null; } catch { return null; }
 }
 
+/* A real calendar date (2026-02-31 isn't), no later than tomorrow; otherwise null. */
+function realDay(v: unknown, latest: string) {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const d = new Date(v + "T12:00:00Z");
+  return d.toISOString().slice(0, 10) === v && v >= "1990-01-01" && v <= latest ? v : null;
+}
+const tomorrow = () => new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+/* Gives one AI use back (the reading failed), with the server's own key so a user can't do it themselves. */
+async function giveBack(url: string, userId: string) {
+  const key = (() => { try { const k = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); if (k.default) return k.default; } catch { /* legacy */ } return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""; })();
+  if (!key) return;
+  await fetch(`${url}/rest/v1/rpc/koti_ai_refund`, { method: "POST", headers: { apikey: key, ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), "Content-Type": "application/json" }, body: JSON.stringify({ u: userId }) }).catch(() => {});
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json(405, { error: "Use POST." });
@@ -112,6 +126,7 @@ Deno.serve(async (req) => {
   // Who is calling: only a signed-in Koti user.
   const who = await fetch(`${url}/auth/v1/user`, { headers: { Authorization: auth, apikey: key } });
   if (!who.ok) return json(401, { error: "Your session ended. Sign in again.", code: "auth" });
+  const me = await who.json().catch(() => ({})) as { id?: string };
 
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openaiKey) return json(503, { error: "Receipt reading isn't set up yet. Add OPENAI_API_KEY in Supabase → Edge Functions → Secrets.", code: "no_key" });
@@ -157,11 +172,12 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
       : res.status === 429 ? "OpenAI is out of credit or busy. Check your OpenAI billing, or try again in a minute."
       : /model/i.test(m) ? `The model "${MODEL}" isn't available on your OpenAI account. Set OPENAI_MODEL in Supabase to one that is.`
       : `OpenAI couldn't read it: ${m}`;
+    if (me.id) await giveBack(url, me.id);
     return json(502, { error, code: "openai" });
   }
   const data = await res.json();
   let r: Record<string, unknown>;
-  try { r = JSON.parse(data.choices?.[0]?.message?.content || "{}"); } catch { return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
+  try { r = JSON.parse(data.choices?.[0]?.message?.content || "{}"); } catch { if (me.id) await giveBack(url, me.id); return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
   if (r.is_receipt === false || r.doc_type === "other") return json(422, { error: "That doesn't look like a receipt or a bill. Try another photo.", code: "not_receipt" });
 
   const catSet = new Set(categories.map((c) => c.toLowerCase())), listSet = new Map(listItems.map((x) => [x.toLowerCase(), x])), placeSet = new Map(places.map((x) => [x.toLowerCase(), x]));
@@ -177,13 +193,13 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   // Rail: English names must be English (the Finnish name is kept separately in name_fi). Anything that still looks Finnish or Swedish gets one more, translation-only pass.
   const left = items.map((it, k) => [k, it.name] as [number, string]).filter(([, n]) => NON_ENGLISH.test(n));
   if (left.length) { const t = await translateLeftovers(openaiKey, left.map(([, n]) => n)); if (t) left.forEach(([k], j) => { if (t[j] && t[j].trim()) items[k].name = t[j].trim().slice(0, 120); }); }
-  const date = typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : null;
+  const date = realDay(r.date, tomorrow());
   const total = money(r.total) ?? Math.round(items.reduce((a, i) => a + i.price, 0) * 100) / 100;
   const docType = r.doc_type === "bill" ? "bill" : "receipt";
   let bill = null;
   if (docType === "bill" && r.bill && typeof r.bill === "object") {
     const b = r.bill as Record<string, unknown>, str = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
-    const due = typeof b.due_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.due_date) ? b.due_date : null;
+    const due = realDay(b.due_date, "2100-12-31");
     const match = str(b.match, 80), billSet = new Map(bills.map((x) => [x.toLowerCase(), x]));
     bill = { company: str(b.company, 120) || (typeof r.shop === "string" ? r.shop.slice(0, 120) : null), amount: money(b.amount) ?? total, due_date: due, reference: str(b.reference, 60),
       iban: str(b.iban, 40), invoice_number: str(b.invoice_number, 60), period: str(b.period, 120), match: match ? billSet.get(match.toLowerCase()) || null : null };

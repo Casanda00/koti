@@ -9,7 +9,7 @@ import { mountMore, renderMore, bindMore, openNewPassword } from "./more.js";
 import { mountMoney, renderMoney, openExpense } from "./money.js";
 import { mountSpending, renderSpending } from "./spent.js";
 import { initPullToRefresh } from "./ptr.js";
-import { mountPlan, renderPlanView, openBill, runAutopay } from "./plan.js";
+import { mountPlan, renderPlanView, openBill } from "./plan.js";
 import { mountIncome, renderIncome, openSource } from "./income.js";
 import { mountList, openList, renderList, openAddMenu, openAddToList, currentList } from "./lists.js";
 import { initReceipts, uploadPending } from "./receipts.js";
@@ -108,13 +108,11 @@ function init() {
   mountNow($("#view-now")); mountMonth($("#view-month")); mountPlace($("#view-home")); mountReminders($("#view-reminders")); mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountSpending($("#view-spending"));
   mountPlan($("#view-bills")); mountList($("#view-list")); mountSetup($("#view-project"));
   mountMore($("#view-more")); bindMore();
-  runAutopay();
 
-  let autoT; store.on(kind => {
+  store.on(kind => {
     if (kind === "remote") { applyDefaults2(); syncLook(); dismissIfAnswered(); }
     if (current === "project" && !listOf(parse().id)) { location.hash = "#projects"; return; }
     renderCurrent(); paintMe(); paintComposer();
-    if (kind === "remote") { clearTimeout(autoT); autoT = setTimeout(runAutopay, 400); }
   });
   onSync((s, ev) => { paintSync(s); renderCurrent(); if (ev === "recovery") openNewPassword(); });
   applyDefaults2();
@@ -136,7 +134,7 @@ function init() {
   route();
   if (shouldOnboard() && !new URLSearchParams(location.search).get("add")) openOnboarding();
   startInstall({ ready: () => !document.body.classList.contains("onb-open") });   // the Home Screen sheet waits for the first-time questions
-  initPullToRefresh({ beforeRefresh: () => checkForUpdate(), onRefreshed: () => { runAutopay(); uploadPending(); renderCurrent(); } });
+  initPullToRefresh({ beforeRefresh: () => checkForUpdate(), onRefreshed: () => { uploadPending(); renderCurrent(); } });
   initUpdates();
   const q = new URLSearchParams(location.search);
   if (q.get("add") === "item") openAddToList();

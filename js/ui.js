@@ -31,7 +31,12 @@ export function openSheet({ title, left = "Cancel", right = null, rightDisabled 
   const B = S.querySelector(".sh-body");
   if (typeof body === "string") B.innerHTML = body; else if (body) body(B);
   const R = S.querySelector(".sh-head .r");
-  if (R && onRight) R.addEventListener("click", () => onRight(B, R));
+  // One tap saves once: the button is held while saving, and freed again only if the sheet stays open (a
+  // message to fix something). A second tap during that time does nothing.
+  if (R && onRight) R.addEventListener("click", async () => {
+    if (R.dataset.busy) return; R.dataset.busy = "1"; R.setAttribute("aria-disabled", "true");
+    try { await onRight(B, R); } finally { setTimeout(() => { if (R.isConnected) { delete R.dataset.busy; R.removeAttribute("aria-disabled"); } }, 400); }
+  });
   document.getElementById("toast").classList.remove("show");
   L.hidden = false; requestAnimationFrame(() => L.classList.add("open"));
   const f = B.querySelector("[autofocus]") || S.querySelector("button, input, select, textarea");

@@ -35,6 +35,7 @@ export async function understand({ audio = null, text = "" } = {}) {
     let info = {}; try { info = error.context && error.context.json ? await error.context.json() : {}; } catch {}
     throw Object.assign(new Error(info.error || (/Failed to fetch|network/i.test(error.message) ? "Couldn't reach Koti's AI." : error.message)), { code: info.code || "network" });
   }
+  if (data && data.limit) { try { localStorage.setItem("koti.aiLimit", String(data.limit)); } catch {} }
   return data;
 }
 

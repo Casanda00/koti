@@ -19,6 +19,14 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 
 Two tabs at the top, and a swipe between them: **Today** (what's left to spend today: what was left until payday this morning, shared over the days to payday, minus what you've spent today; the colour shows how today is going) and the month, named after it (**November**: income, bills, savings and living expenses, then each budget). **Projects** (your home with its floor plan, other projects and your lists) opens from the month. Your initial opens **You** (settings). **Today's payments** lists the payments you made, for any period you pick from its title, custom dates included; it also arrives as a notification each evening at 20:00. A box at the bottom takes what you spent, like "Lidl 23,40", and shows what it understood before saving; in Projects it adds to your list.
 
+## Rules worth knowing
+
+- **Sync:** the database keeps the newer copy of every row, so an older upload can't overwrite a newer edit or undo a delete. Settings merge setting by setting.
+- **Left until payday:** what's left after everything owed before the next payday is set aside. That covers unpaid bills due by then, overdue bills however old, payments dated later, and this month's savings plan not yet moved. Moving money to a goal is a transfer, not spending.
+- **Direct debits:** they're never recorded as paid by themselves. Koti asks from the due date whether each one went out.
+- **Paydays:** one that falls on a weekend or a Finnish public holiday moves to the working day before.
+- **Tests:** `npm test` (Node 22) runs the app's own modules against a pretend server that applies the database's rules. CI runs it on every pull request.
+
 ## Files
 
 | Path | What it is |
@@ -26,7 +34,7 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 | `index.html` | App shell: Now, Month and Home at the top, the add box at the bottom, sheet layer |
 | `css/app.css` | Design tokens, light and dark themes, phone and desktop layouts |
 | `js/data.js` | Data model, migrations from earlier versions, local store and change queue |
-| `js/sync.js` | Sign-in and sync with Supabase: offline queue, pulls by server timestamp, live updates |
+| `js/sync.js` | Sign-in and sync with Supabase: offline queue, pulls by (server time, id), live updates, settings merged one by one, refused changes set aside and shown in You, each account's data kept apart on a device |
 | `js/now.js` | Today: left to spend today, the mood colour, questions, what you spent today and what's due |
 | `js/month.js` | The month: income, bills, savings, living expenses, budgets, money left to plan, match to bank |
 | `js/place.js` | Projects: your home with its floor plan, other projects, your lists |
@@ -36,6 +44,7 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 | `js/hear.js` | The microphone with AI: records, sends to `hear`, turns the answer into a purchase, a question, a reminder or list items |
 | `js/period.js` | The period picker: a title with a down arrow, Today to last month, and custom dates |
 | `js/receipt.js` | Today's payments: every payment in a period, as a receipt; and today's share |
+| `tests/` | `npm test`: sync, money, bills, paydays and accounts, each against the defect it guards |
 | `js/install.js` | Getting Koti onto the Home Screen: one tap on Android and desktop, a guide on iPhone, open-in-browser help inside Instagram or WhatsApp, the strip on Now |
 | `js/paydays.js` | Pay dates, including the last working day (weekdays, not Finnish public holidays) |
 | `js/lists.js` | An opened list, sending a list, new list and list settings |

@@ -5,7 +5,7 @@
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseDay } from "./ui.js";
 import { periodFor, shift, catName, projectEntries, openExpense } from "./money.js";
-import { ADJUST_CAT } from "./ledger.js";
+import { ADJUST_CAT, SAVINGS_CAT } from "./ledger.js";
 import { openBill } from "./plan.js";
 import { pickerHTML, bindPicker, labelOf, monthName } from "./period.js";
 
@@ -34,7 +34,7 @@ export function spentBetween(from, to) {
   const byCat = {}, byDay = {}, entries = [];
   const add = (k, v, d) => { byCat[k] = (byCat[k] || 0) + v; byDay[d] = (byDay[d] || 0) + v; };
   store.model.transactions.forEach(t => {
-    if (t.date < from || t.date > to || t.kind === "income" || t.categoryId === ADJUST_CAT) return;
+    if (t.date < from || t.date > to || t.kind === "income" || t.categoryId === ADJUST_CAT || t.categoryId === SAVINGS_CAT) return;
     entries.push(t);
     if (t.kind === "refund") { add(t.categoryId || "none", -t.amount, t.date); return; }
     if (t.lines && t.lines.length) {

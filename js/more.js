@@ -1,7 +1,7 @@
 // Settings: profile, money, scanning, reminders, appearance, data and app. Home setup things live in the project's menu.
 import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO, roomsOf, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
-import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount } from "./sync.js";
+import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount, failedChanges, retryFailed, dropFailed } from "./sync.js";
 import { openCategories, openReceiptsList, openStartBalance } from "./money.js";
 import { startPoint } from "./ledger.js";
 import { APP_VERSION } from "./version.js";
@@ -37,6 +37,7 @@ export function renderMore() {
   <header class="vh"><div><a class="back" href="#now">${icon("chev", "ic sm flip")} Now</a><h1>You</h1></div></header>
   ${profile}
 
+  ${keptAsideHTML()}
   <div class="gh"><h2>Money</h2></div>
   <div class="grp">
     <button type="button" class="row" data-open="start"><span class="ico g">${icon("wallet")}</span><span class="rt">Starting balance<small>${st.set ? `${eur(st.amount)} at the start of ${esc(new Date(st.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }))} · carried each month` : "Not set: counting from €0"}</small></span>${chev}</button>
@@ -95,7 +96,8 @@ function setLook(patch) {
 }
 async function aiUse() {
   if (!sync.client || !sync.user) return "Sign in to use AI";
-  try { const { data, error } = await sync.client.from("ai_usage").select("count").eq("day", new Date().toISOString().slice(0, 10)); if (error) return null; return `${(data && data[0] && data[0].count) || 0} of 30`; } catch { return null; }
+  try { const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Helsinki" }).format(new Date());   // the AI day runs on Helsinki time
+    const { data, error } = await sync.client.from("ai_usage").select("count").eq("day", day); if (error) return null; let lim = 30; try { lim = Number(localStorage.getItem("koti.aiLimit")) || 30; } catch {} return `${(data && data[0] && data[0].count) || 0} of ${lim}`; } catch { return null; }
 }
 
 /* ---------- Profile ---------- */
@@ -122,11 +124,25 @@ function openProfile() {
   }, onRight: B => { store.updateSettings({ name: $("#prName", B).value.trim().slice(0, 40), avatarColor: colour }); closeSheet(); toast("Saved"); } });
 }
 
+/* Data from before signing in, and changes the server refused: shown so nothing is lost without a choice. */
+function keptAsideHTML() {
+  const before = store.beforeSignIn(), failed = failedChanges();
+  const count = m => [["transactions", "expense"], ["bills", "bill"], ["income", "income source"], ["goals", "goal"], ["reminders", "reminder"]].map(([k, w]) => m[k].length ? `${m[k].length} ${w}${m[k].length === 1 ? "" : "s"}` : "").filter(Boolean).join(", ");
+  let h = "";
+  if (before && sync.user) h += `<div class="grp kept"><div class="row"><span class="rt">From before you signed in<small>${esc(count(before) || "Lists and settings")} on this device, not in this account</small></span></div>
+    <div class="row btns"><button type="button" class="pill" data-act="addBefore">Add to this account</button><button type="button" class="pill ghost" data-act="dropBefore">Remove</button></div></div>`;
+  if (failed.length) h += `<div class="grp kept">${failed.map(f => `<div class="row"><span class="rt">${esc(f.obj ? (f.obj.payee || f.obj.name || f.obj.title || f.kind) : f.kind)} couldn't be saved<small>${esc(f.error)}</small></span><button type="button" class="pill" data-retry="${esc(f.kind)}|${esc(f.id)}">Try again</button><button type="button" class="pill ghost" data-dropf="${esc(f.kind)}|${esc(f.id)}">Keep here only</button></div>`).join("")}</div>`;
+  return h ? `<div class="gh"><h2>Needs a decision</h2></div>${h}` : "";
+}
 export function bindMore() {
   document.addEventListener("click", e => {
     const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList, profile: openProfile, start: openStartBalance }[o.dataset.open]; if (f) f(); return; }
+    const rt = e.target.closest("[data-retry]"); if (rt && root && root.contains(rt)) { const [k, id] = rt.dataset.retry.split("|"); retryFailed(k, id); toast("Trying again"); renderMore(); return; }
+    const df = e.target.closest("[data-dropf]"); if (df && root && root.contains(df)) { const [k, id] = df.dataset.dropf.split("|"); dropFailed(k, id); toast("Kept on this device only"); renderMore(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
-    ({ update: () => import("./update.js").then(m => m.checkForUpdate({ manual: true })), refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
+    ({ update: () => import("./update.js").then(m => m.checkForUpdate({ manual: true })), refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport,
+      addBefore: () => { const n = store.addBeforeSignIn(); toast(n ? `Added ${n} record${n === 1 ? "" : "s"} to this account` : "Nothing new to add"); renderMore(); },
+      dropBefore: () => { if (!confirm("Remove what was on this device before you signed in? It isn't in this account.")) return; store.dropBeforeSignIn(); renderMore(); }, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
   });
   document.addEventListener("change", async e => {
     if (e.target.id !== "moFile") return; const f = e.target.files[0]; e.target.value = ""; if (!f) return;
@@ -181,7 +197,8 @@ export function openNewPassword() {
       try { await setPassword(pw); closeSheet(); toast("Password updated"); } catch (err) { $("#npMsg", B).dataset.state = "error"; $("#npMsg", B).textContent = String(err.message || err); } } });
 }
 async function doSignOut() {
-  if (!confirm("Sign out on this device? Your list stays here, and syncs again when you sign back in.")) return;
+  const n = pendingCount();
+  if (!confirm(n ? `${n} change${n === 1 ? " hasn't" : "s haven't"} reached your account yet. Sign out anyway? They stay on this device and upload when you sign back in.` : "Sign out on this device? Your data stays here, and syncs again when you sign back in.")) return;
   await signOut(); toast("Signed out");
 }
 
