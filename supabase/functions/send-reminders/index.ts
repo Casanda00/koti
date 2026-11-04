@@ -1,6 +1,7 @@
 // Koti: push reminders.
-//   Hourly (pg_cron → this function, with a token kept in Vault): bills due tomorrow, overdue bills,
-//   "did your pay arrive?", a budget running low, and an optional weekly summary.
+//   Hourly (pg_cron → this function, with a token kept in Vault): bills due tomorrow, late bills (day 1, day 4,
+//   then weekly), "did your pay land?", a budget running low, and an optional "your week".
+//   Words follow the voice language setting: Finnish when it starts with "fi", English otherwise.
 //   From the app (signed-in user): {action:"key"} returns the public key; {action:"test"} sends a test.
 // Notification keys are created here on first use and kept in Supabase Vault; nothing is pasted anywhere.
 import webpush from "npm:web-push@3.6.7";
@@ -49,8 +50,50 @@ function local(d = new Date()) {
 }
 const addDays = (s: string, n: number) => { const d = new Date(s + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const ymd = (y: number, m: number, day: number) => { const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m, Math.min(day, last))).toISOString().slice(0, 10); };
-const eur = (n: number) => "€" + (Math.round(n * 100) / 100).toFixed(2).replace(/\.00$/, "");
-const fmt = (s: string) => new Date(s + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+type Lang = "en" | "fi";
+const money = (lang: Lang, n: number) => new Intl.NumberFormat(lang === "fi" ? "fi-FI" : "en-FI", { style: "currency", currency: "EUR", minimumFractionDigits: Number.isInteger(Math.round(n * 100) / 100) ? 0 : 2, maximumFractionDigits: 2 }).format(n);
+const longDay = (lang: Lang, s: string) => new Date(s + "T12:00:00Z").toLocaleDateString(lang === "fi" ? "fi-FI" : "en-GB", lang === "fi" ? { weekday: "long", day: "numeric", month: "numeric", timeZone: "UTC" } : { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const stop = (x: string) => x.endsWith(".") ? x : x + ".";   // a Finnish date already ends with a full stop
+const list = (lang: Lang, xs: string[]) => xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} ${lang === "fi" ? "ja" : "and"} ${xs[xs.length - 1]}`;
+/* Late bills are mentioned on day 1, day 4, then once a week, for up to 60 days. */
+export const lateDays = (late: number) => late === 1 || late === 4 || (late > 4 && late <= 60 && (late - 4) % 7 === 0);
+
+/* The words, in Koti 2.0's voice. */
+const W = {
+  en: {
+    due: (n: string, a: string) => `${n}, ${a}, is due tomorrow.`,
+    dueRef: (r: string) => `Reference ${r} is ready to copy in Koti.`,
+    dueBody: "Mark it paid in Koti when it's done.",
+    late: (n: string, a: string, d: string) => `${n}, ${a}, was due ${d}.`,
+    lateBody: "Mark it paid, or not owed this time.",
+    pay: (n: string, a: string) => `Did ${n}, ${a}, land?`,
+    payName: (n: string) => String(n).toLowerCase() === "salary" ? "your salary" : `the ${n} money`,
+    payBody: (d: string) => `It was due ${d}. Tell Koti when it's in.`,
+    over: (c: string, a: string) => `${c} is ${a} over this month.`,
+    low: (c: string, a: string) => `${c} is nearly used up. ${a} to go.`,
+    budBody: (p: number, b: string) => `You've used ${p}% of this month's ${b}.`,
+    week: "Your week",
+    weekBody: (a: string, next: string) => `${a} spent this week. ${next ? `Next week: ${next}.` : "No bills next week."}`,
+    testT: "Koti reminders are on", testB: "Bills, paydays and budgets will reach you like this.",
+  },
+  fi: {
+    due: (n: string, a: string) => `${n}, ${a}, erääntyy huomenna.`,
+    dueRef: (r: string) => `Viite ${r} on valmiina kopioitavaksi Kotissa.`,
+    dueBody: "Merkitse se maksetuksi Kotissa, kun olet maksanut.",
+    late: (n: string, a: string, d: string) => `${n}, ${a}, erääntyi ${stop(d)}`,
+    lateBody: "Merkitse se maksetuksi, tai ettei sitä tarvitse maksaa tällä kertaa.",
+    pay: (n: string, a: string) => `Tuliko ${n}, ${a}?`,
+    payName: (n: string) => String(n).toLowerCase() === "salary" ? "palkkasi" : n,
+    payBody: (d: string) => `Sen piti tulla ${stop(d)} Kerro Kotille, kun se on tilillä.`,
+    over: (c: string, a: string) => `${c}: ${a} yli tämän kuun budjetin.`,
+    low: (c: string, a: string) => `${c} on melkein käytetty. ${a} jäljellä.`,
+    budBody: (p: number, b: string) => `Tämän kuun ${b}:n budjetista on käytetty ${p} %.`,
+    week: "Viikkosi",
+    weekBody: (a: string, next: string) => `${a} kulutettu tällä viikolla. ${next ? `Ensi viikolla: ${next}.` : "Ensi viikolla ei laskuja."}`,
+    testT: "Kotin muistutukset ovat päällä", testB: "Laskut, palkkapäivät ja budjetit tulevat näin.",
+  },
+};
+const langOf = (settings: Row): Lang => String(settings.voiceLang || "").toLowerCase().startsWith("fi") ? "fi" : "en";
 
 /* A bill's due date in a month (same rules as the app). */
 function billDue(b: Row, y: number, m: number): string | null {
@@ -95,7 +138,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
   const quiet = R.quietFrom > R.quietTo ? (now.hour >= R.quietFrom || now.hour < R.quietTo) : (now.hour >= R.quietFrom && now.hour < R.quietTo);
   if (quiet) return [];
   const out: Note[] = [], today = now.day, tomorrow = addDays(today, 1), morning = now.hour === Number(R.billHour);
-  const start = u.settings.startDate || null;
+  const start = u.settings.startDate || null, lang = langOf(u.settings), w = W[lang], eur = (n: number) => money(lang, n);
   const paid = new Set(u.tx.filter((t) => t.bill_id).map((t) => `${t.bill_id}|${t.bill_due}`));
   const got = new Set(u.tx.filter((t) => t.income_id).map((t) => `${t.income_id}|${t.income_due}`));
   for (const b of u.bills) {
@@ -103,10 +146,10 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
     for (const due of billDuesAround(b, today, 2, 1)) {
       const d = (b.dues || {})[due] || {}, amount = d.amount || Number(b.amount);
       if (paid.has(`${b.id}|${due}`) || d.skipped) continue;
-      if (R.bills && morning && due === tomorrow && !b.autopay) out.push({ key: `due:${b.id}:${due}`, title: `${b.name} ${eur(amount)} is due tomorrow`, body: (d.reference || b.reference) ? `Reference ${d.reference || b.reference} · open to copy` : "Open Koti to mark it paid", url: "./#bills" });
+      if (R.bills && morning && due === tomorrow && !b.autopay) out.push({ key: `due:${b.id}:${due}`, title: w.due(b.name, eur(amount)), body: (d.reference || b.reference) ? w.dueRef(d.reference || b.reference) : w.dueBody, url: "./#bills" });
       if (R.overdue && morning && due < today && !b.autopay && (!start || due >= start) && (b.start_date ? due >= b.start_date : true)) {
         const late = Math.round((Date.parse(today) - Date.parse(due)) / 864e5);
-        if (late <= 60 && late % 3 === 1) out.push({ key: `od:${b.id}:${due}:${today}`, title: `${b.name} is ${late} day${late === 1 ? "" : "s"} overdue`, body: `${eur(amount)} · mark it paid or not owed`, url: "./#bills" });
+        if (lateDays(late)) out.push({ key: `od:${b.id}:${due}:${today}`, title: w.late(b.name, eur(amount), longDay(lang, due)), body: w.lateBody, url: "./#now" });
       }
     }
   }
@@ -118,7 +161,7 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
         const due = payDue(s, y, m - 1 + k); if (!due) continue;
         const lateBy = Math.round((Date.parse(today) - Date.parse(due)) / 864e5);
         if (lateBy < 1 || lateBy > 3 || got.has(`${s.id}|${due}`) || (s.missed || []).includes(due) || (start && due < start)) continue;
-        out.push({ key: `pay:${s.id}:${due}`, title: `Did your ${String(s.name).toLowerCase() === "salary" ? "salary" : s.name} land?`, body: `${eur(Number(s.amount))} was expected ${fmt(due)}. Open Koti to mark it received.`, url: "./#now" });
+        out.push({ key: `pay:${s.id}:${due}`, title: w.pay(w.payName(s.name), eur(Number(s.amount))), body: w.payBody(longDay(lang, due)), url: "./#now" });
       }
     }
   }
@@ -134,13 +177,18 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
     }
     for (const c of u.cats) {
       const b = Number(c.budget) || 0, s = spent[c.id] || 0; if (!b || s < b * .85) continue;
-      out.push({ key: `bud:${c.id}:${from}`, title: s > b ? `${c.name}: ${eur(s - b)} over budget` : `${c.name}: ${eur(b - s)} left`, body: `You've used ${Math.round(s / b * 100)}% of this month's ${eur(b)}.`, url: "./#budgets" });
+      out.push({ key: `bud:${c.id}:${from}`, title: s > b ? w.over(c.name, eur(s - b)) : w.low(c.name, eur(b - s)), body: w.budBody(Math.round(s / b * 100), eur(b)), url: "./#month" });
     }
   }
   if (R.weekly && now.weekday === "Sun" && now.hour === 19) {
     const from = addDays(today, -6); let s = 0, n = 0;
     for (const t of u.tx) if (t.date >= from && t.date <= today && t.kind === "expense" && !t.bill_id && t.category_id !== "adjust") { s += Number(t.amount); n++; }
-    out.push({ key: `wk:${today}`, title: "Your week in Koti", body: `${eur(s)} spent in ${n} expense${n === 1 ? "" : "s"} this week.`, url: "./#month" });
+    const next: string[] = [], end = addDays(today, 7);
+    for (const b of u.bills) {
+      if (!b.active) continue;
+      for (const due of billDuesAround(b, today, 0, 1)) if (due > today && due <= end && !paid.has(`${b.id}|${due}`) && !((b.dues || {})[due] || {}).skipped) next.push(`${b.name} ${eur(((b.dues || {})[due] || {}).amount || Number(b.amount))}`);
+    }
+    out.push({ key: `wk:${today}`, title: w.week, body: w.weekBody(eur(s), list(lang, next.length > 3 ? [...next.slice(0, 2), lang === "fi" ? `${next.length - 2} muuta` : `${next.length - 2} more`] : next)), url: "./#month" });
   }
   return out;
 }
@@ -212,7 +260,8 @@ Deno.serve(async (req) => {
     if (body.action === "test") {
       const subs: Row[] = await rest(`push_subscriptions?select=*&user_id=eq.${user.id}`);
       if (!subs.length) return json(400, { error: "Turn on reminders on this phone first.", code: "no_sub" });
-      const n = await sendTo(subs, { key: `test:${Date.now()}`, title: "Koti reminders are on", body: "This is how bills, paydays and budgets will reach you.", url: "./#settings" });
+      const st = ((await rest(`settings?select=data&user_id=eq.${user.id}`))[0] || {}).data || {}, w = W[langOf(st)];
+      const n = await sendTo(subs, { key: `test:${Date.now()}`, title: w.testT, body: w.testB, url: "./#settings" });
       return json(200, { sent: n });
     }
     return json(400, { error: "Unknown action." });

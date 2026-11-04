@@ -5,11 +5,11 @@ import { $, $$, esc, icon, toast } from "./ui.js";
 import { sync } from "./sync.js";
 
 const TYPES = [
-  ["bills", "Bills due", "The day before, with the reference to copy"],
-  ["overdue", "Overdue bills", "Every 3 days until paid or not owed"],
-  ["payday", "Payday check", "The morning after payday, if not marked received"],
-  ["budget", "Budget running low", "Once a month, when a category reaches 85%"],
-  ["weekly", "Weekly summary", "Sunday evening"],
+  ["bills", "Bills due", "The morning before, with the reference to copy"],
+  ["overdue", "Late bills", "The day after, 3 days later, then once a week"],
+  ["payday", "Did your pay land?", "The morning after payday, if you haven't said yet"],
+  ["budget", "Running low", "Once a month, when a category reaches 85%"],
+  ["weekly", "Your week", "Sunday evening: what you spent and what's due next week"],
 ];
 const supported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const standaloneIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia("(display-mode: standalone)").matches || navigator.standalone);
@@ -59,10 +59,12 @@ export async function renderReminders(el) {
       <label class="row"><span class="rt">Morning reminders at</span><select class="inl" data-rmh="billHour">${hours(R.billHour)}</select></label>
       <div class="row"><span class="rt">Quiet hours<small>No reminders in between</small></span><select class="inl" data-rmh="quietFrom" aria-label="Quiet from">${hours(R.quietFrom)}</select><span class="muted">–</span><select class="inl" data-rmh="quietTo" aria-label="Quiet until">${hours(R.quietTo)}</select></div>
       ${on ? `<button type="button" class="row" id="rmTest"><span class="rt">Send a test reminder</span><span class="rv lnk">Send</span></button>` : ""}
+      <label class="row"><span class="rt">Language<small>For reminders, and what the microphone listens for</small></span><select class="inl" id="rmLang"><option value="en-GB"${String(store.model.settings.voiceLang || "en-GB").startsWith("fi") ? "" : " selected"}>English</option><option value="fi-FI"${String(store.model.settings.voiceLang || "").startsWith("fi") ? " selected" : ""}>Suomi</option></select></label>
     </div>`;
   const save = patch => store.updateSettings({ reminders: { ...R, ...patch } });
   $$("[data-rm]", el).forEach(x => x.onchange = () => save({ [x.dataset.rm]: x.checked }));
   $$("[data-rmh]", el).forEach(x => x.onchange = () => save({ [x.dataset.rmh]: Number(x.value) }));
+  $("#rmLang", el).onchange = e => { store.updateSettings({ voiceLang: e.target.value }); toast(e.target.value.startsWith("fi") ? "Muistutukset tulevat suomeksi" : "Reminders will come in English"); };
   $("#rmOn", el).onchange = async e => {
     const want = e.target.checked; e.target.disabled = true;
     try { if (want) { await turnOn(); toast("Reminders are on for this phone"); } else { await turnOff(); toast("Reminders are off for this phone"); } }

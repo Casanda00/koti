@@ -41,7 +41,7 @@ function paint() {
       <p class="onb-msg" id="obMsg" aria-live="polite"></p>
       ${foot("Next: your bills")}</div>`;
     $(".onb-opts", el).addEventListener("click", e => { const b = e.target.closest("[data-when]"); if (!b) return; st.when = isNaN(Number(b.dataset.when)) ? b.dataset.when : Number(b.dataset.when); $$("[data-when]", el).forEach(x => x.setAttribute("aria-checked", x === b)); $("#obDayRow", el).hidden = st.when !== "date"; });
-    setTimeout(() => $("#obAmt", el).focus(), 50);
+    setTimeout(() => { const f = el && $("#obAmt", el); if (f) f.focus(); }, 50);
   } else if (step === 1) {
     el.innerHTML = `<div class="onb-in">${progress(1)}<button type="button" class="onb-back" data-back>Back</button>
       <h1>What goes out every month?</h1>
@@ -60,7 +60,7 @@ function paint() {
       <p class="onb-p">With your pay, your bills and this, Koti works out how much is yours to spend every day.</p>
       <p class="onb-msg" id="obMsg" aria-live="polite"></p>
       ${foot("Show me my month")}</div>`;
-    setTimeout(() => $("#obBal", el).focus(), 50);
+    setTimeout(() => { const f = el && $("#obBal", el); if (f) f.focus(); }, 50);
   }
   el.onclick = e => {
     if (e.target.closest("[data-back]")) { keepRows(); step--; paint(); return; }
