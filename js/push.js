@@ -5,11 +5,15 @@ import { $, $$, esc, icon, toast } from "./ui.js";
 import { sync } from "./sync.js";
 
 const TYPES = [
-  ["bills", "Bills due", "The day before, with the reference to copy"],
-  ["overdue", "Overdue bills", "Every 3 days until paid or not owed"],
-  ["payday", "Payday check", "The morning after payday, if not marked received"],
-  ["budget", "Budget running low", "Once a month, when a category reaches 85%"],
-  ["weekly", "Weekly summary", "Sunday evening"],
+  ["bills", "Bills due", "The morning before, with the reference to copy"],
+  ["overdue", "Late bills", "The day after, 3 days later, then once a week"],
+  ["payday", "Did your pay land?", "The morning after payday, if you haven't said yet"],
+  ["budget", "Running low", "Once a month, when a category reaches 85%"],
+  ["weekly", "Your week", "Sunday evening: what you spent and what's due next week"],
+  ["tight", "Money's tight", "Once a month, when Now turns orange or red"],
+  ["autopay", "Pays itself", "The morning before an automatic bill, if your account may not cover it"],
+  ["plan", "Plan the month", "On the day your pay lands"],
+  ["lists", "List changes", "When someone adds to a list through its shared link"],
 ];
 const supported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const standaloneIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia("(display-mode: standalone)").matches || navigator.standalone);
@@ -48,22 +52,25 @@ export async function turnOff() {
 }
 
 export async function renderReminders(el) {
-  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9, ...(store.model.settings.reminders || {}) };
+  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, tight: true, autopay: false, plan: false, lists: true, quietFrom: 21, quietTo: 8, billHour: 9, ...(store.model.settings.reminders || {}) };
   const sub = await current().catch(() => null), on = !!sub && Notification.permission === "granted";
   const why = !supported() ? (standaloneIOS() ? "On iPhone, add Koti to your home screen (iOS 16.4 or later), then turn this on there." : "This browser can't receive reminders.") : !sync.user ? "Sign in to use reminders." : Notification.permission === "denied" ? "Notifications are blocked. Allow them for Koti in your phone's settings." : "";
   const hours = (sel) => Array.from({ length: 24 }, (_, h) => `<option value="${h}"${Number(sel) === h ? " selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("");
-  el.innerHTML = `<div class="gh"><h2>Reminders</h2></div>
+  el.innerHTML = `<div class="mhead"><h2>From Koti</h2></div>
     <div class="grp">
-      <label class="row"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders on this phone<small>${on ? "On" : why || "Off"}</small></span><input type="checkbox" class="switch" id="rmOn" ${on ? "checked" : ""} ${why && !on ? "disabled" : ""}></label>
+      <label class="row"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders on this phone<small>${on ? "On" : why || "Off"}</small></span>${standaloneIOS() ? `<button type="button" class="pill" id="rmHow">Show me how</button>` : `<input type="checkbox" class="switch" id="rmOn" ${on ? "checked" : ""} ${why && !on ? "disabled" : ""}>`}</label>
       ${TYPES.map(([k, t, sub]) => `<label class="row"><span class="rt">${t}<small>${sub}${k === "bills" || k === "payday" || k === "overdue" ? ` · ${String(R.billHour).padStart(2, "0")}:00` : ""}</small></span><input type="checkbox" class="switch" data-rm="${k}" ${R[k] ? "checked" : ""}></label>`).join("")}
       <label class="row"><span class="rt">Morning reminders at</span><select class="inl" data-rmh="billHour">${hours(R.billHour)}</select></label>
       <div class="row"><span class="rt">Quiet hours<small>No reminders in between</small></span><select class="inl" data-rmh="quietFrom" aria-label="Quiet from">${hours(R.quietFrom)}</select><span class="muted">–</span><select class="inl" data-rmh="quietTo" aria-label="Quiet until">${hours(R.quietTo)}</select></div>
       ${on ? `<button type="button" class="row" id="rmTest"><span class="rt">Send a test reminder</span><span class="rv lnk">Send</span></button>` : ""}
+      <label class="row"><span class="rt">Language<small>For reminders, and what the microphone listens for</small></span><select class="inl" id="rmLang"><option value="en-GB"${String(store.model.settings.voiceLang || "en-GB").startsWith("fi") ? "" : " selected"}>English</option><option value="fi-FI"${String(store.model.settings.voiceLang || "").startsWith("fi") ? " selected" : ""}>Suomi</option></select></label>
     </div>`;
   const save = patch => store.updateSettings({ reminders: { ...R, ...patch } });
   $$("[data-rm]", el).forEach(x => x.onchange = () => save({ [x.dataset.rm]: x.checked }));
   $$("[data-rmh]", el).forEach(x => x.onchange = () => save({ [x.dataset.rmh]: Number(x.value) }));
-  $("#rmOn", el).onchange = async e => {
+  $("#rmLang", el).onchange = e => { store.updateSettings({ voiceLang: e.target.value }); toast(e.target.value.startsWith("fi") ? "Muistutukset tulevat suomeksi" : "Reminders will come in English"); };
+  const how = $("#rmHow", el); if (how) how.onclick = e => { e.preventDefault(); import("./install.js").then(m => m.openInstall({ reason: "reminders" })); };
+  if ($("#rmOn", el)) $("#rmOn", el).onchange = async e => {
     const want = e.target.checked; e.target.disabled = true;
     try { if (want) { await turnOn(); toast("Reminders are on for this phone"); } else { await turnOff(); toast("Reminders are off for this phone"); } }
     catch (err) { toast(String(err.message || err)); }

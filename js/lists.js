@@ -86,7 +86,7 @@ export function openList(id) { if (curId !== id) showDone = false; curId = id; r
 export function renderList() {
   if (!lroot || !curId) return;
   const l = listOf(curId);
-  if (!l) { lroot.innerHTML = `<header class="vh"><div><a class="back" href="#expenses">${icon("chev", "ic sm flip")} Expenses</a><h1>List not found</h1></div></header><div class="empty">This list was deleted.</div>`; return; }
+  if (!l) { lroot.innerHTML = `<header class="vh"><div><a class="back" href="#home">${icon("chev", "ic sm flip")} Home</a><h1>List not found</h1></div></header><div class="empty">This list was deleted.</div>`; return; }
   const parent = l.parentId ? listOf(l.parentId) : null, its = itemsOf(l.id), todo = its.filter(i => !i.done), done = its.filter(i => i.done), e = est(todo);
   const keepVal = $("#liAdd", lroot) ? $("#liAdd", lroot).value : "", hadFocus = document.activeElement && document.activeElement.id === "liAdd";
   const row = i => `<div class="row item${i.done ? " done" : ""}" data-item="${esc(i.id)}"><button type="button" class="cb" role="checkbox" aria-checked="${i.done}" aria-label="${esc(i.name)} bought">${icon("check", "ic xs")}</button>
@@ -94,7 +94,7 @@ export function renderList() {
     ${l.kind === "room" ? `<span class="pdot ${i.priority}" title="${i.priority}"></span>` : ""}</div>`;
   const sugs = suggestions(l.id).filter(n => !its.some(i => i.name.toLowerCase() === n.toLowerCase())).slice(0, 8);
   lroot.innerHTML = `
-    <header class="vh"><div><a class="back" href="#${parent ? "list/" + encodeURIComponent(parent.id) : "expenses"}">${icon("chev", "ic sm flip")} ${esc(parent ? parent.name : "Expenses")}</a><h1>${esc(l.name)}</h1><div class="sub">${todo.length ? `${todo.length} to buy${e ? ` · about ${eur(e)}` : ""}` : its.length ? "Everything's bought" : "Empty list"}</div></div>
+    <header class="vh"><div><a class="back" href="#${parent ? "list/" + encodeURIComponent(parent.id) : "home"}">${icon("chev", "ic sm flip")} ${esc(parent ? parent.name : "Home")}</a><h1>${esc(l.name)}</h1><div class="sub">${todo.length ? `${todo.length} to buy${e ? ` · about ${eur(e)}` : ""}` : its.length ? "Everything's bought" : "Empty list"}</div></div>
       <div class="hbtns"><button type="button" class="hbtn" data-scan aria-label="Scan a receipt for this list">${icon("cam", "ic")}</button><button type="button" class="hbtn" data-share aria-label="Share this list">${icon("share", "ic")}</button><button type="button" class="hbtn" data-list-settings aria-label="List settings">${icon("more", "ic")}</button></div></header>
     <div class="add-line"><label for="liAdd" class="sr">Add items</label><input id="liAdd" placeholder="Add items: milk, eggs, 2 × yogurt" autocomplete="off" enterkeyhint="done" value="${esc(keepVal)}"><button type="button" class="add-btn" data-add-items aria-label="Add">${icon("plus", "ic sm")}</button></div>
     ${sugs.length ? `<div class="chips sugs" aria-label="Add again">${sugs.map(n => `<button type="button" class="fchip" data-sug="${esc(n)}">+ ${esc(n)}</button>`).join("")}</div>` : ""}
@@ -217,6 +217,8 @@ export function openListSettings(l) {
         <button type="button" class="row" id="lsRooms"><span class="rt">Rooms<small>${roomsOf(l.id).length} rooms on your floor plan</small></span>${icon("chev", "ic sm chev")}</button>
         <button type="button" class="row" id="lsNotes"><span class="rt">Moving-in notes<small>${store.model.settings.notes ? esc(store.model.settings.notes.split("\n")[0].slice(0, 48)) : "Measurements, delivery times…"}</small></span>${icon("chev", "ic sm chev")}</button>
       </div>` : ""}
+      ${!isProj ? `<div class="grp"><label class="row"><span class="rt">Tell me when someone adds to it<small>Through the list's shared link</small></span><input type="checkbox" class="switch" id="lsTell" ${((store.model.settings.reminders || {}).quietLists || []).includes(l.id) ? "" : "checked"}></label></div>
+      <button type="button" class="btn" id="lsRemind">${icon("bell", "ic sm")} Remind me to shop</button>` : ""}
       <p class="msg" id="lsMsg" aria-live="polite"></p>
       ${isHome ? `<button type="button" class="btn danger" id="lsReset">Reset this project</button>` : ""}
       <button type="button" class="btn danger" id="lsDel">${icon("trash", "ic sm")} Delete ${isProj ? "project" : "list"}</button>`;
@@ -224,12 +226,15 @@ export function openListSettings(l) {
       const go = f => () => { closeSheet(); setTimeout(() => import("./more.js").then(m => m[f]()), 260); };
       $("#lsRooms", B).onclick = go("openLists"); $("#lsNotes", B).onclick = go("openNotes"); $("#lsReset", B).onclick = () => { closeSheet(); import("./more.js").then(m => m.doReset()); };
     }
+    const rm = $("#lsRemind", B); if (rm) rm.onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: `Do the shop: ${l.name}`, when: "weekly", weekday: 6, hour: 10, aboutKind: "list", aboutId: l.id })), 260); };
     $("#lsDel", B).onclick = () => { const n = isProj ? projectItems(l.id).length : itemsOf(l.id).length;
       if (!confirm(`Delete "${l.name}"${n ? ` and its ${n} items` : ""}? This can't be undone.`)) return;
-      closeSheet(); const back = l.parentId ? "#list/" + encodeURIComponent(l.parentId) : "#expenses"; store.deleteList(l.id); location.hash = back; toast(`Deleted ${l.name}`); };
+      closeSheet(); const back = l.parentId ? "#list/" + encodeURIComponent(l.parentId) : "#home"; store.deleteList(l.id); location.hash = back; toast(`Deleted ${l.name}`); };
   }, onRight: B => {
     const name = $("#lsName", B).value.trim(); if (!name) { $("#lsMsg", B).dataset.state = "error"; $("#lsMsg", B).textContent = "Give it a name."; return; }
     const patch = { name }; if (!isProj) patch.categoryId = $("#lsCat", B).value || null;
+    const tell = $("#lsTell", B);
+    if (tell) { const R = store.model.settings.reminders || {}, q = new Set(R.quietLists || []); if (tell.checked) q.delete(l.id); else q.add(l.id); if (q.size !== (R.quietLists || []).length) store.updateSettings({ reminders: { ...R, quietLists: [...q] } }); }
     if (isProj) { const b = parseMoney($("#lsBudget", B).value), x = parseMoney($("#lsExtra", B).value); if (Number.isNaN(b) || Number.isNaN(x)) { $("#lsMsg", B).dataset.state = "error"; $("#lsMsg", B).textContent = "Type amounts as numbers, like 900."; return; } patch.budget = b; patch.extraSpend = x || 0; }
     if (isHome) { const mv = $("#lsMoved", B).value; if (mv !== (store.model.settings.movedIn || "")) store.updateSettings({ movedIn: mv }); }
     store.updateList(l.id, patch); closeSheet(); toast("Saved");

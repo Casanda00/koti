@@ -1,7 +1,7 @@
-// Koti appearance: colours (Koti green or Clay orange/peach) and light/dark. Default: Koti green, light.
+// Koti appearance: colours (Lake blue or Clay orange/peach) and light/dark. Default: Koti green, light.
 // Loaded as a plain script in <head> so the right colours show before the page paints.
 (function () {
-  var BG = { koti: ["#eef1ee", "#121715"], clay: ["#faf1e8", "#1c1512"] };
+  var BG = { koti: ["#F7F8F6", "#111216"], clay: ["#faf1e8", "#1c1512"] };
   function get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
   function apply() {
     var palette = get("koti.palette", "koti"), mode = get("koti.mode", "light"), r = document.documentElement;

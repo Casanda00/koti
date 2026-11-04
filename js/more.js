@@ -6,8 +6,7 @@ import { openCategories, openReceiptsList, openStartBalance } from "./money.js";
 import { startPoint } from "./ledger.js";
 import { APP_VERSION } from "./version.js";
 
-let root = null, installPrompt = null;
-window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; });
+let root = null;
 
 const chev = icon("chev", "ic sm chev");
 const days = (sel, extra = "") => extra + Array.from({ length: 28 }, (_, k) => k + 1).map(d => `<option value="${d}"${String(sel) === String(d) ? " selected" : ""}>${ord(d)}</option>`).join("");
@@ -15,9 +14,13 @@ const ord = d => d + (d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12
 
 export function mountMore(el) { root = el; renderMore(); }
 
-let lastReminders = "";   // shown straight away on redraw, so the page keeps its height
+/* One line for You: how many reminders of your own, and what comes next. */
+function remSummary() {
+  const n = store.model.reminders.filter(r => r.active).length;
+  return n ? `${n} of your own, plus Koti's` : "Bills, payday, budgets and your own";
+}
 const COLOURS = ["#16794f", "#b55334", "#c7841a", "#3a6ea5", "#7a4f9e", "#23302b"];
-const PALETTES = [["koti", "Koti green", "#16794f", "#eef1ee"], ["clay", "Clay", "#b55334", "#faf1e8"]];
+const PALETTES = [["koti", "Lake", "#2442D6", "#F7F8F6"], ["clay", "Clay", "#b55334", "#faf1e8"]];
 export function renderMore() {
   if (!root) return;
   if (root.contains(document.activeElement) && document.activeElement.matches("input, select, textarea")) return; // don't disturb typing
@@ -31,7 +34,7 @@ export function renderMore() {
 
   const keepY = window.scrollY;   // redraws must not move the page
   root.innerHTML = `
-  <header class="vh"><div><h1>Settings</h1></div></header>
+  <header class="vh"><div><a class="back" href="#now">${icon("chev", "ic sm flip")} Now</a><h1>You</h1></div></header>
   ${profile}
 
   <div class="gh"><h2>Money</h2></div>
@@ -39,7 +42,7 @@ export function renderMore() {
     <button type="button" class="row" data-open="start"><span class="ico g">${icon("wallet")}</span><span class="rt">Starting balance<small>${st.set ? `${eur(st.amount)} at the start of ${esc(new Date(st.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }))} · carried each month` : "Not set: counting from €0"}</small></span>${chev}</button>
     <label class="row"><span class="ico w">${icon("clock")}</span><span class="rt">Budget month starts</span><select class="inl" data-set="monthStart">${days(S.monthStart)}</select>${chev}</label>
   </div>
-  <p class="note">Categories, budgets and carry over are in Income → Budgets.</p>
+  <p class="note">Categories, budgets and carry over are in Month → Budgets.</p>
 
   <div class="gh"><h2>Scanning</h2></div>
   <div class="grp">
@@ -49,7 +52,8 @@ export function renderMore() {
     <div class="row"><span class="rt">AI scans today</span><span class="rv num" id="moAiUse">–</span></div>
   </div>
 
-  <div id="moReminders">${lastReminders}</div>
+  <div class="gh"><h2>Reminders</h2></div>
+  <div class="grp"><a class="row" href="#reminders"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders<small>${remSummary()}</small></span>${chev}</a></div>
 
   <div class="gh"><h2>Appearance</h2></div>
   <div class="swatches" role="radiogroup" aria-label="Colours">${PALETTES.map(([v, t, a, b]) => `<button type="button" class="swt" role="radio" aria-checked="${look.palette === v}" data-palette="${v}"><span class="sw2" style="background:linear-gradient(135deg,${a} 50%,${b} 50%)"></span><b>${t}</b></button>`).join("")}</div>
@@ -81,7 +85,6 @@ export function renderMore() {
   $$("[data-mode]", root).forEach(b => b.onclick = () => setLook({ mode: b.dataset.mode }));
   aiUse().then(t => { const e = $("#moAiUse", root); if (e && t) e.textContent = t; });
   if (keepY && !root.hidden) window.scrollTo(0, keepY);
-  import("./push.js").then(m => { const r = $("#moReminders", root); if (r) m.renderReminders(r).then(() => { lastReminders = r.innerHTML; }); }).catch(() => {});
 }
 /* Colours and light/dark: applied on this device right away, and synced so your other devices follow. */
 function setLook(patch) {
@@ -255,14 +258,4 @@ export function doReset() {
 }
 
 /* ---------- Install ---------- */
-function openInstall() {
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent), standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-  openSheet({ title: "Add to home screen", left: "Close", body: B => {
-    if (standalone) { B.innerHTML = `<p class="msg">Koti is already installed on this device.</p>`; return; }
-    if (installPrompt) { B.innerHTML = `<p class="msg">Install Koti so it opens full screen from its own icon and works without signal.</p><button type="button" class="btn primary" id="inGo">Install Koti</button>`;
-      $("#inGo", B).onclick = async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; closeSheet(); }; return; }
-    B.innerHTML = ios
-      ? `<ol class="steps"><li>Open Koti in <b>Safari</b>.</li><li>Tap the <b>Share</b> button at the bottom of the screen.</li><li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol><p class="note">Sign in once inside the installed app: it keeps its own sign-in separate from Safari.</p>`
-      : `<ol class="steps"><li>Open Koti in <b>Chrome</b>.</li><li>Tap the <b>⋮</b> menu at the top right.</li><li>Tap <b>Add to Home screen</b> or <b>Install app</b>.</li></ol>`;
-  } });
-}
+function openInstall() { import("./install.js").then(m => m.openInstall()); }   // one place decides how this device installs

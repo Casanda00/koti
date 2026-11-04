@@ -3,13 +3,14 @@
 import { store, todayISO, INCOME_FREQS } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
 import { periodFor, shift, periodLabel, navHTML, moneySwitch } from "./money.js";
+import { payDateFor, LAST_WORKING_DAY } from "./paydays.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const FREQ = { monthly: "Monthly", varies: "Varies each month", once: "One-off" };
 export const incId = (sid, due) => `inc:${sid}:${due}`;
 const receivedOf = (sid, due) => store.model.transactions.find(t => t.id === incId(sid, due)) || null;
-const payDate = (src, y, m) => { const last = new Date(y, m + 1, 0).getDate(); return new Date(y, m, src.payDay === 0 ? last : Math.min(src.payDay, last)); };
-const dayText = src => src.frequency === "once" ? (src.expectedDate ? fmtDay(parseDay(src.expectedDate)) : "No date") : src.payDay === 0 ? "last day" : `${src.payDay}${["th", "st", "nd", "rd"][(src.payDay % 10 < 4 && Math.floor(src.payDay / 10) !== 1) ? src.payDay % 10 : 0]}`;
+const payDate = (src, y, m) => payDateFor(src.payDay, y, m);
+const dayText = src => src.frequency === "once" ? (src.expectedDate ? fmtDay(parseDay(src.expectedDate)) : "No date") : src.payDay === LAST_WORKING_DAY ? "last working day" : src.payDay === 0 ? "last day" : `${src.payDay}${["th", "st", "nd", "rd"][(src.payDay % 10 < 4 && Math.floor(src.payDay / 10) !== 1) ? src.payDay % 10 : 0]}`;
 
 /* ---------- Occurrences and totals ---------- */
 export function incomeOccurrences(p) {
@@ -30,9 +31,9 @@ export function incomeTotals(p) {
 export function nextPay(today = new Date()) {
   const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const main = store.model.income.filter(s => s.active && s.frequency !== "once").sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))[0];
-  const pd = main ? (main.payDay === 0 ? "last" : main.payDay) : store.model.settings.payday;
-  if (!pd) return null;
-  const inMonth = (y, m) => pd === "last" ? new Date(y, m + 1, 0) : new Date(y, m, Math.min(Number(pd), new Date(y, m + 1, 0).getDate()));
+  const sp = store.model.settings.payday, pd = main ? main.payDay : sp === "last" ? 0 : sp ? Number(sp) : null;
+  if (pd == null || Number.isNaN(pd)) return null;
+  const inMonth = (y, m) => payDateFor(pd, y, m);
   let d = inMonth(t0.getFullYear(), t0.getMonth()); if (d < t0) d = inMonth(t0.getFullYear(), t0.getMonth() + 1);
   return { date: d, days: Math.round((d - t0) / 864e5), source: main || null };
 }
@@ -52,7 +53,7 @@ let root = null, view = null;
 export function mountIncome(elm) {
   root = elm; view = periodFor(new Date());
   root.innerHTML = `
-  <header class="vh"><div><h1>Income</h1><div class="sub" id="inSub"></div></div><a class="sync" href="#settings" data-sync><span class="dot"></span><span class="t"></span></a></header>
+  <header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} Month</a><h1>Income</h1><div class="sub" id="inSub"></div></div><a class="sync" href="#settings" data-sync><span class="dot"></span><span class="t"></span></a></header>
   ${moneySwitch("income")}
   ${navHTML("ishift")}
   <div class="pl-top">
@@ -155,7 +156,7 @@ export function openSource(src = null, preset = {}) {
       <div class="field"><span class="flabel">How often</span><div class="seg" id="soFreq">${INCOME_FREQS.map(f => `<button type="button" data-f="${f}" aria-pressed="${f === freq}">${{ monthly: "Monthly", varies: "Varies", once: "One-off" }[f]}</button>`).join("")}</div></div>
       <div class="field"><label for="soAmt" id="soAmtLbl">Amount</label><input class="inp" id="soAmt" inputmode="decimal" placeholder="€0" value="${moneyField(x.amount)}" autocomplete="off"></div>
       <div class="grp">
-        <label class="row" id="soDayRow"><span class="rt">Paid on</span><select class="inl" id="soDay"><option value="0"${x.payDay === 0 ? " selected" : ""}>Last day of the month</option>${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${x.payDay === k + 1 ? " selected" : ""}>Day ${k + 1}</option>`).join("")}</select></label>
+        <label class="row" id="soDayRow"><span class="rt">Paid on</span><select class="inl" id="soDay"><option value="-1"${x.payDay === -1 ? " selected" : ""}>Last working day of the month</option><option value="0"${x.payDay === 0 ? " selected" : ""}>Last day of the month</option>${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${x.payDay === k + 1 ? " selected" : ""}>Day ${k + 1}</option>`).join("")}</select></label>
         <label class="row" id="soDateRow"><span class="rt">Expected on</span><input class="inl" id="soDate" type="date" value="${esc(x.expectedDate || "")}"></label>
         <label class="row" id="soEndRow"><span class="rt">Ends on<small>Optional: a contract end. Not planned after this.</small></span><input class="inl" id="soEnd" type="date" value="${esc(x.endDate || "")}"></label>
         <label class="row"><span class="rt">From</span><input class="inl" id="soPayer" value="${esc(x.payer || "")}" placeholder="Employer, Kela…" maxlength="120" autocomplete="off" style="max-width:60%"></label>
