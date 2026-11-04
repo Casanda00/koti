@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Shared list · Koti</title>
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#eef1ee">
+<meta name="theme-color" content="#F7F8F6">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 <style>
   body{min-height:100%}
@@ -24,11 +24,17 @@
   .foot{margin-top:28px;text-align:center;font-size:12px;color:var(--muted)}
   .foot a{color:var(--spruce);font-weight:600}
   .gone{text-align:center;padding:60px 10px;color:var(--ink-2)}
+  .own{margin-top:22px;background:#2442D6;color:#fff;border-radius:24px;padding:18px;display:grid;gap:12px}
+  .own-h{display:flex;gap:14px;align-items:center}.own h2{font:800 28px/1 var(--display);font-stretch:62%;margin:0}.own p{margin:2px 0 0;font-size:14px;opacity:.9}
+  .own-i{width:48px;height:48px;border-radius:14px;background:#fff;color:#2442D6;display:grid;place-items:center;flex:none}
+  .own-b{display:flex;gap:8px}.own-go{flex:1;display:grid;place-items:center;min-height:48px;border-radius:999px;background:#fff;color:#15161A;font-weight:700}
+  .own-later{min-height:48px;padding:0 16px;color:#fff;font-weight:600}
 </style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17l9-10"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
 </svg>
 <main class="sh" id="sh" aria-live="polite"><p class="sub">Loading the list…</p></main>

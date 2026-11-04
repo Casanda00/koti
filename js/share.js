@@ -19,6 +19,13 @@
   }
   function gone() { clearInterval(timer); el.innerHTML = `<div class="gone"><h1 style="font-size:24px">This list isn't shared anymore</h1><p>Ask for a new link.</p></div>`; }
 
+  // People who open a shared list are the likeliest to want their own Koti. Hidden for a week by "Not now".
+  function ownCard() {
+    let later = 0; try { later = Number(localStorage.getItem("koti.shareOwnLater")) || 0; } catch {}
+    if (Date.now() < later) return `<p class="foot">Made with <a href="./?install=1">Koti</a></p>`;
+    return `<section class="own" aria-labelledby="ownT"><div class="own-h"><span class="own-i" aria-hidden="true"><svg class="ic"><use href="#i-home"/></svg></span><div><h2 id="ownT">Get your own Koti</h2><p>Your money and your lists, on your Home Screen. Free.</p></div></div>
+      <div class="own-b"><a class="own-go" href="./?install=1">Add Koti</a><button type="button" class="own-later" id="ownLater">Not now</button></div></section>`;
+  }
   function render() {
     const todo = data.items.filter(i => !i.done), done = data.items.filter(i => i.done);
     const keep = document.getElementById("shAdd"), val = keep ? keep.value : "", focused = document.activeElement === keep;
@@ -30,7 +37,8 @@
       <div class="add-line" style="margin-top:14px"><label for="shAdd" class="sr">Add an item</label><input id="shAdd" placeholder="Add an item" autocomplete="off" enterkeyhint="done" maxlength="120" value="${esc(val)}"><button type="button" class="add-btn" id="shGo" aria-label="Add"><svg class="ic sm"><use href="#i-plus"/></svg></button></div>
       ${todo.length ? `<div class="gh"><h2>To buy</h2><span class="num">${todo.length}</span></div><div class="grp">${todo.map(row).join("")}</div>` : `<div class="empty">${done.length ? "Everything's bought. Nice." : "Nothing on the list yet."}</div>`}
       ${done.length ? `<div class="gh"><button type="button" class="link" id="shDone" aria-expanded="${showDone}">Bought · ${done.length} ${showDone ? "▾" : "▸"}</button></div>${showDone ? `<div class="grp">${done.map(row).join("")}</div>` : ""}` : ""}
-      <p class="foot">Tick things off as you shop; the list updates for everyone.<br>Made with <a href="./">Koti</a></p>`;
+      <p class="foot">Tick things off as you shop; the list updates for everyone.</p>
+      ${ownCard()}`;
     if (focused) { const i = document.getElementById("shAdd"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   }
 
@@ -44,6 +52,7 @@
       return;
     }
     if (e.target.closest("#shDone")) { showDone = !showDone; render(); return; }
+    if (e.target.closest("#ownLater")) { try { localStorage.setItem("koti.shareOwnLater", String(Date.now() + 7 * 864e5)); } catch {} render(); return; }
     if (e.target.closest("#shGo")) add();
   });
   el.addEventListener("keydown", e => { if (e.target.id === "shAdd" && e.key === "Enter") { e.preventDefault(); add(); } });

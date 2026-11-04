@@ -31,6 +31,7 @@ Three places, named at the top: **Now** (what's yours to spend until payday, on 
 | `js/place.js` | Home: the floor plan and your lists |
 | `js/composer.js` | The add box: reads "Lidl 23,40" and confirms before saving; adds to a list on Home |
 | `js/onboarding.js` | The three first-time questions |
+| `js/install.js` | Getting Koti onto the Home Screen: one tap on Android and desktop, a guide on iPhone, open-in-browser help inside Instagram or WhatsApp, the strip on Now |
 | `js/paydays.js` | Pay dates, including the last working day (weekdays, not Finnish public holidays) |
 | `js/lists.js` | An opened list, sending a list, new list and list settings |
 | `js/income.js` | Income sources, expected vs received, paydays |

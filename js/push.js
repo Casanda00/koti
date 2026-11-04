@@ -58,7 +58,7 @@ export async function renderReminders(el) {
   const hours = (sel) => Array.from({ length: 24 }, (_, h) => `<option value="${h}"${Number(sel) === h ? " selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("");
   el.innerHTML = `<div class="mhead"><h2>From Koti</h2></div>
     <div class="grp">
-      <label class="row"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders on this phone<small>${on ? "On" : why || "Off"}</small></span><input type="checkbox" class="switch" id="rmOn" ${on ? "checked" : ""} ${why && !on ? "disabled" : ""}></label>
+      <label class="row"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders on this phone<small>${on ? "On" : why || "Off"}</small></span>${standaloneIOS() ? `<button type="button" class="pill" id="rmHow">Show me how</button>` : `<input type="checkbox" class="switch" id="rmOn" ${on ? "checked" : ""} ${why && !on ? "disabled" : ""}>`}</label>
       ${TYPES.map(([k, t, sub]) => `<label class="row"><span class="rt">${t}<small>${sub}${k === "bills" || k === "payday" || k === "overdue" ? ` · ${String(R.billHour).padStart(2, "0")}:00` : ""}</small></span><input type="checkbox" class="switch" data-rm="${k}" ${R[k] ? "checked" : ""}></label>`).join("")}
       <label class="row"><span class="rt">Morning reminders at</span><select class="inl" data-rmh="billHour">${hours(R.billHour)}</select></label>
       <div class="row"><span class="rt">Quiet hours<small>No reminders in between</small></span><select class="inl" data-rmh="quietFrom" aria-label="Quiet from">${hours(R.quietFrom)}</select><span class="muted">–</span><select class="inl" data-rmh="quietTo" aria-label="Quiet until">${hours(R.quietTo)}</select></div>
@@ -69,7 +69,8 @@ export async function renderReminders(el) {
   $$("[data-rm]", el).forEach(x => x.onchange = () => save({ [x.dataset.rm]: x.checked }));
   $$("[data-rmh]", el).forEach(x => x.onchange = () => save({ [x.dataset.rmh]: Number(x.value) }));
   $("#rmLang", el).onchange = e => { store.updateSettings({ voiceLang: e.target.value }); toast(e.target.value.startsWith("fi") ? "Muistutukset tulevat suomeksi" : "Reminders will come in English"); };
-  $("#rmOn", el).onchange = async e => {
+  const how = $("#rmHow", el); if (how) how.onclick = e => { e.preventDefault(); import("./install.js").then(m => m.openInstall({ reason: "reminders" })); };
+  if ($("#rmOn", el)) $("#rmOn", el).onchange = async e => {
     const want = e.target.checked; e.target.disabled = true;
     try { if (want) { await turnOn(); toast("Reminders are on for this phone"); } else { await turnOff(); toast("Reminders are off for this phone"); } }
     catch (err) { toast(String(err.message || err)); }

@@ -6,8 +6,7 @@ import { openCategories, openReceiptsList, openStartBalance } from "./money.js";
 import { startPoint } from "./ledger.js";
 import { APP_VERSION } from "./version.js";
 
-let root = null, installPrompt = null;
-window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; });
+let root = null;
 
 const chev = icon("chev", "ic sm chev");
 const days = (sel, extra = "") => extra + Array.from({ length: 28 }, (_, k) => k + 1).map(d => `<option value="${d}"${String(sel) === String(d) ? " selected" : ""}>${ord(d)}</option>`).join("");
@@ -259,14 +258,4 @@ export function doReset() {
 }
 
 /* ---------- Install ---------- */
-function openInstall() {
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent), standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-  openSheet({ title: "Add to home screen", left: "Close", body: B => {
-    if (standalone) { B.innerHTML = `<p class="msg">Koti is already installed on this device.</p>`; return; }
-    if (installPrompt) { B.innerHTML = `<p class="msg">Install Koti so it opens full screen from its own icon and works without signal.</p><button type="button" class="btn primary" id="inGo">Install Koti</button>`;
-      $("#inGo", B).onclick = async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; closeSheet(); }; return; }
-    B.innerHTML = ios
-      ? `<ol class="steps"><li>Open Koti in <b>Safari</b>.</li><li>Tap the <b>Share</b> button at the bottom of the screen.</li><li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol><p class="note">Sign in once inside the installed app: it keeps its own sign-in separate from Safari.</p>`
-      : `<ol class="steps"><li>Open Koti in <b>Chrome</b>.</li><li>Tap the <b>⋮</b> menu at the top right.</li><li>Tap <b>Add to Home screen</b> or <b>Install app</b>.</li></ol>`;
-  } });
-}
+function openInstall() { import("./install.js").then(m => m.openInstall()); }   // one place decides how this device installs

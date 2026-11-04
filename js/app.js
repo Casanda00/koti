@@ -20,6 +20,7 @@ import { mountPlace, renderPlace } from "./place.js";
 import { mountReminders, renderReminders } from "./reminders.js";
 import { initComposer, paintComposer } from "./composer.js";
 import { shouldOnboard, openOnboarding, dismissIfAnswered } from "./onboarding.js";
+import { startInstall, openInstall, snoozeStrip } from "./install.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills", more: "settings", expenses: "home" };   // links from earlier versions
 const TAB = { now: "now", month: "month", budgets: "month", income: "month", spending: "month", bills: "month", home: "home", list: "home", project: "home", settings: "settings", reminders: "settings" };
@@ -93,14 +94,18 @@ function init() {
 
   document.addEventListener("click", e => {
     if (e.target.closest("[data-scan]")) { e.preventDefault(); openScan(); return; }
+    if (e.target.closest("[data-install]")) { e.preventDefault(); openInstall(); return; }
+    if (e.target.closest("[data-install-later]")) { e.preventDefault(); snoozeStrip(); renderCurrent(); return; }
   });
   // A reminder was answered from its notification: fetch the change so Now and Month show it.
   if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "koti-refresh") refresh(); });
+  document.addEventListener("koti-install-ready", () => { if (current === "now") renderCurrent(); });
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "project") { renderPlans(); renderCharts(); } else renderCurrent(); }, 120); });
   initComposer(() => current);
   route();
   if (shouldOnboard() && !new URLSearchParams(location.search).get("add")) openOnboarding();
+  startInstall({ ready: () => !document.body.classList.contains("onb-open") });   // the Home Screen sheet waits for the first-time questions
   initPullToRefresh({ beforeRefresh: () => checkForUpdate(), onRefreshed: () => { runAutopay(); uploadPending(); renderCurrent(); } });
   initUpdates();
   const q = new URLSearchParams(location.search);

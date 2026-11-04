@@ -6,6 +6,7 @@ import { periodFor, totals, catName, openStartBalance, openCheckBank, setSpendin
 import { monthLedger, startPoint, effectiveBudgets, awaitingIncome } from "./ledger.js";
 import { occurrences, markPaid, setSkipped } from "./plan.js";
 import { nextPay, receive } from "./income.js";
+import { wantsStrip, stripHTML } from "./install.js";
 
 const longDay = d => d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 const money = v => (v < 0 ? "−" : "") + eur0(Math.abs(v));
@@ -88,7 +89,7 @@ export function renderNow() {
     .forEach(({ c, b, s }) => lines.push(`<span class="dot ${s > b ? "over" : "low"}" aria-hidden="true"></span><span><button type="button" class="tlink" data-catgo="${esc(c.id)}">${esc(c.name)}</button> ${s > b ? `is ${eur0(s - b)} over.` : `is nearly used up. ${eur0(b - s)} to go.`}</span>`));
   (L.expected || []).slice(0, 1).forEach(o => lines.push(`${esc(o.src.name)}, ${eur0(o.src.amount)}, is on its way. It counts once it lands.`));
 
-  root.innerHTML = `<section class="now-top">
+  root.innerHTML = `${wantsStrip() ? stripHTML() : ""}<section class="now-top">
       <p class="now-k">${L.left < 0 ? "Over until payday" : "Yours to spend until payday"}</p>
       <div class="now-big num" style="--n:${money(L.left).length}">${money(L.left)}</div>
       <p class="now-s">${esc(sub)}</p>
