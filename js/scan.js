@@ -1,27 +1,30 @@
-// Scan or upload a receipt or a bill. You choose where it goes first (or let Koti decide),
-// then check what Koti read before saving.
-//   Everyday spending: each line goes to a category.
-//   A shopping list:   lines tick off what was on the list; other lines go to a category.
-//   A project:         lines tick off project items or become new items in a room; others go to a category.
-//   A bill:            amount, due date, reference and account; matched to a bill you have, or a new one.
+// Scan or upload a receipt or a bill. One step: take the photo. Koti reads every line and sorts it, then you check it.
+//   Sorted by Koti (the usual): each line goes where it belongs. Food ticks off your shopping list or goes to its
+//     category; a lamp or curtains become a bought item in a home project's room; the rest goes to a category.
+//     A bill goes to Bills.
+//   Opened from a list, a project or Bills: everything is read for that place first; the title changes it.
+// Lines are shown in groups (one per category or project), and a tap on a line moves it. What you choose is
+// remembered: it's sent to the reader as an example next time, and wins over what the reader suggests.
 // Money is counted once: from the receipt or the bill. Items a receipt ticks don't add their price again.
-import { store, todayISO, newId, listCategory, listOf, topLists, roomsOf, itemsOf, projectItems, projectSpent, projectOf } from "./data.js";
+import { store, todayISO, newId, listCategory, listOf, topLists, roomsOf, itemsOf, projectSpent, projectOf, BILLS_CAT } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { prepareFile, readReceipt, attach } from "./receipts.js";
-import { catName } from "./money.js";
+import { catName, periodFor, totals } from "./money.js";
+import { effectiveBudgets } from "./ledger.js";
 import { alignDue, occurrenceOf, markPaid, runAutopay, bindCopy, FREQ_LABEL } from "./plan.js";
 
-const cats = () => store.model.categories.slice().sort((a, b) => a.position - b.position);
+const cats = () => store.model.categories.filter(c => c.id !== BILLS_CAT).sort((a, b) => a.position - b.position);
 const keepDefault = kind => (kind === "bill" ? !!store.model.settings.keepBills : !!store.model.settings.keepReceipts);   // off unless switched on: storage costs
-const destName = d => d.kind === "auto" ? "Let Koti decide" : d.kind === "spending" ? "Everyday spending" : d.kind === "bill" ? "Bill" : (listOf(d.id) || {}).name || "List";
+const destName = d => d.kind === "mix" ? "Sorted by Koti" : d.kind === "spending" ? "Everyday spending" : d.kind === "bill" ? "Bill" : (listOf(d.id) || {}).name || "List";
 const same = (a, b) => a && b && a.kind === b.kind && (a.id || null) === (b.id || null);
 const money2 = n => String((Number(n) || 0).toFixed(2)).replace(".", ",");
 const low = s => String(s || "").toLowerCase();
 const FOOD = /grocer|eating|food|ruoka|lunch|dinner|restaurant|caf/i;
+const thumb = S => S.file && S.file.type === "application/pdf" ? `<span class="pdf">PDF</span>` : S.file ? `<img alt="" src="${URL.createObjectURL(S.file.blob)}">` : "";
 
 function destinations() {
   const out = [
-    { kind: "auto", icon: "spark", name: "Let Koti decide", sub: "Koti reads it, then suggests where it goes" },
+    { kind: "mix", icon: "spark", name: "Sorted by Koti", sub: "Each line goes where it belongs" },
     { kind: "spending", icon: "money", name: "Everyday spending", sub: "Each line goes to a category" },
   ];
   topLists().forEach(l => {
@@ -31,7 +34,7 @@ function destinations() {
   out.push({ kind: "bill", icon: "bill", name: "A bill", sub: "Amount, due date, reference and account" });
   return out;
 }
-/* Where you are decides the first choice: a list or project you're looking at, the bills screen, otherwise Let Koti decide. */
+/* Where you are decides where it goes first: a list or project you're looking at, the bills screen, otherwise Koti sorts it. */
 function contextDest() {
   const h = decodeURIComponent(location.hash.slice(1));
   if (h === "bills") return { kind: "bill" };
@@ -39,46 +42,38 @@ function contextDest() {
   return null;
 }
 
-/* ---------- Step 1: where should this go? ---------- */
+/* ---------- Step 1: the photo ---------- */
 export function openScan({ dest = null } = {}) {
   const pref = store.model.settings.scanDefault;
-  const S = { dest: dest || contextDest() || { kind: ["spending", "bill"].includes(pref) ? pref : "auto" }, keep: null, keepTouched: false, file: null, r: null, suggestion: null, lines: null, linesFor: null, edits: {} };
+  const S = { dest: dest || contextDest() || { kind: ["spending", "bill"].includes(pref) ? pref : "mix" }, keep: null, keepTouched: false, file: null, r: null, lines: null, linesFor: null, edits: {} };
   S.keep = keepDefault(S.dest.kind);
-  pickSheet(S, false);
+  const d = S.dest, where = d.kind === "bill" ? "a bill" : d.kind === "list" || d.kind === "project" ? esc(destName(d)) : null;
+  openSheet({ title: "Scan", left: "Close", body: B => {
+    B.innerHTML = `<h2 class="sc-h">${d.kind === "bill" ? "Take a photo of the bill" : "Take a photo of a receipt or a bill"}</h2>
+      <p class="sc-p">${d.kind === "bill" ? "Koti reads the amount, the due date, the reference and the account. You check it before it's saved." : where ? `Koti reads every line for ${where}: what's on it gets ticked off. You check it before anything is saved.` : "Koti reads every line and sorts it for you: the milk to groceries, the lamp to your home project, a bill to Bills. You check it before anything is saved."}</p>
+      <div id="scState"><div class="sc-frame" aria-hidden="true">${icon("cam", "ic")}<span>Flat, in good light, the whole ${d.kind === "bill" ? "page" : "receipt"}</span></div></div>
+      <div class="scan-btns">
+        <label class="btn primary sc-go" for="scCam">${icon("cam", "ic sm")} Take photo</label><input type="file" id="scCam" accept="image/*" capture="environment" class="sr">
+        <label class="btn sc-up" for="scFile">${icon("up", "ic sm")} Upload a photo or PDF</label><input type="file" id="scFile" accept="image/*,application/pdf" class="sr">
+      </div>
+      <label class="sc-keep"><span id="scKeepLbl">Keep the photo with it<small id="scKeepSub"></small></span><input type="checkbox" class="switch" id="scKeep" aria-labelledby="scKeepLbl"></label>
+      <p class="msg" id="scMsg" aria-live="polite"></p>`;
+    const k = $("#scKeep", B), paintKeep = () => { k.checked = S.keep; $("#scKeepSub", B).textContent = S.keep ? "Saved privately, only you can see it" : "Only used for reading. Not saved."; };
+    paintKeep(); k.onchange = () => { S.keep = k.checked; S.keepTouched = true; paintKeep(); };
+    const onFile = e => { const f = e.target.files[0]; e.target.value = ""; if (f) run(S, f, B); };
+    ["#scCam", "#scFile"].forEach(id => $(id, B).addEventListener("change", onFile));
+  } });
 }
 
-function pickSheet(S, after) {
-  const opts = destinations().filter(d => !(after && d.kind === "auto"));
-  if (after && S.dest.kind === "auto") S.dest = { kind: "spending" };
-  openSheet({
-    title: after ? "Where should this go?" : "Scan or upload", left: after ? "Cancel" : "Close", right: after ? "Next" : null,
-    body: B => {
-      const sug = after && S.suggestion;
-      B.innerHTML = `
-        ${sug ? `<div class="suggest">${icon("spark", "ic")}<div><b>Koti suggests: ${esc(destName(sug.dest))}</b><small>${esc(sug.reason)}</small></div></div>` : after ? "" : `<h3 class="lead">Where should this go?</h3>`}
-        <div class="grp dests" role="radiogroup" aria-label="Where should this go?">${opts.map(d => `<button type="button" class="row dest" role="radio" data-k="${d.kind}" data-id="${esc(d.id || "")}" aria-checked="${same(d, S.dest)}">
-          <span class="ico ${d.kind === "bill" ? "r" : d.kind === "project" ? "a" : "g"}">${icon(d.icon)}</span><span class="rt"><span>${esc(d.name)}${sug && same(d, sug.dest) ? ` <em class="tag">Suggested</em>` : ""}</span><small>${esc(d.sub)}</small></span><span class="radio" aria-hidden="true"></span></button>`).join("")}</div>
-        ${after ? `<p class="note">You can change this on the next screen too: tap its title.</p>` : `
-        <div class="grp"><label class="row"><span class="rt" id="scKeepLbl">Keep photo<small id="scKeepSub"></small></span><input type="checkbox" class="switch" id="scKeep" aria-labelledby="scKeepLbl"></label></div>
-        <div class="scan-btns">
-          <label class="btn primary" for="scCam">${icon("cam", "ic sm")} Take photo</label><input type="file" id="scCam" accept="image/*" capture="environment" class="sr">
-          <label class="btn" for="scFile">${icon("up", "ic sm")} Upload a photo or PDF</label><input type="file" id="scFile" accept="image/*,application/pdf" class="sr">
-        </div>
-        <div id="scState"></div>`}
-        <p class="msg" id="scMsg" aria-live="polite"></p>`;
-      const paintKeep = () => { const k = $("#scKeep", B); if (!k) return; k.checked = S.keep; $("#scKeepSub", B).textContent = S.keep ? (S.dest.kind === "bill" ? "Saved privately with the bill" : "Saved privately with the expense") : "Only used for reading. Not saved."; };
-      paintKeep();
-      $(".dests", B).addEventListener("click", e => { const b = e.target.closest(".dest"); if (!b) return;
-        S.dest = { kind: b.dataset.k, id: b.dataset.id || undefined };
-        $$(".dest", B).forEach(x => x.setAttribute("aria-checked", x === b));
-        if (!S.keepTouched) S.keep = keepDefault(S.dest.kind);
-        paintKeep(); });
-      const k = $("#scKeep", B); if (k) k.onchange = () => { S.keep = k.checked; S.keepTouched = true; paintKeep(); };
-      const onFile = e => { const f = e.target.files[0]; e.target.value = ""; if (f) run(S, f, B); };
-      ["#scCam", "#scFile"].forEach(id => { const i = $(id, B); if (i) i.addEventListener("change", onFile); });
-    },
-    onRight: () => review(S),
-  });
+/* Changing where it goes, after reading. */
+function pickSheet(S) {
+  openSheet({ title: "Where should this go?", left: "Back", body: B => {
+    B.innerHTML = `<div class="grp dests" role="radiogroup" aria-label="Where should this go?">${destinations().map(d => `<button type="button" class="row dest" role="radio" data-k="${d.kind}" data-id="${esc(d.id || "")}" aria-checked="${same(d, S.dest)}">
+        <span class="ico ${d.kind === "bill" ? "r" : d.kind === "project" ? "a" : "g"}">${icon(d.icon)}</span><span class="rt"><span>${esc(d.name)}</span><small>${esc(d.sub)}</small></span><span class="radio" aria-hidden="true"></span></button>`).join("")}</div>`;
+    $(".dests", B).addEventListener("click", e => { const b = e.target.closest(".dest"); if (!b) return;
+      S.dest = { kind: b.dataset.k, id: b.dataset.id || undefined }; if (!S.keepTouched) S.keep = keepDefault(S.dest.kind); review(S); });
+  }, onClose: null });
+  const back = $("#sheet [data-close]"); if (back) back.onclick = e => { e.stopPropagation(); review(S); };
 }
 
 async function run(S, file, B) {
@@ -88,31 +83,23 @@ async function run(S, file, B) {
     st.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="scThumb"></div><div style="flex:1"><b id="scLbl">Preparing…</b><div class="meter" style="margin-top:8px"><i id="scBar" style="width:4%"></i></div></div></div>`;
     $$("input[type=file]", B).forEach(i => i.disabled = true);
     S.file = await prepareFile(file);
-    $("#scThumb", st).innerHTML = S.file.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(S.file.blob)}">`;
-    const hint = S.dest.kind === "bill" ? "bill" : S.dest.kind === "auto" ? null : "receipt";
+    $("#scThumb", st).innerHTML = thumb(S);
+    const hint = S.dest.kind === "bill" ? "bill" : S.dest.kind === "mix" ? null : "receipt";
     S.r = await readReceipt(S.file, (p, label) => { const l = $("#scLbl", st), b = $("#scBar", st); if (l) l.textContent = label; if (b) b.style.width = Math.round(p * 100) + "%"; }, hint);
     S.lines = null;
-    if (S.dest.kind === "auto") {
-      S.suggestion = suggest(S.r); S.dest = S.suggestion.dest;
-      if (!S.keepTouched) S.keep = keepDefault(S.dest.kind);
-      pickSheet(S, true);
-    } else review(S);
+    if (S.dest.kind === "mix" && S.r.docType === "bill") { S.dest = { kind: "bill" }; if (!S.keepTouched) S.keep = keepDefault("bill"); }
+    review(S);
   } catch (err) {
     st.innerHTML = ""; $$("input[type=file]", B).forEach(i => i.disabled = false);
     msg(String(err.message || err));
   }
 }
 
-/* ---------- Let Koti decide ---------- */
-export function suggest(r) {
-  if (r.docType === "bill") { const m = matchBill(r.bill || {}, r.parsed || {}); return { dest: { kind: "bill" }, reason: m ? `It's a bill, and it looks like your “${m.name}” bill.` : "It's a bill to pay, not a receipt." }; }
-  const lines = (r.parsed && r.parsed.lines) || [];
-  if (!lines.length) return { dest: { kind: "spending" }, reason: r.ai ? "No lines to match, so it goes to a category." : "Only the total could be read, so it goes to a category." };
-  const tally = {};
-  lines.forEach(l => { const it = l.itemId && store.model.items.find(i => i.id === l.itemId); if (!it) return; const top = projectOf(it.listId) || listOf(it.listId); if (top) tally[top.id] = (tally[top.id] || 0) + 1; });
-  const best = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
-  if (best) { const l = listOf(best[0]), n = best[1]; return { dest: { kind: l.kind === "project" ? "project" : "list", id: l.id }, reason: `${n} line${n === 1 ? "" : "s"} match${n === 1 ? "es" : ""} items on ${l.name}.` }; }
-  return { dest: { kind: "spending" }, reason: "Nothing on it matches your lists, so each line goes to a category." };
+/* What the microphone heard, when it's several things ("Prisma 86, the lamp was 35 of it"): the same "Check it"
+   screen as a receipt, without a photo. */
+export function openParsed(parsed) {
+  const S = { dest: { kind: "mix" }, keep: false, keepTouched: true, file: null, r: { ai: true, heard: true, docType: "receipt", parsed }, lines: null, linesFor: null, edits: {} };
+  receiptReview(S);
 }
 
 function review(S) { if (S.dest.kind === "bill") billReview(S); else receiptReview(S); }
@@ -121,7 +108,7 @@ function review(S) { if (S.dest.kind === "bill") billReview(S); else receiptRevi
 function titleButton(S, name) {
   const h = $("#sheetTitle"); if (!h) return;
   h.innerHTML = `<button type="button" class="dest-title" aria-label="${esc(name)}. Change where this goes">${esc(name)} <span aria-hidden="true">▾</span></button>`;
-  $(".dest-title", h).onclick = () => { saveEdits(S); pickSheet(S, true); };
+  $(".dest-title", h).onclick = () => { saveEdits(S); pickSheet(S); };
 }
 function saveEdits(S) {
   const g = id => { const e = document.getElementById(id); return e ? e.value : undefined; };
@@ -129,101 +116,154 @@ function saveEdits(S) {
   const k = document.getElementById("rvKeep"); if (k) S.keep = k.checked;
 }
 
-/* ---------- Receipt review (spending, a list or a project) ---------- */
+/* ---------- Receipt review ---------- */
+const allOpen = () => store.model.items.filter(i => !i.done && listOf(i.listId));
 const openOf = ids => store.model.items.filter(i => ids.has(i.listId) && !i.done);
 const nameHit = (line, item) => [line.name, line.nameFi].filter(Boolean).some(n => { const a = low(n), b = low(item.name); return b.length > 2 && (a.includes(b) || b.includes(a.split(" ")[0]) && a.split(" ")[0].length > 2); });
-function scopeIds(d) { return d.kind === "project" ? new Set([d.id, ...roomsOf(d.id).map(r => r.id)]) : d.kind === "list" ? new Set([d.id]) : new Set(); }
+function scopeIds(d) {
+  if (d.kind === "mix") return new Set(store.model.lists.map(l => l.id));
+  return d.kind === "project" ? new Set([d.id, ...roomsOf(d.id).map(r => r.id)]) : d.kind === "list" ? new Set([d.id]) : new Set();
+}
 function roomsFor(pid) { const r = roomsOf(pid); return r.length ? r : [listOf(pid)]; }
+const projects = () => topLists().filter(l => l.kind === "project");
+const shoppingIds = () => new Set(topLists().filter(l => l.kind === "shopping").map(l => l.id));
 
-/* Each line gets a target: "tick:<item>", "new:<room>", "cat:<category>" or "proj:<project>". */
+/* Each line gets a target: "tick:<item>", "new:<room or project>", "cat:<category>" or "proj:<project>". */
 function makeLines(d, src) {
   const scope = scopeIds(d), open = openOf(scope), used = new Set();
-  const lines = (src || []).map(l => ({ name: l.name, nameFi: l.nameFi || null, qty: l.qty, price: l.price, categoryId: l.categoryId && !String(l.categoryId).startsWith("proj:") ? l.categoryId : null, aiItem: l.itemId, target: null }));
-  if (d.kind === "spending") { lines.forEach(l => l.target = "cat:" + (l.categoryId || "")); return lines; }
+  const lines = (src || []).map(l => ({ name: l.name, nameFi: l.nameFi || null, qty: l.qty, price: l.price, categoryId: l.categoryId && !String(l.categoryId).startsWith("proj:") ? l.categoryId : null, placeId: l.placeId && listOf(l.placeId) ? l.placeId : null, aiItem: l.itemId, target: null }));
+  if (d.kind === "spending") { lines.forEach(l => l.target = l.placeId ? "proj:" + projectOf(l.placeId).id : "cat:" + (l.categoryId || "")); return lines; }
+  const byName = d.kind === "mix" ? open.filter(i => shoppingIds().has(i.listId)) : open;   // sorting everything: only shopping lists are matched by name
   lines.forEach(l => {   // matched by AI, then by name
     let it = l.aiItem && open.find(i => i.id === l.aiItem && !used.has(i.id));
-    if (!it) it = open.find(i => !used.has(i.id) && nameHit(l, i));
+    if (it && d.kind === "mix" && !shoppingIds().has(it.listId)) { const s = byName.find(i => !used.has(i.id) && low(i.name) === low(it.name)); if (s) it = s; }   // the same thing on a shopping list wins
+    if (!it) it = byName.find(i => !used.has(i.id) && nameHit(l, i));
+    if (!it && l.placeId && d.kind === "mix") { const pr = projectOf(l.placeId); if (pr) { const ids = scopeIds({ kind: "project", id: pr.id }); it = open.find(i => ids.has(i.listId) && !used.has(i.id) && nameHit(l, i)); } }   // a lamp already planned in the project
     if (it) { used.add(it.id); l.target = "tick:" + it.id; }
   });
+  if (d.kind === "mix") { lines.forEach(l => { if (!l.target) l.target = l.placeId ? "new:" + l.placeId : "cat:" + (l.categoryId || ""); }); return lines; }
   if (d.kind === "list") { lines.forEach(l => { if (!l.target) l.target = "cat:" + (l.categoryId || ""); }); return lines; }
   const rooms = roomsFor(d.id), count = {};
   lines.forEach(l => { if (l.target) { const it = store.model.items.find(i => "tick:" + i.id === l.target); if (it) count[it.listId] = (count[it.listId] || 0) + 1; } });
   const room = (Object.entries(count).sort((a, b) => b[1] - a[1])[0] || [rooms[0].id])[0];
-  lines.forEach(l => { if (!l.target) l.target = l.categoryId && FOOD.test(catName(l.categoryId)) ? "cat:" + l.categoryId : "new:" + room; });
+  lines.forEach(l => { if (!l.target) l.target = l.placeId && projectOf(l.placeId) && projectOf(l.placeId).id === d.id ? "new:" + l.placeId : l.categoryId && FOOD.test(catName(l.categoryId)) ? "cat:" + l.categoryId : "new:" + room; });
   return lines;
 }
+const split = t => [t.slice(0, t.indexOf(":")), t.slice(t.indexOf(":") + 1)];
+const placeLabel = id => { const l = listOf(id); if (!l) return ""; const p = projectOf(id); return p && p.id !== l.id ? `${p.name} · ${l.name}` : l.name; };
 
-function targetOptions(d, line, lines) {
+/* Where a line can go, in groups, for the picker. */
+function targetGroups(d, line, lines) {
   const taken = new Set(lines.filter(x => x !== line && x.target.startsWith("tick:")).map(x => x.target));
-  const o = (v, t) => `<option value="${esc(v)}"${line.target === v ? " selected" : ""}${taken.has(v) ? " disabled" : ""}>${esc(t)}</option>`;
-  const catGroup = label => `<optgroup label="${esc(label)}">${o("cat:", "No category")}${cats().map(c => o("cat:" + c.id, c.name)).join("")}</optgroup>`;
-  if (d.kind === "spending") return catGroup("Category") + `<optgroup label="Project">${topLists().filter(l => l.kind === "project").map(p => o("proj:" + p.id, p.name)).join("")}</optgroup>`;
-  const open = openOf(scopeIds(d)), cur = line.target.startsWith("tick:") ? store.model.items.find(i => "tick:" + i.id === line.target) : null;
-  const items = cur && !open.includes(cur) ? [cur, ...open] : open;
-  if (d.kind === "list") return `<optgroup label="Tick off on ${esc(listOf(d.id).name)}">${items.map(i => o("tick:" + i.id, "✓ " + i.name)).join("")}</optgroup>` + catGroup("Not on the list: category");
-  const pr = listOf(d.id), roomName = id => (listOf(id) || {}).name || "";
-  return `<optgroup label="Tick off in ${esc(pr.name)}">${items.map(i => o("tick:" + i.id, `✓ ${i.listId === pr.id ? "" : roomName(i.listId) + " · "}${i.name}`)).join("")}</optgroup>
-    <optgroup label="New item in">${roomsFor(pr.id).map(r => o("new:" + r.id, r.id === pr.id ? pr.name : r.name)).join("")}</optgroup>` + catGroup(`Not for ${pr.name}: category`);
+  const catOpts = () => cats().map(c => ["cat:" + c.id, c.name]).concat([["cat:", "No category"]]);
+  const items = list => list.filter(i => !taken.has("tick:" + i.id)).map(i => ["tick:" + i.id, `✓ ${i.name}`, placeLabel(i.listId)]);
+  const cur = line.target.startsWith("tick:") ? store.model.items.find(i => "tick:" + i.id === line.target) : null;
+  if (d.kind === "spending") return [{ label: "A category: everyday spending", opts: catOpts() }, { label: "A project", opts: projects().map(p => ["proj:" + p.id, p.name]) }];
+  if (d.kind === "mix") {
+    // things you were going to buy: your shopping lists, plus project items with a similar name (a project can hold hundreds)
+    const sh = shoppingIds(), open = allOpen().filter(i => sh.has(i.listId) || nameHit(line, i)).slice(0, 30), list = cur && !open.includes(cur) ? [cur, ...open] : open;
+    const places = projects().flatMap(p => { const r = roomsOf(p.id); return r.length ? r.map(x => ["new:" + x.id, `${p.name} · ${x.name}`]) : [["new:" + p.id, p.name]]; });
+    return [{ label: "Tick off something you were going to buy", opts: items(list) }, { label: "A project: it becomes a bought item there", opts: places }, { label: "A category: everyday spending", opts: catOpts() }].filter(g => g.opts.length);
+  }
+  const open = openOf(scopeIds(d)), list = cur && !open.includes(cur) ? [cur, ...open] : open;
+  if (d.kind === "list") return [{ label: `Tick off on ${listOf(d.id).name}`, opts: items(list) }, { label: "Not on the list: a category", opts: catOpts() }].filter(g => g.opts.length);
+  const pr = listOf(d.id);
+  return [{ label: `Tick off in ${pr.name}`, opts: items(list) }, { label: "A new item in", opts: roomsFor(pr.id).map(r => ["new:" + r.id, r.id === pr.id ? pr.name : r.name]) }, { label: `Not for ${pr.name}: a category`, opts: catOpts() }].filter(g => g.opts.length);
 }
 function lineSub(d, l) {
-  const [k, v] = [l.target.slice(0, l.target.indexOf(":")), l.target.slice(l.target.indexOf(":") + 1)];
+  const [k, v] = split(l.target);
   const qty = l.qty && l.qty !== 1 ? `${String(l.qty).replace(".", ",")} × · ` : "";
-  if (k === "tick") { const it = store.model.items.find(i => i.id === v); return qty + `✓ ticks “${it ? it.name : "item"}”`; }
-  if (k === "new") return qty + `New item → ${(listOf(v) || {}).name || ""}`;
-  if (k === "proj") return qty + `${(listOf(v) || {}).name || "Project"}`;
-  return qty + (d.kind === "spending" ? (v ? catName(v) : "No category") : d.kind === "list" ? `Not on the list → ${v ? catName(v) : "no category"}` : `Not for the project → ${v ? catName(v) : "no category"}`);
+  if (k === "tick") { const it = store.model.items.find(i => i.id === v); return qty + `✓ Ticks off ${it ? `“${it.name}”` : "an item"}${it && d.kind === "mix" ? ` on ${placeLabel(it.listId)}` : ""}`; }
+  if (k === "new") return qty + `New in ${placeLabel(v)}`;
+  if (k === "proj") return qty + ((listOf(v) || {}).name || "Project");
+  return qty + (v ? catName(v) : "No category");
 }
+/* Which total a line counts in: a category id, "proj:<project>" or "none". */
+function bucket(d, l) {
+  const [k, v] = split(l.target);
+  if (k === "proj") return "proj:" + v;
+  if (k === "new") { const p = projectOf(v); return p ? "proj:" + p.id : (d.kind === "project" ? "proj:" + d.id : "none"); }
+  if (k === "tick") {
+    const it = store.model.items.find(i => i.id === v), p = it && projectOf(it.listId);
+    if (p && (d.kind === "mix" || d.kind === "project")) return "proj:" + p.id;
+    const lc = it ? listCategory(listOf(it.listId)) : null; return (lc && lc.id) || l.categoryId || "none";
+  }
+  return v || "none";
+}
+/* The small note beside a group's total: what's left in that budget or project after this receipt. */
+function groupExtra(k, v) {
+  if (k.startsWith("proj:")) { const p = listOf(k.slice(5)); return p && p.budget ? `${eur0(p.budget - projectSpent(p.id) - v)} left` : ""; }
+  if (k === "none") return "";
+  const p = periodFor(new Date()), b = effectiveBudgets(p).byId[k]; if (b == null) return "";
+  const left = b - (totals(p).byCat[k] || 0) - v; return left >= 0 ? `${eur0(left)} to go` : `${eur0(-left)} over`;
+}
+const groupColor = k => k.startsWith("proj:") ? "var(--amber)" : k === "none" ? "var(--muted)" : "var(--spruce)";
 
 function receiptReview(S) {
   const d = S.dest, r = S.r || {}, P = r.parsed || {};
   if (!S.lines || !same(S.linesFor, d)) { S.lines = makeLines(d, P.lines); S.linesFor = { ...d }; }
   const E = S.edits, name = destName(d);
-  openSheet({ title: name, right: "Save", body: B => {
+  openSheet({ title: name, left: "Cancel", right: "Save", body: B => {
+    const total = E.total ?? (P.amount != null ? money2(P.amount) : "");
     B.innerHTML = `
       ${r.docType === "bill" ? `<div class="suggest warn">${icon("bill", "ic")}<div><b>This looks like a bill</b><small>Bills go to Bills with their due date and reference.</small></div><button type="button" class="btn sm" id="rvToBill">Add as a bill</button></div>` : ""}
+      <div class="rv-top"><div class="rv-big num" id="rvBig"></div>${S.file ? `<span class="scan-thumb">${thumb(S)}</span>` : ""}</div>
+      <p class="rv-s" id="rvS"></p>
+      <details class="rv-more"${total ? "" : " open"}><summary>Shop, date and total</summary>
       <div class="grp">
-        <div class="row rc-row"><span class="scan-thumb">${S.file && S.file.type === "application/pdf" ? `<span class="pdf">PDF</span>` : S.file ? `<img alt="" src="${URL.createObjectURL(S.file.blob)}">` : ""}</span>
-          <label class="rt" for="rvKeep">Keep photo<small id="rvKeepSub"></small></label><input type="checkbox" class="switch" id="rvKeep" ${S.keep ? "checked" : ""}></div>
         <label class="row"><span class="rt">Shop</span><input class="inl" id="rvShop" value="${esc(E.shop ?? P.payee ?? "")}" placeholder="Where" maxlength="120" autocomplete="off" style="max-width:60%"></label>
         <label class="row"><span class="rt">Date</span><input class="inl" id="rvDate" type="date" value="${esc(E.date ?? P.date ?? todayISO())}"></label>
-        <label class="row"><span class="rt">Total</span><input class="inl num" id="rvTotal" inputmode="decimal" value="${esc(E.total ?? (P.amount != null ? money2(P.amount) : ""))}" placeholder="0,00" autocomplete="off" style="max-width:40%"></label>
-      </div>
+        <label class="row"><span class="rt">Total</span><input class="inl num" id="rvTotal" inputmode="decimal" value="${esc(total)}" placeholder="0,00" autocomplete="off" style="max-width:40%"></label>
+        <label class="row"${S.file ? "" : " hidden"}><span class="rt" id="rvKeepLbl">Keep the photo<small id="rvKeepSub"></small></span><input type="checkbox" class="switch" id="rvKeep" aria-labelledby="rvKeepLbl" ${S.keep ? "checked" : ""}></label>
+      </div></details>
       <div id="rvLines"></div>
       <p class="msg" id="rvMsg" aria-live="polite"></p>`;
     titleButton(S, name);
     const keepSub = () => { $("#rvKeepSub", B).textContent = $("#rvKeep", B).checked ? "Saved privately with the expense" : "Only used for reading. Not saved."; };
     keepSub(); $("#rvKeep", B).onchange = keepSub;
+    ["#rvShop", "#rvDate", "#rvTotal"].forEach(id => $(id, B).addEventListener("input", () => { saveEdits(S); paintHead(S, B); }));
     const tb = $("#rvToBill", B); if (tb) tb.onclick = () => { saveEdits(S); S.dest = { kind: "bill" }; if (!S.keepTouched) S.keep = true; billReview(S); };
-    paintLines(S, B);
+    paintHead(S, B); paintLines(S, B);
   }, onRight: B => saveReceipt(S, B) });
 }
 
+function groupsOf(S) {
+  const by = new Map();
+  S.lines.forEach((l, k) => { const b = bucket(S.dest, l); if (!by.has(b)) by.set(b, { k: b, total: 0, lines: [] }); const g = by.get(b); g.total += l.price; g.lines.push(k); });
+  return [...by.values()].sort((a, b) => b.total - a.total);
+}
+function paintHead(S, B) {
+  const t = $("#rvTotal", B).value, shop = $("#rvShop", B).value.trim(), date = $("#rvDate", B).value;
+  const tv = parseMoney(t); $("#rvBig", B).textContent = eur(tv && !Number.isNaN(tv) ? tv : 0);
+  const day = !date || date === todayISO() ? "today" : parseDay(date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  const n = S.lines.length, g = groupsOf(S).length;
+  $("#rvS", B).innerHTML = `${shop ? `at <b>${esc(shop)}</b>, ` : ""}${esc(day)}.${n ? ` ${n} line${n === 1 ? "" : "s"}${g > 1 ? `, sorted ${g === 2 ? "two" : g === 3 ? "three" : g} ways` : ""}.` : ""}`;
+}
 function paintLines(S, B) {
   const d = S.dest, L = $("#rvLines", B), lines = S.lines, r = S.r || {};
-  const ticks = lines.filter(l => l.target.startsWith("tick:")).length, news = lines.filter(l => l.target.startsWith("new:")).length, outs = lines.filter(l => l.target.startsWith("cat:")).length;
-  let note = r.ai ? `Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}` : r.aiError ? `Read on this device: total only. AI: ${r.aiError.message}` : "Read on this device: total only.";
-  if (d.kind === "list") { const left = openOf(scopeIds(d)).length - ticks; note = `${ticks} list item${ticks === 1 ? "" : "s"} bought · ${Math.max(0, left)} still to buy`; }
-  if (d.kind === "project") note = [`${ticks} item${ticks === 1 ? "" : "s"} ticked`, news ? `${news} new item${news === 1 ? "" : "s"}` : "", outs ? `${outs} line${outs === 1 ? "" : "s"} kept as everyday spending` : ""].filter(Boolean).join(" · ");
-  if (!lines.length) { L.innerHTML = `<p class="note ai-note">${esc(note)}</p>${d.kind !== "spending" ? `<p class="note">No lines were read, so nothing gets ticked. The total goes to ${d.kind === "project" ? esc(listOf(d.id).name) : "a category"}.</p>` : ""}`; return; }
-  const by = {};
-  lines.forEach(l => { const k = bucket(d, l); by[k] = (by[k] || 0) + l.price; });
-  const pr = d.kind === "project" ? listOf(d.id) : null;
-  L.innerHTML = `<p class="note ai-note">${icon("check", "ic xs")} ${esc(note)}</p>
-    <div class="gh" style="margin-top:4px"><h3>${lines.length} line${lines.length === 1 ? "" : "s"}</h3><span class="num">${eur(lines.reduce((a, l) => a + l.price, 0))}</span></div>
-    <div class="grp lines">${lines.map((l, k) => `<div class="row li" data-line="${k}"><span class="rt">${esc(l.name)}<small>${l.nameFi && low(l.nameFi) !== low(l.name) ? `<i class="fi" lang="fi">${esc(l.nameFi)}</i> · ` : ""}${esc(lineSub(d, l))}</small>
-      <select class="line-cat" aria-label="Where ${esc(l.name)} goes">${targetOptions(d, l, lines)}</select></span><span class="rv">${eur(l.price)}</span><button type="button" class="x" data-del-line aria-label="Remove ${esc(l.name)}">×</button></div>`).join("")}</div>
-    <div class="splits">${Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span><i style="background:var(${k.startsWith("proj:") ? "--amber" : "--spruce"})"></i>${esc(k === "none" ? "No category" : catName(k))} <b class="num">${eur(v)}</b>${pr && k === "proj:" + pr.id && pr.budget ? ` · ${eur0(pr.budget - projectSpent(pr.id) - v)} left` : ""}</span>`).join("")}</div>`;
-  $$("[data-line]", L).forEach(row => { const k = Number(row.dataset.line);
-    $(".line-cat", row).onchange = e => { lines[k].target = e.target.value; paintLines(S, B); };
-    $("[data-del-line]", row).onclick = () => { lines.splice(k, 1); paintLines(S, B); }; });
+  const how = r.heard ? "Heard by AI. Check it, then Save." : r.ai ? `Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}` : r.aiError ? `Read on this device, total only. AI: ${r.aiError.message}` : "Read on this device, total only.";
+  if (!lines.length) { L.innerHTML = `<p class="note ai-note">${esc(how)}</p><p class="note">No lines were read, so the total goes to ${d.kind === "project" ? esc(listOf(d.id).name) : "one category"}. Tap the title to choose where.</p>`; paintHead(S, B); return; }
+  const G = groupsOf(S), sum = lines.reduce((a, l) => a + l.price, 0);
+  L.innerHTML = `${G.length > 1 ? `<div class="rv-bar" role="img" aria-label="${esc(G.map(g => `${g.k === "none" ? "No category" : catName(g.k)} ${eur(g.total)}`).join(", "))}">${G.map(g => `<i style="flex:${Math.max(0.01, g.total)};background:${groupColor(g.k)}"></i>`).join("")}</div>` : ""}
+    ${G.map(g => `<section class="rv-g"><div class="rv-gh"><i style="background:${groupColor(g.k)}" aria-hidden="true"></i><b>${esc(g.k === "none" ? "No category" : catName(g.k))}</b><small>${esc(groupExtra(g.k, g.total))}</small><b class="num">${eur(g.total)}</b></div>
+      ${g.lines.map(k => { const l = lines[k]; return `<button type="button" class="rv-line" data-line="${k}" aria-label="${esc(l.name)}, ${esc(eur(l.price))}, ${esc(lineSub(d, l))}. Move it"><span class="rt"><b>${esc(l.name)}</b><small>${esc(lineSub(d, l))}</small></span><span class="num">${eur(l.price)}</span>${icon("chev", "ic xs")}</button>`; }).join("")}</section>`).join("")}
+    <p class="note ai-note">${esc(how)}${Math.abs(sum - (parseMoney($("#rvTotal", B).value) || 0)) >= 0.01 && parseMoney($("#rvTotal", B).value) ? ` · Lines add up to ${eur(sum)}` : ""}</p>
+    <p class="note">Tap a line to move it. Koti remembers, so it goes there next time too.</p>`;
+  $$("[data-line]", L).forEach(b => b.onclick = () => { saveEdits(S); movePicker(S, Number(b.dataset.line)); });
+  paintHead(S, B);
 }
-/* Which total a line counts in. */
-function bucket(d, l) {
-  const [k, v] = [l.target.slice(0, l.target.indexOf(":")), l.target.slice(l.target.indexOf(":") + 1)];
-  if (k === "proj") return "proj:" + v;
-  if (d.kind === "project" && (k === "tick" || k === "new")) return "proj:" + d.id;
-  if (k === "tick") { const lc = d.kind === "list" ? listCategory(listOf(d.id)) : null; return (lc && lc.id) || l.categoryId || "none"; }
-  return v || "none";
+/* "Where does the floor lamp go?" */
+function movePicker(S, k) {
+  const l = S.lines[k], G = targetGroups(S.dest, l, S.lines);
+  openSheet({ title: l.name, left: "Back", body: B => {
+    B.innerHTML = `<h2 class="sc-h">Where does “${esc(l.name)}” go?</h2>
+      <p class="sc-p">${eur(l.price)}${S.edits.shop ? ` on the ${esc(S.edits.shop)} receipt` : ""}</p>
+      <div class="mv">${G.map(g => `<p class="mv-h">${esc(g.label)}</p>${g.opts.map(([v, t, sub]) => `<button type="button" class="mv-o" data-v="${esc(v)}" aria-pressed="${l.target === v}"><span>${esc(t)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${l.target === v ? icon("check", "ic sm") : ""}</button>`).join("")}`).join("")}</div>
+      <button type="button" class="btn danger" id="mvDel">${icon("trash", "ic sm")} Not on this receipt: remove the line</button>`;
+    $$(".mv-o", B).forEach(b => b.onclick = () => { l.target = b.dataset.v; receiptReview(S); });
+    $("#mvDel", B).onclick = () => { S.lines.splice(k, 1); receiptReview(S); };
+  } });
+  const back = $("#sheet [data-close]"); if (back) back.onclick = e => { e.stopPropagation(); receiptReview(S); };
 }
 
 async function saveReceipt(S, B) {
@@ -231,7 +271,7 @@ async function saveReceipt(S, B) {
   if (S.busy) return;
   const total = parseMoney($("#rvTotal", B).value), date = $("#rvDate", B).value || todayISO(), shop = $("#rvShop", B).value.trim(), keep = $("#rvKeep", B).checked;
   if (total == null || Number.isNaN(total) || total <= 0) return msg("Type the total, like 24,90.");
-  if (d.kind !== "spending" && !listOf(d.id)) return msg("That list was deleted. Tap the title to choose another place.");
+  if (["list", "project"].includes(d.kind) && !listOf(d.id)) return msg("That list was deleted. Tap the title to choose another place.");
   S.busy = true;
   const id = newId("tx"), unit = l => Math.round(l.price / (l.qty && l.qty > 0 && Number.isInteger(l.qty) ? l.qty : 1) * 100) / 100;
   const before = [], created = [], txLines = [];
@@ -252,7 +292,7 @@ async function saveReceipt(S, B) {
   closeSheet(); S.busy = false;
   const ticks = before.length, news = created.length;
   const extra = [ticks ? `${ticks} ticked` : "", news ? `${news} new item${news === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
-  toast(`Saved ${eur(tx.amount)} to ${destName(d)}${extra ? " · " + extra : ""}`, { label: "Undo", run: () => {
+  toast(`Saved ${eur(tx.amount)}${d.kind === "mix" ? (shop ? ` at ${shop}` : "") : ` to ${destName(d)}`}${extra ? " · " + extra : ""}`, { label: "Undo", run: () => {
     store.remove("transactions", tx.id);
     before.forEach(it => store.updateItem(it.id, { done: it.done, price: it.price, boughtAt: it.boughtAt }));
     created.forEach(i => store.deleteItem(i));

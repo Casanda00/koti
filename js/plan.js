@@ -1,5 +1,5 @@
 // Bills (a screen under Expenses): calendar, paid tracking, autopay. Savings goals (shown in Budgets).
-import { store, todayISO, BILLS_CAT, FREQS } from "./data.js";
+import { store, todayISO, BILLS_CAT } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
 import { periodFor } from "./money.js";
 import { overdueBills } from "./ledger.js";
@@ -211,37 +211,51 @@ export function bindCopy(scope) {
 export function openBill(bill = null, preset = {}) {
   const b = bill || { name: preset.name || "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "", dueDate: null, reference: "", iban: "" };
   let freq = b.frequency;
-  openSheet({ title: bill ? "Bill" : "Add bill", right: "Save", body: B => {
+  const ord = n => n + (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th");
+  const QUICK = ["Rent", "Electricity", "Internet", "Phone", "Home insurance", "Streaming", "Gym", "Water"];
+  openSheet({ title: bill ? b.name || "Bill" : "Add a bill", right: "Save", body: B => {
+    const sel = (id, label, opts, cur) => `<select class="bi-w" id="${id}" aria-label="${esc(label)}">${opts.map(([v, t]) => `<option value="${v}"${String(v) === String(cur) ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
     B.innerHTML = `
-      ${bill ? "" : `<button type="button" class="rc-add" id="biScan">${icon("cam", "ic sm")} Scan or upload the bill instead</button>`}
-      <div class="field"><label for="biName">Name</label><input class="inp" id="biName" value="${esc(b.name)}" placeholder="e.g. Rent…" maxlength="80" autocomplete="off" ${bill ? "" : "autofocus"}></div>
-      <div class="field"><label for="biAmt">Amount</label><input class="inp" id="biAmt" inputmode="decimal" placeholder="€0,00" value="${moneyField(b.amount)}" autocomplete="off"></div>
-      <div class="field"><span class="flabel">How often</span><div class="seg" id="biFreq">${FREQS.map(f => `<button type="button" data-f="${f}" aria-pressed="${f === freq}">${FREQ_LABEL[f]}</button>`).join("")}</div></div>
+      ${bill ? "" : `<button type="button" class="bi-scan" id="biScan"><span class="bi-si">${icon("cam", "ic sm")}</span><span><b>Have the bill?</b> Take a photo and Koti fills this in, reference and all.</span></button>`}
+      ${bill ? "" : `<p class="bi-k">What's the bill?</p><div class="chips bi-quick" role="group" aria-label="Common bills">${QUICK.map(n => `<button type="button" class="fchip" data-qn="${esc(n)}" aria-pressed="${n === b.name}">${esc(n)}</button>`).join("")}</div>`}
+      <label class="bi-name"><span class="sr">Name</span><input class="inp" id="biName" value="${esc(b.name)}" placeholder="${bill ? "Name" : "Or type a name"}" maxlength="80" autocomplete="off"></label>
+      <label class="bi-amt"><span class="sr">Amount</span><span aria-hidden="true">€</span><input class="num" id="biAmt" inputmode="decimal" placeholder="0,00" value="${b.amount != null ? String(Number(b.amount).toFixed(2)).replace(".", ",").replace(",00", "") : ""}" autocomplete="off"></label>
+      <p class="bi-sent" id="biSent"><span>Comes ${sel("biFreqSel", "How often", [["monthly", "every month"], ["quarterly", "every 3 months"], ["yearly", "every year"], ["once", "once"]], freq)}</span><span id="biSentDay"> on the ${sel("biDay", "Day of the month", Array.from({ length: 31 }, (_, k) => [k + 1, ord(k + 1)]), b.dueDay)}</span><span id="biMonthRow"> of ${sel("biMonth", "Month", MONTHS.map((m, k) => [k + 1, m]), b.anchorMonth)}</span><span id="biDateRow">, due <input class="bi-w" id="biDate" type="date" aria-label="Due date" value="${esc(b.dueDate || todayISO())}"></span>.</p>
+      <label class="bi-sw"><span>It pays itself<small>Direct debit or e-invoice: Koti marks it paid on the due date</small></span><input type="checkbox" class="switch" id="biAuto" ${b.autopay ? "checked" : ""}></label>
+      <details class="bi-more"${b.reference || b.iban || b.payee || b.note || b.endDate ? " open" : ""}><summary>Reference, account and more</summary>
       <div class="grp">
-        <label class="row"><span class="rt">Due on day</span><select class="inl" id="biDay">${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === b.dueDay ? " selected" : ""}>${k + 1}${k + 1 >= 29 ? " (or last day)" : ""}</option>`).join("")}</select></label>
-        <label class="row" id="biDateRow"><span class="rt">Due date</span><input class="inl" id="biDate" type="date" value="${esc(b.dueDate || todayISO())}"></label>
-        <label class="row" id="biStartRow"><span class="rt">Starts<small>First month this bill is due</small></span><input class="inl" id="biStart" type="month" value="${esc((b.startDate || todayISO()).slice(0, 7))}"></label>
-        <label class="row" id="biEndRow"><span class="rt">Ends<small>Optional, like a contract end</small></span><input class="inl" id="biEnd" type="month" value="${esc((b.endDate || "").slice(0, 7))}"></label>
-        <label class="row" id="biMonthRow"><span class="rt" id="biMonthLbl">Month</span><select class="inl" id="biMonth">${MONTHS.map((m, k) => `<option value="${k + 1}"${k + 1 === b.anchorMonth ? " selected" : ""}>${m}</option>`).join("")}</select></label>
-        <label class="row"><span class="rt">Paid automatically<small>Direct debit or e-invoice: Koti marks it paid on the due date</small></span><input type="checkbox" id="biAuto" ${b.autopay ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--spruce)"></label>
         <label class="row"><span class="rt">Company</span><input class="inl" id="biPayee" value="${esc(b.payee || "")}" placeholder="Optional" maxlength="120" autocomplete="off" style="max-width:60%"></label>
-        <label class="row"><span class="rt">Reference</span><input class="inl mono" id="biRef" value="${esc(b.reference || "")}" placeholder="Optional" maxlength="60" autocomplete="off" style="max-width:55%"></label>
+        <label class="row"><span class="rt">Reference</span><input class="inl mono" id="biRef" value="${esc(b.reference || "")}" placeholder="Viitenumero" maxlength="60" autocomplete="off" style="max-width:55%"></label>
         <label class="row"><span class="rt">Pay to (IBAN)</span><input class="inl mono" id="biIban" value="${esc(b.iban || "")}" placeholder="Optional" maxlength="40" autocomplete="off" style="max-width:55%"></label>
         ${b.reference || b.iban ? `<div class="row copy-row">${b.reference ? `<button type="button" class="link" data-copy="${esc(b.reference)}">${icon("copy", "ic xs")} Copy reference</button>` : ""}${b.iban ? `<button type="button" class="link" data-copy="${esc(b.iban.replace(/\s+/g, ""))}">${icon("copy", "ic xs")} Copy IBAN</button>` : ""}</div>` : ""}
+        <label class="row" id="biStartRow"><span class="rt">Starts<small>First month this bill is due</small></span><input class="inl" id="biStart" type="month" value="${esc((b.startDate || todayISO()).slice(0, 7))}"></label>
+        <label class="row" id="biEndRow"><span class="rt">Ends<small>Optional, like a contract end</small></span><input class="inl" id="biEnd" type="month" value="${esc((b.endDate || "").slice(0, 7))}"></label>
         <label class="row"><span class="rt">Note</span><input class="inl" id="biNote" value="${esc(b.note || "")}" placeholder="Optional" maxlength="500" autocomplete="off" style="max-width:60%"></label>
-        ${bill ? `<label class="row"><span class="rt">Paused<small>Hidden from the calendar and totals</small></span><input type="checkbox" id="biPaused" ${b.active ? "" : "checked"} style="width:22px;height:22px;accent-color:var(--spruce)"></label>` : ""}
-      </div>
+        ${bill ? `<label class="row"><span class="rt">Paused<small>Hidden from the calendar and totals</small></span><input type="checkbox" class="switch" id="biPaused" ${b.active ? "" : "checked"}></label>` : ""}
+      </div></details>
+      <p class="bi-next" id="biNext" aria-live="polite"></p>
       <p class="msg" id="biMsg" aria-live="polite"></p>
       ${bill ? `<button type="button" class="btn" id="biRemind">${icon("bell", "ic sm")} Remind me before it's due</button>` : ""}
-      ${bill ? `<p class="note" style="margin-top:0">${eur(perYear(b))} a year. Past payments stay in Money if you delete this bill.</p><button type="button" class="btn danger" id="biDel">${icon("trash", "ic sm")} Delete bill</button>` : ""}`;
+      ${bill ? `<p class="note" style="margin-top:0">${eur(perYear(b))} a year. Past payments stay in Month if you delete this bill.</p><button type="button" class="btn danger" id="biDel">${icon("trash", "ic sm")} Delete bill</button>` : ""}`;
     const sc = $("#biScan", B); if (sc) sc.onclick = () => import("./scan.js").then(m => m.openScan({ dest: { kind: "bill" } }));
     const docs = bill ? Object.entries(bill.dues || {}).filter(([, x]) => x.docPath).slice(-3).reverse() : [];
     if (docs.length) $("#biMsg", B).insertAdjacentHTML("beforebegin", `<div class="grp">${docs.map(([d, x]) => `<button type="button" class="row" data-doc="${esc(x.docPath)}"><span class="ico r">${icon("bill")}</span><span class="rt">Bill due ${esc(fmtDay(parseDay(d)))}<small>${x.amount ? eur(x.amount) : ""}${x.reference ? " · " + esc(x.reference) : ""}</small></span><span class="link">View</span></button>`).join("")}</div>`);
     $$("[data-doc]", B).forEach(x => x.onclick = () => import("./money.js").then(m => m.openReceipt(x.dataset.doc)));
-    const showMonth = () => { const once = freq === "once"; $("#biMonthRow", B).hidden = freq === "monthly" || once; $("#biDay", B).closest(".row").hidden = once; $("#biDateRow", B).hidden = !once; $("#biStartRow", B).hidden = once; $("#biEndRow", B).hidden = once; $("#biMonthLbl", B).textContent = freq === "yearly" ? "Month" : "First month of the cycle"; };
-    bindCopy(B);
-    showMonth();
-    $("#biFreq", B).addEventListener("click", e => { const x = e.target.closest("[data-f]"); if (!x) return; freq = x.dataset.f; $$("#biFreq button", B).forEach(y => y.setAttribute("aria-pressed", y === x)); showMonth(); });
+    const paint = () => {
+      const once = freq === "once";
+      $("#biMonthRow", B).hidden = freq === "monthly" || once; $("#biSentDay", B).hidden = once; $("#biDateRow", B).hidden = !once; $("#biStartRow", B).hidden = once; $("#biEndRow", B).hidden = once;
+      // when the next one is due, from what's on screen
+      const amt = parseMoney($("#biAmt", B).value), sm = $("#biStart", B).value, from = sm && parseDay(sm + "-01") > new Date() ? parseDay(sm + "-01") : new Date();
+      const probe = { ...b, frequency: freq, dueDay: Number($("#biDay", B).value), anchorMonth: Number($("#biMonth", B).value), dueDate: once ? $("#biDate", B).value : null, startDate: once ? null : (sm ? sm + "-01" : null), endDate: null, active: true };
+      let n = null; try { n = once ? (probe.dueDate ? parseDay(probe.dueDate) : null) : nextDue(probe, from); } catch { n = null; }
+      const day = n ? n.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) : "";
+      $("#biNext", B).innerHTML = n ? `${bill ? "The next one is" : "The first one is"} due <b>${esc(day)}</b>${amt && !Number.isNaN(amt) ? `, ${esc(eur(amt))}` : ""}. ${$("#biAuto", B).checked ? "It pays itself, and Koti marks it paid that day." : "Koti takes it off what's yours to spend."}` : "";
+    };
+    bindCopy(B); paint();
+    $("#biFreqSel", B).onchange = e => { freq = e.target.value; paint(); };
+    ["#biDay", "#biMonth", "#biDate", "#biStart", "#biAmt", "#biAuto"].forEach(id => $(id, B).addEventListener("input", paint));
+    $$("[data-qn]", B).forEach(x => x.onclick = () => { $("#biName", B).value = x.dataset.qn; $$("[data-qn]", B).forEach(y => y.setAttribute("aria-pressed", y === x)); $("#biAmt", B).focus(); });
+    $("#biName", B).addEventListener("input", () => $$("[data-qn]", B).forEach(y => y.setAttribute("aria-pressed", y.dataset.qn === $("#biName", B).value.trim())));
     const rb = $("#biRemind", B); if (rb) rb.onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: `Pay ${bill.name}`, when: "before", aboutKind: "bill", aboutId: bill.id, beforeDays: 3 })), 260); };
     const del = $("#biDel", B); if (del) del.onclick = () => { if (!confirm(`Delete "${b.name}"? Its past payments stay in Money.`)) return; closeSheet(); const copy = { ...bill }; store.remove("bills", bill.id); toast(`Deleted ${bill.name}`, { label: "Undo", run: () => store.put("bills", copy) }); };
   }, onRight: B => {

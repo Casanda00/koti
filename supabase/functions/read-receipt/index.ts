@@ -39,10 +39,12 @@ Receipt fields:
 - category: exactly one of the user's categories, chosen by what the product is, not by the shop. Typical fits: food and drink bought in a shop → the groceries category; meals, coffee or snacks bought to eat at a restaurant, café or kiosk → the eating-out category; medicine, pharmacy and health products → the health category; tickets, fuel, parking, taxi → the transport category; clothes, electronics, home and cleaning goods, toiletries → the shopping or household category; cinema, games, hobbies → the fun category. If nothing fits, use the catch-all category (Other) if the user has one.
 - If the user has filed the same or a similar product before (listed below), use the same category they chose.
 - list_item: if the line is something on the user's shopping list, that list item's exact text; otherwise null.
+- place: the user may have projects for setting up a home, listed as places ("Project" or "Project › Room"). If the product is something for that home that stays there (furniture, lamps, curtains, rugs, bedding, towels, kitchenware, small appliances, storage, tools, decor, plants), the best place for it: the room it belongs in if there is one, otherwise the project. Food, drink, toiletries and cleaning products that get used up are never a place: use null. When unsure, null. Fill category as well either way.
+- If the user filed the same or a similar product to a place before (listed below), use that place.
 - date as YYYY-MM-DD (two-digit years are 20xx). total: the amount paid (for a bill: the amount to pay). shop: for a bill, the company.
 - is_receipt: true for a receipt or a bill, false for anything else.`;
 
-function buildSchema(categories: string[], listItems: string[], bills: string[]) {
+function buildSchema(categories: string[], listItems: string[], bills: string[], places: string[]) {
 const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
 const schema = {
   type: "object", additionalProperties: false,
@@ -67,7 +69,7 @@ const schema = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        required: ["name_fi", "name", "qty", "price", "category", "list_item"],
+        required: ["name_fi", "name", "qty", "price", "category", "list_item", "place"],
         properties: {
           name_fi: { type: "string", description: "Finnish, readable" },
           name: { type: "string", description: "English only" },
@@ -75,6 +77,7 @@ const schema = {
           price: { type: "number" },
           category: categories.length ? { type: "string", enum: categories } : { type: "null" },
           list_item: oneOf(listItems),
+          place: oneOf(places),
         },
       },
     },
@@ -119,9 +122,9 @@ Deno.serve(async (req) => {
   const isPdf = /^data:application\/pdf;base64,/.test(image);
   if (!(isPdf || /^data:image\/(jpeg|png|webp);base64,/.test(image)) || image.length > 8_000_000) return json(400, { error: "Send a JPEG, PNG or WebP photo, or a PDF, under 6 MB.", code: "image" });
   const uniq = (xs: string[]) => { const m = new Map<string, string>(); xs.forEach((x) => { if (!m.has(x.toLowerCase())) m.set(x.toLowerCase(), x); }); return [...m.values()]; };
-  const categories = uniq(strList(body.categories, 40, 60)), listItems = uniq(strList(body.listItems, 200, 120)), bills = uniq(strList(body.bills, 60, 80));
+  const categories = uniq(strList(body.categories, 40, 60)), listItems = uniq(strList(body.listItems, 200, 120)), bills = uniq(strList(body.bills, 60, 80)), places = uniq(strList(body.places, 60, 120));
   const hint = ["receipt", "bill"].includes(String(body.hint)) ? String(body.hint) : null;
-  const catLower = new Map(categories.map((c) => [c.toLowerCase(), c]));
+  const catLower = new Map([...categories, ...places].map((c) => [c.toLowerCase(), c]));
   const examples = (Array.isArray(body.examples) ? body.examples : []).slice(0, 80)
     .filter((x: Record<string, unknown>) => x && typeof x.name === "string" && typeof x.category === "string" && catLower.has(String(x.category).toLowerCase()))
     .map((x: Record<string, unknown>) => `${String(x.name).slice(0, 60)} → ${catLower.get(String(x.category).toLowerCase())}`);
@@ -132,6 +135,7 @@ Deno.serve(async (req) => {
   const used = await use.json().catch(() => null);
 
   const prompt = `The user's categories: ${categories.length ? categories.join(" | ") : "(none)"}
+Places in the user's home projects: ${places.length ? places.join(" | ") : "(none)"}
 Open items on the user's shopping lists: ${listItems.length ? listItems.join(" | ") : "(none)"}
 The user's existing bills: ${bills.length ? bills.join(" | ") : "(none)"}
 How the user filed products before (follow these): ${examples.length ? examples.join("; ") : "(none yet)"}
@@ -143,7 +147,7 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
     body: JSON.stringify({
       model: MODEL, temperature: 0,
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: [{ type: "text", text: prompt }, doc] }],
-      response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema: buildSchema(categories, listItems, bills) } },
+      response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema: buildSchema(categories, listItems, bills, places) } },
     }),
   });
   if (!res.ok) {
@@ -160,7 +164,7 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   try { r = JSON.parse(data.choices?.[0]?.message?.content || "{}"); } catch { return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
   if (r.is_receipt === false || r.doc_type === "other") return json(422, { error: "That doesn't look like a receipt or a bill. Try another photo.", code: "not_receipt" });
 
-  const catSet = new Set(categories.map((c) => c.toLowerCase())), listSet = new Map(listItems.map((x) => [x.toLowerCase(), x]));
+  const catSet = new Set(categories.map((c) => c.toLowerCase())), listSet = new Map(listItems.map((x) => [x.toLowerCase(), x])), placeSet = new Map(places.map((x) => [x.toLowerCase(), x]));
   const items = (Array.isArray(r.items) ? r.items : []).slice(0, 150).map((x: Record<string, unknown>) => ({
     name_fi: String(x.name_fi || "").trim().slice(0, 120) || null,
     name: String(x.name || "").trim().slice(0, 120) || "Item",
@@ -168,6 +172,7 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
     price: money(x.price) ?? 0,
     category: typeof x.category === "string" && catSet.has(x.category.toLowerCase()) ? categories.find((c) => c.toLowerCase() === (x.category as string).toLowerCase()) : null,
     list_item: typeof x.list_item === "string" ? listSet.get(x.list_item.toLowerCase()) || null : null,
+    place: typeof x.place === "string" ? placeSet.get(x.place.toLowerCase()) || null : null,
   }));
   // Rail: English names must be English (the Finnish name is kept separately in name_fi). Anything that still looks Finnish or Swedish gets one more, translation-only pass.
   const left = items.map((it, k) => [k, it.name] as [number, string]).filter(([, n]) => NON_ENGLISH.test(n));

@@ -1,12 +1,15 @@
 // Now: what's yours to spend until payday, in one number on a colour that says how the month is going,
 // then at most two questions Koti needs answered and a few plain sentences about what's next.
 import { store, todayISO, BILLS_CAT } from "./data.js";
-import { $, esc, eur, eur0, parseDay, openSheet, closeSheet, toast } from "./ui.js";
-import { periodFor, totals, catName, openStartBalance, openCheckBank, setSpendingFilter } from "./money.js";
+import { $, esc, eur, eur0, icon, parseDay, openSheet, closeSheet, toast } from "./ui.js";
+import { periodFor, totals, catName, openStartBalance, openCheckBank } from "./money.js";
+import { setSpendingFilter } from "./spent.js";
 import { monthLedger, startPoint, effectiveBudgets, awaitingIncome } from "./ledger.js";
 import { occurrences, markPaid, setSkipped } from "./plan.js";
 import { nextPay, receive } from "./income.js";
 import { wantsStrip, stripHTML } from "./install.js";
+import { dayShare, openPayments } from "./receipt.js";
+import { rangeOf, spentBetween } from "./spent.js";
 
 const longDay = d => d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 const money = v => (v < 0 ? "−" : "") + eur0(Math.abs(v));
@@ -29,7 +32,7 @@ export function moodOf(L, perDay, p) {
    "yours to spend falls under"). The server only trusts it while it's fresh; it changes only when the numbers do. */
 function saveSnapshot(snap) {
   const old = store.model.settings.snapshot || {};
-  if (["left", "now", "mood", "day", "period"].some(k => old[k] !== snap[k])) store.updateSettings({ snapshot: { ...snap, at: new Date().toISOString() } });
+  if (["left", "now", "mood", "day", "period", "leftToday"].some(k => old[k] !== snap[k])) store.updateSettings({ snapshot: { ...snap, at: new Date().toISOString() } });
 }
 export function isSetUp() { return startPoint().set || store.model.income.length > 0; }
 
@@ -38,13 +41,15 @@ export function mountNow(el) {
   root = el;
   root.addEventListener("click", e => {
     const t = e.target;
-    if (t.closest("[data-how]")) { openHow(); return; }
+    if (t.closest("[data-how]")) { openPayments("today"); return; }
     if (t.closest("[data-start-setup]")) { import("./onboarding.js").then(m => m.openOnboarding()); return; }
     if (t.closest("[data-bal]")) { openStartBalance(); return; }
     const got = t.closest("[data-got]"); if (got) { const src = store.model.income.find(x => x.id === got.dataset.got); if (src) { const tx = receive({ src, due: got.dataset.due }, src.amount); toast(`Added ${eur(tx.amount)} from ${src.name}`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); } return; }
     const ny = t.closest("[data-notyet]"); if (ny) { snooze(ny.dataset.notyet); renderNow(); return; }
     const pd = t.closest("[data-paid]"); if (pd) { const o = findOverdue(pd.dataset.paid, pd.dataset.due); if (o) { const tx = markPaid(o, todayISO(), true); toast(`${o.bill.name} marked paid`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); } return; }
     const no = t.closest("[data-notowed]"); if (no) { const o = findOverdue(no.dataset.notowed, no.dataset.due); if (o) { setSkipped(o, true); toast(`${o.bill.name} skipped this month`, { label: "Undo", run: () => setSkipped(o, false) }); } return; }
+    const tr = t.closest("[data-tx]"); if (tr) { const x = store.model.transactions.find(y => y.id === tr.dataset.tx); if (x) import("./money.js").then(m => m.openExpense({ tx: x })); return; }
+    const ti = t.closest("[data-item]"); if (ti) { import("./setup.js").then(m => { const it = store.model.items.find(i => i.id === ti.dataset.item); if (it) m.openItem(it); }); return; }
     const cat = t.closest("[data-catgo]"); if (cat) { setSpendingFilter(cat.dataset.catgo); location.hash = "#spending"; }
   });
 }
@@ -55,69 +60,49 @@ export function renderNow() {
   const p = periodFor(new Date()), L = monthLedger(p), pd = nextPay(), today = todayISO();
   const days = pd ? Math.max(1, pd.days) : null, perDay = days && L.left > 0 ? L.left / days : 0;
   document.body.dataset.mood = isSetUp() ? moodOf(L, perDay, p) : "calm";
-  if (isSetUp() && L.kind === "current") saveSnapshot({ left: Math.round(L.left), now: Math.round(L.now), perDay: Math.round(perDay), days, mood: document.body.dataset.mood, day: today, period: p.from });
 
   if (!isSetUp()) {
     root.innerHTML = `<section class="now-top">
       <p class="now-k">Welcome to Koti</p>
       <h1 class="now-big now-hi">Let's set up your month</h1>
-      <p class="now-s">Three quick questions about your pay, your bills and your bank. Then Koti tells you what's yours to spend each day.</p>
+      <p class="now-s">Three questions: your pay, your bills and your bank.</p>
       <button type="button" class="now-btn" data-start-setup>Start</button>
     </section>
-    <section class="now-sheet"><p class="now-line">Here to set up your new home? Your lists and the floor plan are under <a href="#home">Home</a>.</p></section>`;
+    <section class="now-sheet"><p class="now-line">Setting up a new home? Go to <a href="#projects">Projects</a>.</p></section>`;
     return;
   }
 
-  const when = pd ? (pd.days === 0 ? "Pay lands today." : `Pay lands ${longDay(pd.date)}.`) : "";
-  const sub = L.left < 0 ? `You're ${eur0(-L.left)} over until payday. ${when}` : perDay ? `About ${eur0(perDay)} a day for ${days} day${days === 1 ? "" : "s"}. ${when}` : when;
+  // Today's share and what's left of it
+  const D = dayShare(), todayLeft = D && D.left != null ? D.left : null;
+  if (todayLeft != null && L.left >= 0) document.body.dataset.mood = todayLeft < 0 ? "over" : D.share > 0 && todayLeft < D.share * 0.25 ? "tight" : (L.overdue || []).length ? "tight" : "calm";
+  const big = todayLeft != null ? todayLeft : L.left;
+  if (L.kind === "current") saveSnapshot({ left: Math.round(L.left), now: Math.round(L.now), perDay: Math.round(perDay), days, mood: document.body.dataset.mood, day: today, period: p.from, share: D && D.share != null ? Math.round(D.share) : null, leftToday: todayLeft != null ? Math.round(todayLeft) : null });
 
   // Questions: income that should have landed, a bill that's late, a balance never set. Two at most.
   const qs = [];
-  awaitingIncome().filter(o => !isSnoozed(`inc:${o.src.id}:${o.due}`)).slice(0, 2).forEach(o => qs.push(`<div class="ask2"><p>Did ${esc(sourceName(o.src))}, ${eur0(o.src.amount)}, land?</p><div class="btns"><button type="button" class="pill" data-got="${esc(o.src.id)}" data-due="${o.due}">It landed</button><button type="button" class="pill ghost" data-notyet="inc:${esc(o.src.id)}:${o.due}">Not yet</button></div></div>`));
-  (L.overdue || []).filter(o => !isSnoozed(`bill:${o.bill.id}:${o.due}`)).slice(0, 2).forEach(o => qs.push(`<div class="ask2"><p>Did you pay ${esc(o.bill.name.toLowerCase())}? ${eur0(o.amount)} was due ${longDay(parseDay(o.due))}.</p><div class="btns"><button type="button" class="pill" data-paid="${esc(o.bill.id)}" data-due="${o.due}">I paid it</button><button type="button" class="pill ghost" data-notowed="${esc(o.bill.id)}" data-due="${o.due}">Not owed this time</button></div></div>`));
-  if (!startPoint().set) qs.push(`<div class="ask2"><p>What does your bank say right now? Koti is counting from €0 until you tell it.</p><div class="btns"><button type="button" class="pill" data-bal>Tell Koti</button></div></div>`);
+  awaitingIncome().filter(o => !isSnoozed(`inc:${o.src.id}:${o.due}`)).slice(0, 2).forEach(o => qs.push(`<div class="ask2"><p>Did ${esc(sourceName(o.src))}, ${eur0(o.src.amount)}, arrive?</p><div class="btns"><button type="button" class="pill" data-got="${esc(o.src.id)}" data-due="${o.due}">Yes</button><button type="button" class="pill ghost" data-notyet="inc:${esc(o.src.id)}:${o.due}">Not yet</button></div></div>`));
+  (L.overdue || []).filter(o => !isSnoozed(`bill:${o.bill.id}:${o.due}`)).slice(0, 2).forEach(o => qs.push(`<div class="ask2"><p>Did you pay ${esc(o.bill.name.toLowerCase())}, ${eur0(o.amount)}?</p><div class="btns"><button type="button" class="pill" data-paid="${esc(o.bill.id)}" data-due="${o.due}">Paid</button><button type="button" class="pill ghost" data-notowed="${esc(o.bill.id)}" data-due="${o.due}">Not owed</button></div></div>`));
+  if (!startPoint().set) qs.push(`<div class="ask2"><p>How much is in your bank account?</p><div class="btns"><button type="button" class="pill" data-bal>Add it</button></div></div>`);
 
-  // Sentences: bills, budgets that are nearly used up, pay on its way.
-  const lines = [];
-  const occ = occurrences(p), paidNow = occ.filter(o => o.paid).sort((a, b) => b.due.localeCompare(a.due))[0];
-  const next = occ.find(o => !o.paid && !o.skipped && o.due >= today);
-  if (next) lines.push(`${paidNow ? `${esc(paidNow.bill.name)} is paid. ` : ""}Next is <a href="#bills">${esc(next.bill.name.toLowerCase())}, ${eur0(next.amount)}</a> on ${longDay(parseDay(next.due))}${next.bill.autopay ? ", and it pays itself" : ""}.`);
-  else if (occ.length) lines.push(`All of this month's bills are paid. Nothing else goes out before your pay.`);
-  const T = totals(p), eb = effectiveBudgets(p);
-  store.model.categories.filter(c => eb.byId[c.id] > 0 && c.id !== BILLS_CAT).map(c => ({ c, b: eb.byId[c.id], s: T.byCat[c.id] || 0 })).filter(x => x.s >= x.b * 0.85)
-    .sort((a, b) => (b.s / b.b) - (a.s / a.b)).slice(0, 2)
-    .forEach(({ c, b, s }) => lines.push(`<span class="dot ${s > b ? "over" : "low"}" aria-hidden="true"></span><span><button type="button" class="tlink" data-catgo="${esc(c.id)}">${esc(c.name)}</button> ${s > b ? `is ${eur0(s - b)} over.` : `is nearly used up. ${eur0(b - s)} to go.`}</span>`));
-  (L.expected || []).slice(0, 1).forEach(o => lines.push(`${esc(o.src.name)}, ${eur0(o.src.amount)}, is on its way. It counts once it lands.`));
+  // Spent today, then bills due today or tomorrow
+  const tx = (D ? D.entries : []).slice().sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const soon = occurrences(p).filter(o => !o.paid && !o.skipped && (o.due === today || o.due === tomorrow));
+  const wk = rangeOf("week"), week = spentBetween(wk.from, wk.to).total;
+  const rowTx = t => `<button type="button" class="trow" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span>${esc(t.payee || catName(t.categoryId))}${t.payee ? `<small>${esc(catName(t.categoryId))}</small>` : ""}</span><b class="num">${t.kind === "refund" ? "+" : ""}${eur(t.amount)}</b></button>`;
+  const rowBill = o => `<a class="trow" href="#bills"><span>${esc(o.bill.name)}<small>${o.due === today ? "Due today" : "Due tomorrow"}</small></span><b class="num">${eur(o.amount)}</b></a>`;
 
   root.innerHTML = `${wantsStrip() ? stripHTML() : ""}<section class="now-top">
-      <p class="now-k">${L.left < 0 ? "Over until payday" : "Yours to spend until payday"}</p>
-      <div class="now-big num" style="--n:${money(L.left).length}">${money(L.left)}</div>
-      <p class="now-s">${esc(sub)}</p>
-      <button type="button" class="now-how" data-how>How we got there</button>
+      <p class="now-k">${big < 0 ? "Over today" : "Left to spend today"}</p>
+      <div class="now-big num" style="--n:${money(big).length}">${money(big)}</div>
+      ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : ""}
+      <p class="now-pd">${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}</p>
     </section>
     <section class="now-sheet">
       ${qs.slice(0, 2).join("")}
-      ${qs.length && lines.length ? `<hr class="now-hr">` : ""}
-      ${lines.map(l => `<p class="now-line${l.startsWith('<span class="dot') ? " has-dot" : ""}">${l}</p>`).join("") || (qs.length ? "" : `<p class="now-line">Nothing needs you today.</p>`)}
+      <div class="tlist"><div class="tl-h"><button type="button" class="tl-t" data-how>Today's payments ${icon("chev", "ic xs")}</button><a href="#spending/week">This week ${eur0(week)}</a></div>
+        ${tx.map(rowTx).join("") || `<p class="tl-none">Nothing yet.</p>`}
+        ${soon.map(rowBill).join("")}
+      </div>
     </section>`;
-}
-
-/* How we got there: the sum, printed like a receipt. */
-function openHow() {
-  const L = monthLedger(periodFor(new Date()));
-  const dueList = [...(L.overdue || []), ...(L.dueThisMonth || [])];
-  const names = dueList.map(o => o.bill.name);
-  openSheet({ title: "How we got there", left: "Close", body: `
-    <div class="receipt num">
-      <p class="rc-d">${esc(longDay(new Date()))}</p>
-      <div class="rc-r"><span>In your account</span><b>${money(L.now)}</b></div>
-      <div class="rc-r"><span>Bills still to come</span><b>${dueList.length ? "−" + eur0(L.due) : "€0"}</b></div>
-      ${names.length ? `<p class="rc-n">${esc(names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0])}</p>` : ""}
-      <div class="rc-r rc-t"><span>Yours to spend</span><b>${money(L.left)}</b></div>
-      ${(L.expected || []).length ? `<p class="rc-f">${esc(L.expected.map(o => `${o.src.name} ${eur0(o.src.amount)}`).join(", "))} isn't in here yet. It counts once you say it landed.</p>` : ""}
-      ${!startPoint().set ? `<p class="rc-f">Koti is counting from €0 because it doesn't know your bank balance yet.</p>` : ""}
-    </div>
-    <p class="now-q">Not the number your bank shows?</p>
-    <button type="button" class="btn primary" id="howBank">Match it to my bank</button>`, });
-  setTimeout(() => { const b = $("#howBank"); if (b) b.onclick = () => { closeSheet(); setTimeout(openCheckBank, 260); }; }, 30);
 }

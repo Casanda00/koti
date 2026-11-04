@@ -143,6 +143,8 @@ const W = {
     catPassed: (c: string, sp: string, a: string) => `${c} is at ${sp} this month, past your ${a}.`,
     leftUnder: (a: string) => `${a} is yours to spend until payday.`,
     bundle: (n: number) => `${n} things today`,
+    daily: "Today's payments",
+    dailyBody: (items: string, total: string, n: number) => n > 1 ? `${items.charAt(0).toUpperCase() + items.slice(1)}. ${total} in total.` : `${items.charAt(0).toUpperCase() + items.slice(1)}.`,
   },
   fi: {
     due: (n: string, a: string) => `${n}, ${a}, erääntyy huomenna.`,
@@ -171,6 +173,8 @@ const W = {
     catPassed: (c: string, sp: string, a: string) => `${c}: ${sp} tässä kuussa, yli rajasi ${a}.`,
     leftUnder: (a: string) => `${a} käytettävissä palkkapäivään asti.`,
     bundle: (n: number) => `${n} asiaa tänään`,
+    daily: "Tämän päivän maksut",
+    dailyBody: (items: string, total: string, n: number) => n > 1 ? `${items.charAt(0).toUpperCase() + items.slice(1)}. Yhteensä ${total}.` : `${items.charAt(0).toUpperCase() + items.slice(1)}.`,
   },
 };
 const langOf = (settings: Row): Lang => String(settings.voiceLang || "").toLowerCase().startsWith("fi") ? "fi" : "en";
@@ -280,7 +284,7 @@ export function customFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: R
 }
 
 function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[]; reminders?: Row[]; again?: Set<string>; lists?: Row[]; events?: Row[] }, now: { day: string; hour: number; weekday: string }): Note[] {
-  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, tight: true, autopay: false, plan: false, lists: true, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
+  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, tight: true, autopay: false, plan: false, lists: true, daily: true, dailyHour: 20, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
   const quiet = R.quietFrom > R.quietTo ? (now.hour >= R.quietFrom || now.hour < R.quietTo) : (now.hour >= R.quietFrom && now.hour < R.quietTo);
   const mine = R.custom === false ? [] : customFor(u, now);
   if (quiet) return mine;
@@ -372,6 +376,18 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
       const name = ((u.lists || []).find((l) => l.id === lid) || {}).name || "your list", items = evs.map((e) => e.item_name);
       const shown = items.length > 3 ? [...items.slice(0, 2), lang === "fi" ? `${items.length - 2} muuta` : `${items.length - 2} more`] : items;
       out.push({ key: `ls:${lid}:${Math.max(...evs.map((e) => Number(e.id)))}`, title: w.listAdded(list(lang, shown), items.length > 1, name), body: w.listBody, url: `./#list/${encodeURIComponent(lid)}` });
+    }
+  }
+  // Today's payments, in the evening: the payments made today (purchases and bills paid), and their total.
+  if (R.daily && now.hour === Number(R.dailyHour)) {
+    const todays = u.tx.filter((t) => t.date === today && (t.kind === "expense" || t.kind === "refund") && t.category_id !== "adjust");
+    if (todays.length) {
+      const total = todays.reduce((a, t) => a + (t.kind === "refund" ? -1 : 1) * Number(t.amount), 0);
+      const billName = (id: string) => ((u.bills || []).find((b) => b.id === id) || {}).name;
+      const names = todays.filter((t) => t.kind === "expense").sort((a, b) => Number(b.amount) - Number(a.amount))
+        .map((t) => `${t.payee || (t.bill_id && billName(t.bill_id)) || ((u.cats || []).find((c) => c.id === t.category_id) || {}).name || (lang === "fi" ? "ostos" : "a purchase")} ${eur(Number(t.amount))}`);
+      const items = list(lang, names.length > 4 ? [...names.slice(0, 3), lang === "fi" ? `${names.length - 3} muuta` : `${names.length - 3} more`] : names);
+      out.push({ key: `dy:${today}`, title: w.daily, body: w.dailyBody(items, eur(total), todays.length), url: "./?payments=today#now" });
     }
   }
   if (R.weekly && now.weekday === "Sun" && now.hour === 19) {
