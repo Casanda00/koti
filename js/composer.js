@@ -18,7 +18,7 @@ function listTarget() {
   if (v === "list" || v === "project") { const l = listOf(currentList() || (location.hash.slice(1).startsWith("list/") ? decodeURIComponent(location.hash.slice(6)) : "")); if (l) return l; }
   return topLists().find(l => l.kind === "shopping") || null;
 }
-const listMode = () => ["home", "list", "project"].includes(getView());
+const listMode = () => ["projects", "list", "project"].includes(getView());
 
 export function paintComposer() {
   if (!form) return;

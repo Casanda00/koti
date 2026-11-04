@@ -143,6 +143,9 @@ const W = {
     catPassed: (c: string, sp: string, a: string) => `${c} is at ${sp} this month, past your ${a}.`,
     leftUnder: (a: string) => `${a} is yours to spend until payday.`,
     bundle: (n: number) => `${n} things today`,
+    daily: "Today's payments",
+    dailyBody: (spent: string, items: string, left: string | null, share: string | null) => `${spent} spent${items ? `: ${items}` : ""}.${left != null && share != null ? ` ${left} left of today's ${share}.` : ""}`,
+    dailyNone: (share: string) => `Nothing spent today. ${share} goes into tomorrow.`,
   },
   fi: {
     due: (n: string, a: string) => `${n}, ${a}, erääntyy huomenna.`,
@@ -171,6 +174,9 @@ const W = {
     catPassed: (c: string, sp: string, a: string) => `${c}: ${sp} tässä kuussa, yli rajasi ${a}.`,
     leftUnder: (a: string) => `${a} käytettävissä palkkapäivään asti.`,
     bundle: (n: number) => `${n} asiaa tänään`,
+    daily: "Tämän päivän maksut",
+    dailyBody: (spent: string, items: string, left: string | null, share: string | null) => `${spent} käytetty${items ? `: ${items}` : ""}.${left != null && share != null ? ` Päivän ${share}:sta jäljellä ${left}.` : ""}`,
+    dailyNone: (share: string) => `Tänään ei kulunut mitään. ${share} siirtyy huomiselle.`,
   },
 };
 const langOf = (settings: Row): Lang => String(settings.voiceLang || "").toLowerCase().startsWith("fi") ? "fi" : "en";
@@ -280,7 +286,7 @@ export function customFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: R
 }
 
 function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]; cats: Row[]; reminders?: Row[]; again?: Set<string>; lists?: Row[]; events?: Row[] }, now: { day: string; hour: number; weekday: string }): Note[] {
-  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, tight: true, autopay: false, plan: false, lists: true, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
+  const R = { bills: true, overdue: true, payday: true, budget: true, weekly: false, tight: true, autopay: false, plan: false, lists: true, daily: true, dailyHour: 20, quietFrom: 21, quietTo: 8, billHour: 9, ...(u.settings.reminders || {}) };
   const quiet = R.quietFrom > R.quietTo ? (now.hour >= R.quietFrom || now.hour < R.quietTo) : (now.hour >= R.quietFrom && now.hour < R.quietTo);
   const mine = R.custom === false ? [] : customFor(u, now);
   if (quiet) return mine;
@@ -373,6 +379,16 @@ function remindersFor(u: { settings: Row; bills: Row[]; tx: Row[]; income: Row[]
       const shown = items.length > 3 ? [...items.slice(0, 2), lang === "fi" ? `${items.length - 2} muuta` : `${items.length - 2} more`] : items;
       out.push({ key: `ls:${lid}:${Math.max(...evs.map((e) => Number(e.id)))}`, title: w.listAdded(list(lang, shown), items.length > 1, name), body: w.listBody, url: `./#list/${encodeURIComponent(lid)}` });
     }
+  }
+  // Today's payments, in the evening: what went out today (bills not counted), and what's left of today's share.
+  if (R.daily && now.hour === Number(R.dailyHour)) {
+    const todays = u.tx.filter((t) => t.date === today && (t.kind === "expense" || t.kind === "refund") && !t.bill_id && t.category_id !== "adjust");
+    const spent = todays.reduce((a, t) => a + (t.kind === "refund" ? -1 : 1) * Number(t.amount), 0);
+    const s = snapshotOf(u.settings, periodOf(u.settings, today).from), share = s && s.day === today && s.share != null ? Number(s.share) : null;
+    const names = todays.filter((t) => t.kind === "expense").sort((a, b) => Number(b.amount) - Number(a.amount)).map((t) => `${t.payee || (lang === "fi" ? "ostos" : "a purchase")} ${eur(Number(t.amount))}`);
+    const items = list(lang, names.length > 3 ? [...names.slice(0, 2), lang === "fi" ? `${names.length - 2} muuta` : `${names.length - 2} more`] : names);
+    if (todays.length) out.push({ key: `dy:${today}`, title: w.daily, body: w.dailyBody(eur(spent), items, share != null ? eur(Math.round(share - spent)) : null, share != null ? eur(share) : null), url: "./?payments=today#now" });
+    else if (share != null && share > 0) out.push({ key: `dy:${today}`, title: w.daily, body: w.dailyNone(eur(share)), url: "./?payments=today#now" });
   }
   if (R.weekly && now.weekday === "Sun" && now.hour === 19) {
     const from = addDays(today, -6); let s = 0, n = 0;

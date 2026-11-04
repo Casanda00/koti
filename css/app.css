@@ -778,3 +778,59 @@ body[data-mood="tight"] .inst-strip{background:rgba(21,22,26,.08);border-color:r
 .bi-scan,.bi-sent,.bi-quick,.bi-amt,.bi-sw{min-width:0;white-space:normal}
 .bi-sent>span{white-space:nowrap}
 .bi-w{field-sizing:content}
+
+/* Period picker: one button, a list under it, Custom dates */
+.pk{position:relative;display:inline-block}
+.pk-b{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px 0 16px;border-radius:999px;background:var(--paper);border:1px solid var(--line);font:600 16px var(--body);color:var(--ink)}
+.pk-b .ic{transform:rotate(90deg);transition:transform .15s}.pk-b[aria-expanded="true"] .ic{transform:rotate(-90deg)}
+.pk-m{position:absolute;z-index:40;top:calc(100% + 6px);left:0;min-width:230px;background:var(--paper);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 24px 48px -18px rgba(0,0,0,.45);color:var(--ink)}
+.pk-m [data-pko]{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:13px 16px;border-top:1px solid var(--soft-line);font-size:16px}
+.pk-m [data-pko]:first-child{border-top:0}
+.pk-m [aria-selected="true"]{font-weight:700;background:var(--spruce-soft)}.pk-m .ic{color:var(--spruce)}
+.pk-c{display:grid;gap:10px;padding:14px 16px}
+.pk-c label{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:15px}
+.pk-c input{font:inherit;color:var(--spruce);background:transparent;border:0;border-bottom:2px solid currentColor}
+.sp-pick{margin-top:8px}
+.rc-r small{display:block;font-size:13px;color:var(--muted);font-weight:400}
+.rc-r.dbl{border-bottom:3px double var(--ink)}
+.pay-h .pk-b{font:800 30px/1 var(--display);font-stretch:62%;background:transparent;border:0;padding:0;min-height:44px}
+.pay-h .pk-b .ic{width:22px;height:22px}
+
+/* Today: spent today and what's due */
+.tlist{display:grid}
+.tl-h{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:4px}
+.tl-h b{font-size:18px}.tl-h a{font-size:15px;font-weight:600;color:var(--spruce)}
+.trow{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line);color:var(--ink);font-size:16px}
+.trow:last-child{border-bottom:0}
+.trow small{display:block;font-size:13px;color:var(--muted)}
+.trow b{font-weight:700}
+.tl-none{margin:4px 0 0;color:var(--muted);font-size:16px}
+
+/* Two tabs, and the dots that say which one */
+.swdots{position:fixed;z-index:24;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-bottom) + 86px);display:flex;gap:6px;pointer-events:none}
+.swdots i{width:6px;height:6px;border-radius:9px;background:var(--line);transition:width .2s,background .2s}
+.swdots i.on{width:18px;background:var(--ink)}
+body[data-mood] .swdots i.on{background:var(--ink)}
+.swdots[hidden]{display:none}
+.view.sw-in-l{animation:swl .22s ease-out}.view.sw-in-r{animation:swr .22s ease-out}
+@keyframes swl{from{transform:translateX(28px);opacity:.4}to{transform:none;opacity:1}}
+@keyframes swr{from{transform:translateX(-28px);opacity:.4}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.view.sw-in-l,.view.sw-in-r{animation:none}}
+
+/* Projects */
+.pcards{display:grid;gap:10px;margin-top:10px}
+.pcard{background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:14px 16px;display:grid;gap:10px}
+.pc-top{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--ink)}
+.pc-t b{display:block;font:800 30px/1 var(--display);font-stretch:62%}.pcard:not(.flat) .pc-t b{font:700 19px var(--body)}
+.pc-t small{font-size:14px;color:var(--muted)}.pc-top .ic{color:var(--muted)}
+.pc-plan{margin-top:0;height:clamp(160px,46vw,230px)}
+.pc-num{display:flex;justify-content:space-between;font-size:15px;color:var(--ink)}.pc-m{color:var(--muted)}
+.pc-bar{display:block;height:10px;border-radius:99px;background:var(--soft-line);overflow:hidden}
+.pc-bar i{display:block;height:100%;border-radius:99px;background:var(--amber)}.pc-bar i.over{background:var(--crit)}
+.pnew{margin:12px 0 0;font-size:16px}
+
+/* The month: four numbers */
+.mleft{margin:18px 0 0;font-size:15px;color:var(--muted)}
+.mnums{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin:10px 0 14px}
+.mnum{color:var(--ink)}.mnum small{display:block;font-size:14px;color:var(--muted)}
+.mnum b{font:800 40px/1 var(--display);font-stretch:62%}

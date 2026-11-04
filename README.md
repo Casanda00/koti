@@ -15,9 +15,9 @@ A phone-first app for setting up a new home and, in later steps, planning money.
 | The microphone | Edge Function `hear` (`supabase/functions/hear`): a recording from the add box is written down by OpenAI (`OPENAI_TRANSCRIBE_MODEL`, default `gpt-4o-mini-transcribe`, Finnish or English), then read for what was meant: a purchase with its lines, a question about spending, a reminder or things for a list. Typed phrases the on-device rules can't read go the same way. Counts in the same daily AI limit as receipts. Offline or signed out, the phone's own speech recognition is used. |
 | Database changes | `supabase/migrations/`. Applied through the Supabase connector; the optional `Update database` workflow applies them too if its secrets are set. |
 
-## How it's laid out (2.0)
+## How it's laid out (2.1)
 
-Three places, named at the top: **Now** (what's yours to spend until payday, on a colour that shows how the month is going: lake blue when calm, cloudberry orange when tight, red when over), **Month** (the plan as one sentence: money in, bills, savings and living money, then each budget) and **Home** (the flat's floor plan and your lists). Your initial opens **You** (settings). A box at the bottom takes what you spent, like "Lidl 23,40", and shows what it understood before saving; on Home it adds to your list. New users answer three questions first: pay (including the last working day of the month), bills and bank balance.
+Two tabs at the top, and a swipe between them: **Today** (what's left to spend today: what was left until payday this morning, shared over the days to payday, minus what you've spent today; the colour shows how today is going) and the month, named after it (**November**: income, bills, savings and living expenses, then each budget). **Projects** (your home with its floor plan, other projects and your lists) opens from the month. Your initial opens **You** (settings). The amount under today's number opens **Today's payments**, a receipt for any period you pick from its title, custom dates included; it also arrives as a notification each evening at 20:00. A box at the bottom takes what you spent, like "Lidl 23,40", and shows what it understood before saving; in Projects it adds to your list.
 
 ## Files
 
@@ -27,13 +27,15 @@ Three places, named at the top: **Now** (what's yours to spend until payday, on 
 | `css/app.css` | Design tokens, light and dark themes, phone and desktop layouts |
 | `js/data.js` | Data model, migrations from earlier versions, local store and change queue |
 | `js/sync.js` | Sign-in and sync with Supabase: offline queue, pulls by server timestamp, live updates |
-| `js/now.js` | Now: yours to spend until payday, the mood colour, questions and what's next, "How we got there" |
-| `js/month.js` | Month: the plan sentence, living money by category, money left to plan, match to bank |
-| `js/place.js` | Home: the floor plan and your lists |
+| `js/now.js` | Today: left to spend today, the mood colour, questions, what you spent today and what's due |
+| `js/month.js` | The month: income, bills, savings, living expenses, budgets, money left to plan, match to bank |
+| `js/place.js` | Projects: your home with its floor plan, other projects, your lists |
 | `js/composer.js` | The add box: reads "Lidl 23,40" and confirms before saving; answers "what did I spend last week?"; adds to a list on Home |
 | `js/onboarding.js` | The three first-time questions |
 | `js/spent.js` | Spent: today, yesterday, this week, last week, this month and last month, compared with what's usual, by category, a bar a day, the purchases; the Today / Yesterday / This week row on Now |
 | `js/hear.js` | The microphone with AI: records, sends to `hear`, turns the answer into a purchase, a question, a reminder or list items |
+| `js/period.js` | The period picker: a title with a down arrow, Today to last month, and custom dates |
+| `js/receipt.js` | Today's payments: the receipt for a period, and today's share |
 | `js/install.js` | Getting Koti onto the Home Screen: one tap on Android and desktop, a guide on iPhone, open-in-browser help inside Instagram or WhatsApp, the strip on Now |
 | `js/paydays.js` | Pay dates, including the last working day (weekdays, not Finnish public holidays) |
 | `js/lists.js` | An opened list, sending a list, new list and list settings |

@@ -62,9 +62,8 @@
 <div class="app" id="app">
   <header class="topbar" id="topbar">
     <nav class="tnav" aria-label="Main">
-      <a href="#now" data-route="now">Now</a>
-      <a href="#month" data-route="month">Month</a>
-      <a href="#home" data-route="home">Home</a>
+      <a href="#now" data-route="now">Today</a>
+      <a href="#month" data-route="month" id="monthTab">Month</a>
     </nav>
     <a class="me" href="#settings" data-route="settings" id="meLink" aria-label="You: account and settings"></a>
   </header>
@@ -72,7 +71,7 @@
   <main class="views" id="main">
     <section class="view" id="view-now" data-view="now" hidden></section>
     <section class="view" id="view-month" data-view="month" hidden></section>
-    <section class="view" id="view-home" data-view="home" hidden></section>
+    <section class="view" id="view-home" data-view="projects" hidden></section>
     <section class="view" id="view-budgets" data-view="budgets" hidden></section>
     <section class="view" id="view-income" data-view="income" hidden></section>
     <section class="view" id="view-spending" data-view="spending" hidden></section>
@@ -83,6 +82,7 @@
     <section class="view" id="view-reminders" data-view="reminders" hidden></section>
   </main>
 
+  <div class="swdots" id="swdots" aria-hidden="true" hidden><i></i><i></i></div>
   <form class="dock" id="dock" autocomplete="off">
     <label class="sr" for="dockIn" id="dockLbl">Spent something?</label>
     <input id="dockIn" type="text" enterkeyhint="done" spellcheck="false">

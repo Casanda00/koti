@@ -87,7 +87,7 @@ export function openList(id) { if (curId !== id) showDone = false; curId = id; r
 export function renderList() {
   if (!lroot || !curId) return;
   const l = listOf(curId);
-  if (!l) { lroot.innerHTML = `<header class="vh"><div><a class="back" href="#home">${icon("chev", "ic sm flip")} Home</a><h1>List not found</h1></div></header><div class="empty">This list was deleted.</div>`; return; }
+  if (!l) { lroot.innerHTML = `<header class="vh"><div><a class="back" href="#projects">${icon("chev", "ic sm flip")} Projects</a><h1>List not found</h1></div></header><div class="empty">This list was deleted.</div>`; return; }
   const parent = l.parentId ? listOf(l.parentId) : null, its = itemsOf(l.id), todo = its.filter(i => !i.done), done = its.filter(i => i.done), e = est(todo);
   const keepVal = $("#liAdd", lroot) ? $("#liAdd", lroot).value : "", hadFocus = document.activeElement && document.activeElement.id === "liAdd";
   const row = i => `<div class="row item${i.done ? " done" : ""}" data-item="${esc(i.id)}"><button type="button" class="cb" role="checkbox" aria-checked="${i.done}" aria-label="${esc(i.name)} bought">${icon("check", "ic xs")}</button>
@@ -95,7 +95,7 @@ export function renderList() {
     ${l.kind === "room" ? `<span class="pdot ${i.priority}" title="${i.priority}"></span>` : ""}</div>`;
   const sugs = suggestions(l.id).filter(n => !its.some(i => i.name.toLowerCase() === n.toLowerCase())).slice(0, 8);
   lroot.innerHTML = `
-    <header class="vh"><div><a class="back" href="#${parent ? "list/" + encodeURIComponent(parent.id) : "home"}">${icon("chev", "ic sm flip")} ${esc(parent ? parent.name : "Home")}</a><h1>${esc(l.name)}</h1><div class="sub">${todo.length ? `${todo.length} to buy${e ? ` · about ${eur(e)}` : ""}` : its.length ? "Everything's bought" : "Empty list"}</div></div>
+    <header class="vh"><div><a class="back" href="#${parent ? "list/" + encodeURIComponent(parent.id) : "projects"}">${icon("chev", "ic sm flip")} ${esc(parent ? parent.name : "Projects")}</a><h1>${esc(l.name)}</h1><div class="sub">${todo.length ? `${todo.length} to buy${e ? ` · about ${eur(e)}` : ""}` : its.length ? "Everything's bought" : "Empty list"}</div></div>
       <div class="hbtns"><button type="button" class="hbtn" data-scan aria-label="Scan a receipt for this list">${icon("cam", "ic")}</button><button type="button" class="hbtn" data-share aria-label="Share this list">${icon("share", "ic")}</button><button type="button" class="hbtn" data-list-settings aria-label="List settings">${icon("more", "ic")}</button></div></header>
     <div class="add-line"><label for="liAdd" class="sr">Add items</label><input id="liAdd" placeholder="Add items: milk, eggs, 2 × yogurt" autocomplete="off" enterkeyhint="done" value="${esc(keepVal)}"><button type="button" class="add-btn" data-add-items aria-label="Add">${icon("plus", "ic sm")}</button></div>
     ${sugs.length ? `<div class="chips sugs" aria-label="Add again">${sugs.map(n => `<button type="button" class="fchip" data-sug="${esc(n)}">+ ${esc(n)}</button>`).join("")}</div>` : ""}
@@ -230,7 +230,7 @@ export function openListSettings(l) {
     const rm = $("#lsRemind", B); if (rm) rm.onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: `Do the shop: ${l.name}`, when: "weekly", weekday: 6, hour: 10, aboutKind: "list", aboutId: l.id })), 260); };
     $("#lsDel", B).onclick = () => { const n = isProj ? projectItems(l.id).length : itemsOf(l.id).length;
       if (!confirm(`Delete "${l.name}"${n ? ` and its ${n} items` : ""}? This can't be undone.`)) return;
-      closeSheet(); const back = l.parentId ? "#list/" + encodeURIComponent(l.parentId) : "#home"; store.deleteList(l.id); location.hash = back; toast(`Deleted ${l.name}`); };
+      closeSheet(); const back = l.parentId ? "#list/" + encodeURIComponent(l.parentId) : "#projects"; store.deleteList(l.id); location.hash = back; toast(`Deleted ${l.name}`); };
   }, onRight: B => {
     const name = $("#lsName", B).value.trim(); if (!name) { $("#lsMsg", B).dataset.state = "error"; $("#lsMsg", B).textContent = "Give it a name."; return; }
     const patch = { name }; if (!isProj) patch.categoryId = $("#lsCat", B).value || null;

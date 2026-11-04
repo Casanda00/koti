@@ -7,6 +7,7 @@ import { $, $$, esc, eur, eur0, icon, parseDay } from "./ui.js";
 import { periodFor, shift, catName, projectEntries, openExpense } from "./money.js";
 import { ADJUST_CAT } from "./ledger.js";
 import { openBill } from "./plan.js";
+import { pickerHTML, bindPicker, labelOf, monthName } from "./period.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -17,6 +18,7 @@ export const RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["week", 
 
 /* The dates a range covers. Weeks start on Monday; months follow your month start (Budgets → month starts on). */
 export function rangeOf(k, now = today0()) {
+  if (k && k.k === "custom") { const a = parseDay(k.from), b = parseDay(k.to), days = Math.round((b - a) / 864e5) + 1; return { k: "custom", from: k.from, to: k.to, start: a, days, full: days === 7 && a.getDay() === 1 ? 7 : null }; }
   if (k === "today") return { k, from: iso(now), to: iso(now), days: 1 };
   if (k === "yesterday") { const y = addDays(now, -1); return { k, from: iso(y), to: iso(y), days: 1 }; }
   if (k === "week") { const m = monday(now); return { k, from: iso(m), to: iso(now), start: m, days: Math.round((now - m) / 864e5) + 1, full: 7 }; }
@@ -63,7 +65,7 @@ export function sentenceFor(r, S, now = today0()) {
     if (first && first <= iso(pe)) out.push(diff(S.total, sumBetween(iso(ps), iso(pe)), r.k === "week" ? "this time last week" : "the week before"));
     const big = Object.entries(S.byDay).sort((a, b) => b[1] - a[1])[0];
     if (big && Object.keys(S.byDay).length > 1) out.push(`${wd(big[0])} was the biggest day.`);
-  } else {
+  } else if (r.period) {
     const prev = shift(r.period, -1), pe = iso(addDays(prev.start, r.days - 1));
     if (first && first <= prev.to) out.push(diff(S.total, sumBetween(prev.from, pe < prev.to ? pe : prev.to), r.k === "month" ? "by this day last month" : "the month before"));
   }
@@ -101,7 +103,6 @@ const rangeFromHash = () => { const h = decodeURIComponent(location.hash.slice(1
 export function mountSpending(el) {
   root = el;
   root.addEventListener("click", e => {
-    const r = e.target.closest("[data-range]"); if (r) { current = r.dataset.range; filter = null; history.replaceState(null, "", "#spending/" + current); renderSpending(); return; }
     const f = e.target.closest("[data-sf]"); if (f) { filter = filter === f.dataset.sf ? null : f.dataset.sf; renderSpending(); return; }
     const t = e.target.closest("[data-tx]"); if (t) { const tx = store.model.transactions.find(x => x.id === t.dataset.tx); if (tx && tx.billId) { const b = store.model.bills.find(x => x.id === tx.billId); if (b) { openBill(b); return; } } if (tx) openExpense({ tx }); return; }
     const it = e.target.closest("[data-item]"); if (it) { import("./setup.js").then(m => { const item = store.model.items.find(i => i.id === it.dataset.item); if (item) m.openItem(item); }); }
@@ -120,7 +121,7 @@ export function renderSpending() {
   if (!root) return;
   const fromHash = rangeFromHash(); if (fromHash) current = fromHash;
   const r = rangeOf(current), S = spentBetween(r.from, r.to);
-  const head = r.days === 1 ? dayLabel(r.from) + "." : r.k === "week" ? "Since Monday." : r.k === "lastweek" ? `${parseDay(r.from).toLocaleDateString("en-GB", { day: "numeric", month: "long" })} to ${parseDay(r.to).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}.` : r.k === "month" ? `Since ${parseDay(r.from).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}.` : `${r.period.start.toLocaleDateString("en-GB", { month: "long" })}.`;
+  const head = r.k === "custom" ? "" : r.days === 1 ? dayLabel(r.from) + "." : r.k === "week" ? "Since Monday." : r.k === "lastweek" ? `${parseDay(r.from).toLocaleDateString("en-GB", { day: "numeric", month: "long" })} to ${parseDay(r.to).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}.` : r.k === "month" ? `Since ${parseDay(r.from).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}.` : `${r.period.start.toLocaleDateString("en-GB", { month: "long" })}.`;
   const cats = Object.entries(S.byCat).filter(([, v]) => v > 0.004).sort((a, b) => b[1] - a[1]), max = cats.length ? cats[0][1] : 0;
   const shops = k => { const p = [...new Set(S.entries.filter(t => t.kind !== "refund" && inCat(t, k)).map(t => t.payee).filter(Boolean))]; return p.length === 1 ? p[0] : p.length > 1 ? `${p.length} places` : ""; };
 
@@ -143,12 +144,13 @@ export function renderSpending() {
   });
   if (day) tx += `</div>`;
 
-  const words = { today: "today", yesterday: "yesterday", week: "this week", lastweek: "last week", month: "this month", lastmonth: "last month" }[r.k];
-  root.innerHTML = `<header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} Month</a><h1>Spent</h1></div></header>
-    <div class="chips sp-ranges" role="tablist" aria-label="When">${RANGES.map(([k, t]) => `<button type="button" class="fchip" role="tab" data-range="${k}" aria-selected="${k === r.k}" aria-pressed="${k === r.k}">${t}</button>`).join("")}</div>
+  const words = r.k === "custom" ? `from ${labelOf(current)}` : { today: "today", yesterday: "yesterday", week: "this week", lastweek: "last week", month: `in ${monthName()}`, lastmonth: "last month" }[r.k];
+  root.innerHTML = `<header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} ${esc(monthName())}</a><h1>Spent</h1></div></header>
+    <div class="sp-pick">${pickerHTML(current)}</div>
     <div class="sp-big num" aria-label="${esc(eur(S.total))} spent ${words}">${eur(S.total, S.total >= 1000 || Number.isInteger(Math.round(S.total * 100) / 100) ? 0 : 2)}</div>
     <p class="sp-s">${S.total ? `${esc(head)} ${sentenceFor(r, S)}` : `Nothing spent ${words}.`}</p>
     ${days}
     ${cats.length ? `<div class="sp-cats">${cats.map(([k, v]) => `<button type="button" class="sp-cat" data-sf="${esc(k)}" aria-pressed="${filter === k}"><span class="sc-t"><b>${esc(catName(k))}</b><small>${esc(shops(k))}</small><b class="num">${eur(v)}</b></span><span class="sc-bar"><i style="width:${Math.max(2, v / max * 100)}%;background:${catColor(k)}"></i></span></button>`).join("")}</div>` : ""}
     ${list.length ? `<div class="gh sp-list-h"><h3>${filter ? `${esc(catName(filter))}: ` : ""}${list.length} purchase${list.length === 1 ? "" : "s"}</h3>${filter ? `<button type="button" class="tlink" data-sf="${esc(filter)}">Show all</button>` : ""}</div>${tx}` : ""}`;
+  bindPicker(root, current, pick => { current = pick; filter = null; history.replaceState(null, "", "#spending/" + (pick.k || pick)); renderSpending(); });
 }
