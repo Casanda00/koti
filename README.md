@@ -25,6 +25,8 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 - **Left until payday:** what's left after everything owed before the next payday is set aside. That covers unpaid bills due by then, overdue bills however old, payments dated later, and this month's savings plan not yet moved. Moving money to a goal is a transfer, not spending.
 - **Direct debits:** they're never recorded as paid by themselves. Koti asks from the due date whether each one went out.
 - **Paydays:** one that falls on a weekend or a Finnish public holiday moves to the working day before.
+- **Money figures:** every one is worked out in `js/engine.js`, in whole cents. The reminders server runs a copy, `supabase/functions/send-reminders/engine.js`; after changing the engine, copy it there too (a test fails until the two are the same).
+- **Reminders:** they follow each person's phone time zone, which the app saves in settings. They're worked out from the person's own records, not from figures the phone saved.
 - **Tests:** `npm test` (Node 22) runs the app's own modules against a pretend server that applies the database's rules. CI runs it on every pull request.
 
 ## Files
