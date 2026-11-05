@@ -122,6 +122,7 @@ function drawCols() {
     const hit = el("rect", { x: m.l + bw * i, y: m.t, width: bw, height: H - m.t - m.b, fill: "transparent" }, svg);
     const show = () => { const s = svg.getBoundingClientRect().width / W; showTip(tip, `<b>${esc(periodLabel(p))}</b><br>${eur(v)} received`, Math.min(Math.max(cx * s, 70), W * s - 70), Math.max(y, m.t + 24) * s); };
     hit.addEventListener("mousemove", show); hit.addEventListener("touchstart", show, { passive: true }); hit.addEventListener("mouseleave", () => hideTip(tip));
+    if (!last) { hit.style.cursor = "pointer"; hit.addEventListener("click", () => { view = p; renderIncome(); }); }   // tap a month to open it
   });
 }
 

@@ -39,7 +39,7 @@ export function renderMonth() {
   const top = income > 0
     ? `<p class="mleft">${left} day${left === 1 ? "" : "s"} left in ${esc(m)}</p>
        <div class="mnums">${num("Income", income, "#income")}${num("Bills", B.total, "#bills")}${num("Savings", saving, "#budgets")}${num("Living expenses", Math.max(0, living), "#budgets")}</div>
-       <div class="mbar" role="img" aria-label="Of ${eur0(income)}: bills ${eur0(B.total)}, savings ${eur0(saving)}, living expenses ${eur0(Math.max(0, living))}"><i class="b" style="width:${Math.min(100, B.total / income * 100)}%"></i>${saving ? `<i class="s" style="width:${Math.min(100, saving / income * 100)}%"></i>` : ""}<i class="l"></i></div>`
+       <nav class="mbar" aria-label="Where ${eur0(income)} goes"><a class="b" href="#bills" style="width:${Math.min(100, B.total / income * 100)}%" aria-label="Bills, ${eur0(B.total)}"></a>${saving ? `<a class="s" href="#budgets" style="width:${Math.min(100, saving / income * 100)}%" aria-label="Savings, ${eur0(saving)}"></a>` : ""}<a class="l" href="#spending/month" aria-label="Living expenses, ${eur0(Math.max(0, living))}"></a></nav>`
     : `<p class="msent">Add your pay to plan ${esc(m)}.</p><button type="button" class="pill" data-add-income>Add your pay</button>`;
 
   const rows = store.model.categories.filter(c => c.id !== BILLS_CAT && eb.byId[c.id] != null).sort((a, b) => a.position - b.position).map(c => {

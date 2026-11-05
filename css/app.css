@@ -588,7 +588,8 @@ body[data-mood] .views{padding-bottom:0}
 .mchip.save{background:var(--amber-soft);color:var(--warn)}
 .mchip:focus-visible{outline-offset:3px}
 .mbar{display:flex;gap:3px;height:10px;margin-top:22px}
-.mbar i{border-radius:99px}.mbar .b{background:var(--spruce)}.mbar .s{background:#FF8B2B}.mbar .l{flex:1;background:var(--tab-off);opacity:.55}
+.mbar a{border-radius:99px;display:block;position:relative}.mbar a::after{content:"";position:absolute;inset:-12px 0}   /* each part opens its screen; a taller target than it looks */
+.mbar .b{background:var(--spruce)}.mbar .s{background:#FF8B2B}.mbar .l{flex:1;background:var(--tab-off);opacity:.55}
 .mhint{margin:10px 2px 0;font-size:14px;color:var(--muted)}
 .mhead{display:flex;justify-content:space-between;align-items:baseline;margin:36px 0 4px}
 .mhead h2{font:800 34px/1 var(--display);font-stretch:62%}
@@ -719,7 +720,17 @@ body[data-mood="tight"] .inst-strip{background:rgba(21,22,26,.08);border-color:r
 .sp-cat .sc-t small{font-size:13px;color:var(--muted)}.sp-cat .sc-t .num{font-size:17px}
 .sp-cat .sc-bar{display:block;height:10px;border-radius:99px;background:var(--soft-line);margin-top:7px;overflow:hidden}
 .sp-cat .sc-bar i{display:block;height:100%;border-radius:99px}
-.sp-cat[aria-pressed="true"] .sc-t b:first-child{text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:2px}
+/* Tap a bar: what's behind it opens right under it. */
+.sp-cat .sc-chev{color:var(--muted);transition:transform .18s ease;align-self:center}
+.sp-cat[aria-expanded="true"] .sc-chev{transform:rotate(90deg)}
+.sp-cat[aria-expanded="true"] .sc-t b:first-child{text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:2px}
+.sp-open{margin:2px 0 10px}
+.sp-days .sd{padding:0;border-radius:10px}
+.sp-days .sd:disabled{cursor:default}
+.sp-days .sd[aria-expanded="true"] i{background:var(--spruce);outline:2px solid var(--spruce);outline-offset:2px}
+.sp-days .sd[aria-expanded="true"] b{color:var(--ink)}
+.sp-dayopen{margin-top:12px}.sp-dayopen .sp-dh{font-weight:600;margin:0 0 8px}
+@media (prefers-reduced-motion:reduce){.sp-cat .sc-chev{transition:none}}
 .sp-list-h{margin-top:24px}.sp-list-h h3{font-size:15px;color:var(--ink)}
 .sp-quick{display:flex;background:var(--paper);border:1px solid var(--line);border-radius:20px;overflow:hidden;color:var(--ink);text-decoration:none}
 .sp-quick .sq{flex:1;padding:11px 14px;border-left:1px solid var(--line);display:grid;gap:2px}
