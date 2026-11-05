@@ -8,6 +8,7 @@ import { periodFor, shift, catName, projectEntries, openExpense } from "./money.
 import { ADJUST_CAT, SAVINGS_CAT } from "./ledger.js";
 import { openBill } from "./plan.js";
 import { pickerHTML, bindPicker, labelOf, monthName } from "./period.js";
+import * as E from "./engine.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -31,23 +32,9 @@ export function rangeOf(k, now = today0()) {
 /* Everything that went out between two dates: receipt lines in their own category or project, refunds taken off,
    bills paid, project purchases. Income and balance corrections aren't spending. */
 export function spentBetween(from, to) {
-  const byCat = {}, byDay = {}, entries = [];
-  const add = (k, v, d) => { byCat[k] = (byCat[k] || 0) + v; byDay[d] = (byDay[d] || 0) + v; };
-  store.model.transactions.forEach(t => {
-    if (t.date < from || t.date > to || t.kind === "income" || t.categoryId === ADJUST_CAT || t.categoryId === SAVINGS_CAT) return;
-    entries.push(t);
-    if (t.kind === "refund") { add(t.categoryId || "none", -t.amount, t.date); return; }
-    if (t.lines && t.lines.length) {
-      let rest = t.amount;
-      t.lines.forEach(l => { add(l.categoryId || t.categoryId || "none", l.price, t.date); rest -= l.price; });
-      if (Math.abs(rest) >= 0.005) add(t.categoryId || "none", rest, t.date);
-      return;
-    }
-    add(t.categoryId || "none", t.amount, t.date);
-  });
-  projectEntries({ from, to }).forEach(e => { add(e.categoryId, e.amount, e.date); entries.push(e); });
-  const total = Object.values(byCat).reduce((a, v) => a + v, 0);
-  return { total, byCat, byDay, entries };
+  const S = E.spending(store.model, from, to), eu = E.euros, map = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, eu(v)]));
+  const entries = S.entries.map(e => (e.itemId ? { ...e, amount: eu(e.amount), kind: "expense", note: null, fromProject: true } : e));
+  return { total: eu(S.total), byCat: map(S.byCat), byDay: map(S.byDay), entries };
 }
 const sumBetween = (from, to) => spentBetween(from, to).total;
 const firstDay = () => store.model.transactions.reduce((m, t) => (t.kind !== "income" && (!m || t.date < m) ? t.date : m), null);

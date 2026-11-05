@@ -1,6 +1,7 @@
 // "Today's payments": the payments you made, printed like a receipt, for any period you pick from its title.
 // Also where today's share is worked out, for Today.
-import { todayISO, BILLS_CAT } from "./data.js";
+import { store, todayISO, BILLS_CAT } from "./data.js";
+import * as E from "./engine.js";
 import { esc, eur, eur0, parseDay, openSheet } from "./ui.js";
 import { periodFor, catName } from "./money.js";
 import { monthLedger } from "./ledger.js";
@@ -14,12 +15,11 @@ const longDay = d => parseDay(d).toLocaleDateString("en-GB", { weekday: "long", 
 /* Today's share: what was left until payday this morning, shared out over the days to payday. Bills paid today
    don't count against it: they were already taken off. */
 export function dayShare() {
-  const L = monthLedger(periodFor(new Date())), pd = nextPay(), t = todayISO();
-  if (L.kind !== "current") return null;
-  const S = spentBetween(t, t), billsToday = S.byCat[BILLS_CAT] || 0, spent = S.total - billsToday;
-  const days = pd ? Math.max(1, pd.days) : null, morning = L.left + spent;
-  const share = days ? Math.max(0, morning) / days : null;
-  return { L, pd, days, spent, morning, share, left: share != null ? share - spent : null, entries: S.entries.filter(e => !(e.categoryId === BILLS_CAT)) };
+  const t = todayISO(), D = E.dayShare(store.model, t);
+  if (!D) return null;
+  const eu = v => (v == null ? null : E.euros(v));
+  return { L: monthLedger(periodFor(new Date())), pd: nextPay(), days: D.days, spent: eu(D.spent), morning: eu(D.morning), share: eu(D.share), left: eu(D.left),
+    entries: spentBetween(t, t).entries.filter(e => !(e.categoryId === BILLS_CAT)) };
 }
 
 const title = sel => sel === "today" ? "Today's payments" : sel === "yesterday" ? "Yesterday's payments" : sel === "week" ? "This week's payments" : sel === "lastweek" ? "Last week's payments" : `${labelOf(sel)} payments`;

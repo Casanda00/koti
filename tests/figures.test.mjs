@@ -127,12 +127,11 @@ test("KNOWN: income received and income expected share one word", () => {
   assert.equal(A.money.totals(P()).income, 2400);
 });
 
-/* Floating point. Two purchases of €0.10 and €0.20 are €0.30 of spending. Today the sum is done in floats and
-   comes out as 0.30000000000000004; whole cents in the engine will make it exact. */
-test("KNOWN: money is added up in floating point", () => {
+/* Floating point. Two purchases of €0.10 and €0.20 are €0.30 of spending. Until the screens moved onto the engine
+   (Phase 1, step 3) the sum was done in floats and came out as 0.30000000000000004; it is exact now. */
+test("money is added up in whole cents: €0.10 + €0.20 is €0.30", () => {
   reset(1000);
   S.transactions = [tx("a", "2027-03-02", 0.1, "cat-groceries"), tx("b", "2027-03-03", 0.2, "cat-groceries")];
-  const spend = A.money.totals(P()).spend;
-  assert.notEqual(spend, 0.3, "if this fails, the sum has become exact: change it to assert.equal");
-  assert.equal(Math.round(spend * 100) / 100, 0.3);
+  assert.equal(A.money.totals(P()).spend, 0.3);
+  assert.equal(L().now, 999.7);
 });

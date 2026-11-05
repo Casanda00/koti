@@ -283,3 +283,53 @@ export function budgets(model, p, today) {
   model.categories.forEach(c => { if (c.budget == null) return; const b = budgetOf(c, p, 0); byId[c.id] = b; total += Math.max(0, b); });
   return { byId, total };
 }
+
+/* ---------- Month totals ---------- */
+/* Pay in a budget month: expected (every occurrence not marked missed), received, and still to come. */
+export function incomeTotals(model, p) {
+  const occ = incomeOccurrences(model, p); let expected = 0, received = 0, pending = 0;
+  occ.forEach(o => { if (o.got) { received += cents(o.got.amount); expected += o.amount; } else if (!o.missed) { expected += o.amount; pending += o.amount; } });
+  return { occ, expected, received, pending, total: received + pending };
+}
+/* Bills in a budget month. A due date marked "Not owed" counts only if it was paid anyway. */
+export function billTotals(model, p) {
+  const occ = billOccurrences(model, p).filter(o => !o.skipped || o.paid);
+  return { occ, total: sum(occ, o => o.amount), paid: sum(occ, o => (o.paid ? cents(o.paid.amount) : 0)), due: sum(occ.filter(o => !o.paid), o => o.amount),
+    count: occ.length, paidCount: occ.filter(o => o.paid).length };
+}
+/* A budget month as the Budgets and Month screens show it. Income here is what arrived plus, for a month not yet
+   over, what is still expected: not the same as the balance's income, which counts only what arrived. */
+export function monthTotals(model, p, today) {
+  const sp = spending(model, p.from, p.to), byCat = {}, byProject = {};
+  for (const [k, v] of Object.entries(sp.byCat)) { if (k.startsWith("proj:")) byProject[k.slice(5)] = v; else byCat[k] = v; }
+  const incomeLoose = sum(model.transactions.filter(t => t.date >= p.from && t.date <= p.to && t.kind === "income" && !t.incomeId && t.categoryId !== ADJUST_CAT && t.categoryId !== SAVINGS_CAT), t => cents(t.amount));
+  const inc = incomeTotals(model, p), bills = billTotals(model, p), spend = sp.total - sp.projects, billsPaid = byCat[BILLS_CAT] || 0;
+  const income = inc.received + incomeLoose + (p.to >= today ? inc.pending : 0);
+  return { byCat, byProject, spend, everyday: spend - billsPaid, projects: sp.projects, total: sp.total, income: income || null, inc, incomeLoose, bills, billsPaid, billsDue: bills.due };
+}
+
+/* ---------- Any budget month ---------- */
+const plannedIncome = (model, p) => incomeOccurrences(model, p).filter(o => !o.missed);
+const plannedBills = (model, p) => billOccurrences(model, p).filter(o => !o.skipped);
+/* A month before counting started, a finished month, the current month (state), or a month ahead (a plan). */
+export function month(model, p, today) {
+  const sd = monthStart(model), cur = periodOf(today, sd), st = startPoint(model, today);
+  if (p.from > cur.from) return planMonth(model, p, today);
+  if (p.from === cur.from) return state(model, today);
+  if (p.to < st.date) return { kind: "before", p, currency: CURRENCY };
+  const from = p.from < st.date ? st.date : p.from;
+  const carried = from === st.date ? st.amount : balanceAt(model, addDays(from, -1), today);
+  const f = flow(model, from, p.to);
+  return { kind: "past", currency: CURRENCY, p, carried, startsHere: from === st.date && st.set, ...f, end: carried + f.net,
+    unpaid: plannedBills(model, p).filter(o => !o.paid && o.due >= st.date), missedIncome: plannedIncome(model, p).filter(o => !o.got && o.due >= st.date) };
+}
+/* A month ahead: what's left now plus pay still expected, then each month's planned pay less bills, budgets and goals. */
+function planMonth(model, p, today) {
+  const sd = monthStart(model), cur = periodOf(today, sd), L = state(model, today), goals = goalsMonthly(model);
+  let start = L.left + L.expectedSum + sum(L.late, o => o.amount);
+  for (let m = shiftPeriod(cur, 1, sd); m.from < p.from; m = shiftPeriod(m, 1, sd)) {
+    start += sum(plannedIncome(model, m), o => o.amount) - sum(plannedBills(model, m), o => o.amount) - budgets(model, m, today).total - goals;
+  }
+  const billList = plannedBills(model, p), bills = sum(billList, o => o.amount), b = budgets(model, p, today).total, income = plannedIncome(model, p);
+  return { kind: "plan", currency: CURRENCY, p, start, bills, budgets: b, goals, left: start - bills - b - goals, income, incomeSum: sum(income, o => o.amount), billList };
+}
