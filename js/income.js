@@ -4,38 +4,25 @@ import { store, todayISO, INCOME_FREQS } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
 import { periodFor, shift, periodLabel, navHTML, moneySwitch } from "./money.js";
 import { payDateFor, LAST_WORKING_DAY } from "./paydays.js";
+import * as E from "./engine.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const FREQ = { monthly: "Monthly", varies: "Varies each month", once: "One-off" };
 export const incId = (sid, due) => `inc:${sid}:${due}`;
-const receivedOf = (sid, due) => store.model.transactions.find(t => t.id === incId(sid, due)) || null;
 const payDate = (src, y, m) => payDateFor(src.payDay, y, m);
 const dayText = src => src.frequency === "once" ? (src.expectedDate ? fmtDay(parseDay(src.expectedDate)) : "No date") : src.payDay === LAST_WORKING_DAY ? "last working day" : src.payDay === 0 ? "last day" : `${src.payDay}${["th", "st", "nd", "rd"][(src.payDay % 10 < 4 && Math.floor(src.payDay / 10) !== 1) ? src.payDay % 10 : 0]}`;
 
-/* ---------- Occurrences and totals ---------- */
-export function incomeOccurrences(p) {
-  const out = [];
-  store.model.income.filter(s => s.active).forEach(src => {
-    if (src.frequency === "once") { if (src.expectedDate && src.expectedDate >= p.from && src.expectedDate <= p.to) out.push({ src, due: src.expectedDate }); return; }
-    for (let k = -1; k <= 1; k++) { const due = iso(payDate(src, p.start.getFullYear(), p.start.getMonth() + k)); if (due >= p.from && due <= p.to && (!src.endDate || due <= src.endDate)) out.push({ src, due }); }
-  });
-  return out.map(o => ({ ...o, got: receivedOf(o.src.id, o.due), missed: (o.src.missed || []).includes(o.due) })).sort((a, b) => a.due.localeCompare(b.due));
-}
+/* ---------- Occurrences and totals (worked out in js/engine.js) ---------- */
+const periodArg = p => ({ from: p.from, to: p.to });
+export const incomeOccurrences = p => E.incomeOccurrences(store.model, periodArg(p)).map(({ amount, ...o }) => o);
 export function incomeTotals(p) {
-  const occ = incomeOccurrences(p);
-  let expected = 0, received = 0, pending = 0;
-  occ.forEach(o => { const exp = Number(o.src.amount) || 0; if (o.got) { received += o.got.amount; expected += exp; } else if (!o.missed) { expected += exp; pending += exp; } });
-  return { occ, expected, received, pending, total: received + pending };
+  const T = E.incomeTotals(store.model, periodArg(p));
+  return { occ: T.occ.map(({ amount, ...o }) => o), expected: E.euros(T.expected), received: E.euros(T.received), pending: E.euros(T.pending), total: E.euros(T.total) };
 }
 /* Next payday: from the biggest monthly source; falls back to the payday setting. */
 export function nextPay(today = new Date()) {
-  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const main = store.model.income.filter(s => s.active && s.frequency !== "once").sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))[0];
-  const sp = store.model.settings.payday, pd = main ? main.payDay : sp === "last" ? 0 : sp ? Number(sp) : null;
-  if (pd == null || Number.isNaN(pd)) return null;
-  const inMonth = (y, m) => payDateFor(pd, y, m);
-  let d = inMonth(t0.getFullYear(), t0.getMonth()); if (d < t0) d = inMonth(t0.getFullYear(), t0.getMonth() + 1);
-  return { date: d, days: Math.round((d - t0) / 864e5), source: main || null };
+  const r = E.nextPay(store.model, iso(today));
+  return r && { date: new Date(+r.date.slice(0, 4), +r.date.slice(5, 7) - 1, +r.date.slice(8, 10)), days: r.days, source: r.source };
 }
 /* "It didn't come": this expected payment is marked missed, so it stops being expected. */
 export function setMissed(o, missed = true) {

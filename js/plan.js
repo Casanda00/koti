@@ -4,6 +4,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, 
 import { periodFor } from "./money.js";
 import { overdueBills, SAVINGS_CAT } from "./ledger.js";
 import { newId } from "./data.js";
+import * as E from "./engine.js";
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export const FREQ_LABEL = { monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly", once: "Once" };
@@ -13,36 +14,17 @@ const paymentOf = (billId, due) => store.model.transactions.find(t => t.id === p
 
 /* ---------- Occurrences and totals ---------- */
 function dueIn(b, y, m) { // due date of bill b in month m (0-based) of year y, or null
-  const mm = ((m % 12) + 12) % 12;
-  if (b.frequency === "once") { if (!b.dueDate) return null; const d = parseDay(b.dueDate), t = new Date(y, m, 1); return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() ? d : null; }
-  if (b.frequency === "yearly" && mm !== b.anchorMonth - 1) return null;
-  if (b.frequency === "quarterly" && ((mm - (b.anchorMonth - 1)) % 3 + 3) % 3 !== 0) return null;
-  const last = new Date(y, m + 1, 0).getDate(), d = new Date(y, m, Math.min(b.dueDay, last)), s = iso(d);
-  if (b.startDate && s < b.startDate.slice(0, 8) + "01") return null;   // not started yet
-  if (b.endDate && s > b.endDate) return null;                          // ended
-  return d;
+  const s = E.billDue(b, y, m); return s ? parseDay(s) : null;
 }
-export function occurrences(p, { includePaused = false } = {}) {
-  const out = [];
-  store.model.bills.filter(b => includePaused || b.active).forEach(b => {
-    for (let k = -1; k <= 1; k++) {
-      const d = dueIn(b, p.start.getFullYear(), p.start.getMonth() + k); if (!d) continue;
-      const due = iso(d); if (due < p.from || due > p.to) continue;
-      out.push(occurrenceOf(b, due));
-    }
-  });
-  return out.sort((a, b) => a.due.localeCompare(b.due) || a.bill.name.localeCompare(b.bill.name));
-}
+const euroOcc = o => ({ ...o, amount: E.euros(o.amount) });
+export const occurrences = (p, opts = {}) => E.billOccurrences(store.model, { from: p.from, to: p.to }, opts).map(euroOcc);
 export function billTotals(p) {
-  const occ = occurrences(p).filter(o => !o.skipped || o.paid); let total = 0, paid = 0;
-  occ.forEach(o => { total += o.amount; if (o.paid) paid += o.paid.amount; });
-  const due = occ.filter(o => !o.paid).reduce((a, o) => a + o.amount, 0);
-  return { occ, total, paid, due, count: occ.length, paidCount: occ.filter(o => o.paid).length };
+  const T = E.billTotals(store.model, { from: p.from, to: p.to });
+  return { occ: T.occ.map(euroOcc), total: E.euros(T.total), paid: E.euros(T.paid), due: E.euros(T.due), count: T.count, paidCount: T.paidCount };
 }
 export const perYear = b => (b.endDate && b.endDate < todayISO()) ? 0 : b.amount * ({ monthly: 12, quarterly: 4, yearly: 1, once: 0 }[b.frequency] ?? 12);
-/* The amount for one due date: what that month's bill said, otherwise the usual amount. */
 export const dueAmount = (b, due) => (b.dues && b.dues[due] && b.dues[due].amount) || b.amount;
-export const occurrenceOf = (b, due) => ({ bill: b, due, amount: dueAmount(b, due), paid: paymentOf(b.id, due) || null, skipped: !!(b.dues && b.dues[due] && b.dues[due].skipped), failed: !!(b.dues && b.dues[due] && b.dues[due].failed) });
+export const occurrenceOf = (b, due) => euroOcc(E.billOccurrence(store.model, b, due));
 export function nextDue(b, from = new Date()) {
   const t = new Date(from.getFullYear(), from.getMonth(), from.getDate());
   for (let k = 0; k < 14; k++) { const d = dueIn(b, t.getFullYear(), t.getMonth() + k); if (d && d >= t) return d; }

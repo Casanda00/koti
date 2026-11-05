@@ -7,7 +7,8 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, 
 import { parseExpense } from "./voice.js";
 import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
 import { newId } from "./data.js";
-import { monthLedger, startPoint, categoryBudget, effectiveBudgets, ADJUST_CAT, SAVINGS_CAT, awaitingIncome } from "./ledger.js";
+import { monthLedger, startPoint, effectiveBudgets, ADJUST_CAT, SAVINGS_CAT, awaitingIncome } from "./ledger.js";
+import * as E from "./engine.js";
 import { markPaid, setSkipped } from "./plan.js";
 import { receive, setMissed } from "./income.js";
 
@@ -38,31 +39,13 @@ export const catName = id => {
   return (store.model.categories.find(c => c.id === id) || {}).name || "Uncategorised";
 };
 /* Purchases ticked in a project (like Home setup) count as spending in the month they were bought. */
-export function projectEntries(p) {
-  const paid = paidByReceipt();
-  return store.model.items.filter(i => i.done && i.price > 0 && !paid.has(i.id) && i.boughtAt && i.boughtAt >= p.from && i.boughtAt <= p.to).map(i => ({ i, pr: projectOf(i.listId) })).filter(x => x.pr)
-    .map(({ i, pr }) => ({ id: "item:" + i.id, itemId: i.id, date: i.boughtAt, amount: i.price, kind: "expense", categoryId: "proj:" + pr.id, projectId: pr.id, payee: i.name, note: null, fromProject: true }));
-}
+export const projectEntries = p => E.projectEntries(store.model, p.from, p.to).map(e => ({ ...e, amount: E.euros(e.amount), kind: "expense", note: null, fromProject: true }));
+/* A budget month's totals (worked out in js/engine.js), in euros. */
 export function totals(p) {
-  const tx = store.model.transactions.filter(t => t.date >= p.from && t.date <= p.to);
-  const byCat = {}, byProject = {}; let spend = 0, incomeLoose = 0, projects = 0;
-  const add = (k, v) => { if (k.startsWith("proj:")) { byProject[k.slice(5)] = (byProject[k.slice(5)] || 0) + v; projects += v; } else { byCat[k] = (byCat[k] || 0) + v; spend += v; } };
-  tx.forEach(t => {
-    if (t.categoryId === ADJUST_CAT || t.categoryId === SAVINGS_CAT) return;   // corrections and savings transfers change the balance, not spending or income
-    if (t.kind === "income") { if (!t.incomeId) incomeLoose += t.amount; return; }
-    if (t.kind === "refund") { add(t.categoryId || "none", -t.amount); return; }
-    if (t.lines && t.lines.length) {   // a receipt split by line: each line counts in its own category or project
-      let rest = t.amount;
-      t.lines.forEach(l => { add(l.categoryId || t.categoryId || "none", l.price); rest -= l.price; });
-      if (Math.abs(rest) >= 0.005) add(t.categoryId || "none", rest);   // rounding, deposits or anything not itemised
-      return;
-    }
-    add(t.categoryId || "none", t.amount);
-  });
-  projectEntries(p).forEach(e => { byProject[e.projectId] = (byProject[e.projectId] || 0) + e.amount; projects += e.amount; });
-  const inc = incomeTotals(p), income = (inc.received + incomeLoose + (p.to >= todayISO() ? inc.pending : 0)) || null;   // past months: only what arrived
-  const bills = billTotals(p), billsPaid = byCat[BILLS_CAT] || 0, everyday = spend - billsPaid;
-  return { tx, byCat, spend, everyday, projects, byProject, setup: projects, total: spend + projects, income, inc, incomeLoose, bills, billsPaid, billsDue: bills.due };
+  const T = E.monthTotals(store.model, { from: p.from, to: p.to }, todayISO()), eu = E.euros, map = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, eu(v)]));
+  const bills = billTotals(p), inc = incomeTotals(p), tx = store.model.transactions.filter(t => t.date >= p.from && t.date <= p.to);
+  return { tx, byCat: map(T.byCat), spend: eu(T.spend), everyday: eu(T.everyday), projects: eu(T.projects), byProject: map(T.byProject), setup: eu(T.projects), total: eu(T.total),
+    income: T.income == null ? null : eu(T.income), inc, incomeLoose: eu(T.incomeLoose), bills, billsPaid: eu(T.billsPaid), billsDue: bills.due };
 }
 export function pace(p) { const now = new Date(), t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()); if (t0 < p.start) return 0; if (t0 > p.end) return 1; const days = Math.round((p.end - p.start) / 864e5) + 1; return (Math.round((t0 - p.start) / 864e5) + 1) / days; }
 
@@ -285,8 +268,8 @@ export function renderMoney() {
   $("#moSetupStat", root).innerHTML = `<div class="k">Bills</div><div class="v">${eur0(T.bills.total)}</div><div class="meter"><i style="width:${T.bills.total ? Math.min(100, T.billsPaid / T.bills.total * 100) : 0}%;background:var(--wall)"></i></div><div class="s">${T.bills.count ? `${T.bills.paidCount} of ${T.bills.count} paid` : "No bills this month"}</div>`;
 
   const pc = isCur ? pace(view) : isFuture ? 0 : 1;
-  const spentIn = (cid, p) => (totals(p).byCat[cid] || 0);
-  const rows = store.model.categories.slice().sort((a, b) => a.position - b.position).map(c => ({ id: c.id, name: c.name, budget: c.budget == null ? null : categoryBudget(c, view, spentIn), base: c.budget, spent: T.byCat[c.id] || 0 }));
+  const B = effectiveBudgets(view).byId;
+  const rows = store.model.categories.slice().sort((a, b) => a.position - b.position).map(c => ({ id: c.id, name: c.name, budget: c.budget == null ? null : B[c.id], base: c.budget, spent: T.byCat[c.id] || 0 }));
   if (T.byCat.none) rows.push({ id: "none", name: "Uncategorised", budget: null, spent: T.byCat.none });
   Object.keys(T.byCat).filter(k => k !== "none" && k !== BILLS_CAT && !store.model.categories.some(c => c.id === k)).forEach(k => rows.push({ id: k, name: "Deleted category", budget: null, spent: T.byCat[k] }));
   $("#moBudgets", root).innerHTML = rows.map(r => {
