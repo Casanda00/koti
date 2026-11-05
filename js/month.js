@@ -8,6 +8,7 @@ import { monthName } from "./period.js";
 import { monthLedger, effectiveBudgets, startPoint } from "./ledger.js";
 import { billTotals } from "./plan.js";
 import { incomeTotals, openSource } from "./income.js";
+import * as E from "./engine.js";
 
 const nextMonthName = p => new Date(p.end.getFullYear(), p.end.getMonth() + 1, 1).toLocaleDateString("en-GB", { month: "long" });
 const keptKey = p => `kept:${p.from}`;
@@ -29,7 +30,7 @@ export function renderMonth() {
   if (!root) return;
   const p = periodFor(new Date()), I = incomeTotals(p), B = billTotals(p), T = totals(p), eb = effectiveBudgets(p), L = monthLedger(p);
   const looseIncome = T.incomeLoose || 0, income = I.total + looseIncome;
-  const saving = store.model.goals.reduce((a, g) => a + (g.saved < g.target ? Number(g.monthly) || 0 : 0), 0);
+  const saving = E.euros(E.goalsMonthly(store.model));   // this month's plan for goals not yet reached
   const living = income - B.total - saving, unplanned = Math.round(living - eb.total);
   const m = monthName(p);
 

@@ -227,7 +227,15 @@ export function aheadOut(model, today, until) {
   const list = model.transactions.filter(t => t.date > today && t.date <= until && t.kind !== "income" && t.categoryId !== ADJUST_CAT);
   return { list, total: sum(list, t => (t.kind === "refund" ? -1 : 1) * cents(t.amount)) };
 }
-export const goalsMonthly = model => sum(model.goals, g => (g.saved < g.target ? cents(g.monthly) : 0));
+/* What a goal holds: the amount saved outside Koti's transfers (the goal's own "saved"; transfers made before
+   5 November 2026 were added there too), plus every transfer in or out recorded since, each carrying the goal in its
+   id ("sav:<goal id>:…"). Worked out from the transfers, two phones moving money at once both count. */
+export const isGoalTransfer = (t, goalId) => t.categoryId === SAVINGS_CAT && String(t.id).startsWith(`sav:${goalId}:`);
+export function goalSaved(model, g) {
+  const moved = sum(model.transactions.filter(t => isGoalTransfer(t, g.id)), t => (t.kind === "expense" ? 1 : -1) * cents(t.amount));
+  return Math.max(0, cents(g.saved) + moved);
+}
+export const goalsMonthly = model => sum(model.goals, g => (goalSaved(model, g) < cents(g.target) ? cents(g.monthly) : 0));
 
 /* ---------- The state now ---------- */
 /* The current budget month, as Today shows it: the balance now and what's left until payday, with every part. */
