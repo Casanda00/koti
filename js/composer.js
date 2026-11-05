@@ -92,14 +92,15 @@ async function ask({ audio = null, text = "", fallback = null }) {
   toast(said ? `Heard “${said.length > 60 ? said.slice(0, 57) + "…" : said}”. Add an amount, like “Lidl 23,40”.` : "Didn't catch that. Try again, or type it.");
 }
 
-function go() {
-  const text = input.value.trim();
+function go() { return handleTyped(input.value.trim()); }
+/* What was typed into the box, and pressed Add. Returns the AI's work when it asks the AI (for the tests). */
+export function handleTyped(text) {
   if (isReminderPhrase(text)) {   // "remind me to pay water on the 15th": open the reminder, filled in, to check and save
     const preset = parseReminder(text, { bills: store.model.bills });
     input.value = ""; import("./reminders.js").then(m => m.openReminder(null, preset)); return;
   }
-  const ask = !listMode() && spendQuestion(text);   // "what did I spend last week?" opens Spent on last week
-  if (ask) { input.value = ""; location.hash = "#spending/" + ask; return; }
+  const range = !listMode() && spendQuestion(text);   // "what did I spend last week?" opens Spent on last week
+  if (range) { input.value = ""; location.hash = "#spending/" + range; return; }
   if (listMode()) {
     if (!text) { input.focus(); return; }
     let l = listTarget();
@@ -113,12 +114,12 @@ function go() {
   const cats = store.model.categories;
   const heard = parseExpense(text, { categories: cats, history: store.model.transactions });
   if (!heard.amount) {
-    if (aiPossible()) { ask({ text }); return; }   // the rules couldn't read it: let the AI try
+    if (aiPossible()) return ask({ text });   // the rules couldn't read it: let the AI try
     toast("Add an amount, like “Lidl 23,40”."); input.focus(); return;
   }
   // A whole sentence ("I paid 11e from my upcoming salary for lunch") goes to the AI too; what the rules read
   // is the answer if the AI can't be reached.
-  if (aiPossible() && isSentence(text)) { ask({ text, fallback: heard }); return; }
+  if (aiPossible() && isSentence(text)) return ask({ text, fallback: heard });
   showHeard(heard);
 }
 
