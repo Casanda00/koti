@@ -35,6 +35,16 @@ async function rest(path: string, init: RequestInit = {}) {
   if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
+/* Every matching row, a page at a time: the API returns at most 1000 rows to one request, and a reminder worked out
+   from a cut-off list of transactions would be wrong without any error. `order` must make the order total. */
+export async function restAll(path: string, order: string) {
+  const out: Row[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const page: Row[] = (await rest(`${path}&order=${order}&limit=1000&offset=${offset}`)) || [];
+    out.push(...page);
+    if (page.length < 1000) return out;
+  }
+}
 const rpc = (fn: string, args: Row = {}) => rest(`rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
 
 /* Keys: read from Vault, or create them once. */
@@ -132,22 +142,22 @@ async function firstTime(user: string, key: string) {
 }
 
 async function runAll(secret: string) {
-  const subs: Row[] = await rest("push_subscriptions?select=*");
+  const subs: Row[] = await restAll("push_subscriptions?select=*", "user_id,endpoint");
   if (!subs.length) return { users: 0, sent: 0 };
   const users = [...new Set(subs.map((s) => s.user_id))], inList = `in.(${users.join(",")})`, hel = local().day;
   const days = [E.addDays(hel, -1), hel, E.addDays(hel, 1)];   // every time zone's "today" is one of these
   const [settings, bills, tx, income, cats, goals, log, mineAll, lists, items, events] = await Promise.all([
-    rest(`settings?select=user_id,data&user_id=${inList}`),
-    rest(`bills?select=*&deleted=eq.false&user_id=${inList}`),
-    rest(`transactions?select=user_id,id,date,amount,kind,category_id,payee,bill_id,bill_due,income_id,income_due,lines,updated_at&deleted=eq.false&user_id=${inList}`),
-    rest(`income_sources?select=*&deleted=eq.false&user_id=${inList}`),
-    rest(`categories?select=user_id,id,name,budget&deleted=eq.false&user_id=${inList}`),
-    rest(`goals?select=user_id,id,name,target,saved,monthly&deleted=eq.false&user_id=${inList}`),
-    rest(`push_log?select=user_id,key&user_id=${inList}&or=(key.like."again:*",${days.map((d) => `key.like."n:${d}:*"`).join(",")})`),
-    rest(`reminders?select=*&deleted=eq.false&active=eq.true&user_id=${inList}`),
-    rest(`lists?select=user_id,id,name,kind,parent_id&deleted=eq.false&user_id=${inList}`),
-    rest(`items?select=user_id,id,list_id,name,done,price,bought_at&deleted=eq.false&done=eq.true&price=gt.0&user_id=${inList}`),
-    rest(`share_events?select=user_id,id,list_id,item_name&sent=eq.false&user_id=${inList}&order=id`),
+    restAll(`settings?select=user_id,data&user_id=${inList}`, "user_id"),
+    restAll(`bills?select=*&deleted=eq.false&user_id=${inList}`, "user_id,id"),
+    restAll(`transactions?select=user_id,id,date,amount,kind,category_id,payee,bill_id,bill_due,income_id,income_due,lines,updated_at&deleted=eq.false&user_id=${inList}`, "user_id,id"),
+    restAll(`income_sources?select=*&deleted=eq.false&user_id=${inList}`, "user_id,id"),
+    restAll(`categories?select=user_id,id,name,budget&deleted=eq.false&user_id=${inList}`, "user_id,id"),
+    restAll(`goals?select=user_id,id,name,target,saved,monthly&deleted=eq.false&user_id=${inList}`, "user_id,id"),
+    restAll(`push_log?select=user_id,key&user_id=${inList}&or=(key.like."again:*",${days.map((d) => `key.like."n:${d}:*"`).join(",")})`, "user_id,key"),
+    restAll(`reminders?select=*&deleted=eq.false&active=eq.true&user_id=${inList}`, "user_id,id"),
+    restAll(`lists?select=user_id,id,name,kind,parent_id&deleted=eq.false&user_id=${inList}`, "user_id,id"),
+    restAll(`items?select=user_id,id,list_id,name,done,price,bought_at&deleted=eq.false&done=eq.true&price=gt.0&user_id=${inList}`, "user_id,id"),
+    restAll(`share_events?select=user_id,id,list_id,item_name&sent=eq.false&user_id=${inList}`, "id"),
   ]);
   let sent = 0;
   for (const uid of users) {
