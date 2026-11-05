@@ -83,14 +83,16 @@ export function quickHTML() {
 }
 
 /* ---------- The screen ---------- */
-let root = null, filter = null, current = "week";
-export function setSpendingFilter(k) { filter = k || null; current = "month"; }
+let root = null, open = null, openDay = null, current = "week";
+/* Opens Spent on this month with one category's purchases showing under its bar (from a budget on Month). */
+export function setSpendingFilter(k) { open = k || null; openDay = null; current = "month"; }
 const rangeFromHash = () => { const h = decodeURIComponent(location.hash.slice(1)); const k = h.startsWith("spending/") ? h.slice(9) : null; return RANGES.some(x => x[0] === k) ? k : null; };
 
 export function mountSpending(el) {
   root = el;
   root.addEventListener("click", e => {
-    const f = e.target.closest("[data-sf]"); if (f) { filter = filter === f.dataset.sf ? null : f.dataset.sf; renderSpending(); return; }
+    const f = e.target.closest("[data-sf]"); if (f) { open = open === f.dataset.sf ? null : f.dataset.sf; renderSpending(); return; }
+    const sd = e.target.closest("[data-sday]"); if (sd) { openDay = openDay === sd.dataset.sday ? null : sd.dataset.sday; renderSpending(); return; }
     const t = e.target.closest("[data-tx]"); if (t) { const tx = store.model.transactions.find(x => x.id === t.dataset.tx); if (tx && tx.billId) { const b = store.model.bills.find(x => x.id === tx.billId); if (b) { openBill(b); return; } } if (tx) openExpense({ tx }); return; }
     const it = e.target.closest("[data-item]"); if (it) { import("./setup.js").then(m => { const item = store.model.items.find(i => i.id === it.dataset.item); if (item) m.openItem(item); }); }
   });
@@ -112,24 +114,35 @@ export function renderSpending() {
   const cats = Object.entries(S.byCat).filter(([, v]) => v > 0.004).sort((a, b) => b[1] - a[1]), max = cats.length ? cats[0][1] : 0;
   const shops = k => { const p = [...new Set(S.entries.filter(t => t.kind !== "refund" && inCat(t, k)).map(t => t.payee).filter(Boolean))]; return p.length === 1 ? p[0] : p.length > 1 ? `${p.length} places` : ""; };
 
-  // a bar a day, for weeks
-  let days = "";
-  if (r.full === 7) {
-    const vals = Array.from({ length: 7 }, (_, k) => { const d = iso(addDays(r.start, k)); return { d, v: Math.max(0, S.byDay[d] || 0), future: d > todayISO() }; }), top = Math.max(1, ...vals.map(x => x.v));
-    days = `<div class="sp-days" role="img" aria-label="${esc(vals.filter(x => !x.future).map(x => `${parseDay(x.d).toLocaleDateString("en-GB", { weekday: "long" })} ${eur0(x.v)}`).join(", "))}">${vals.map(x => `<span class="sd${x.d === todayISO() ? " now" : ""}${x.future ? " later" : ""}"><small>${x.v ? eur0(x.v) : ""}</small><i style="height:${Math.max(4, Math.round(x.v / top * 84))}px"></i><b>${parseDay(x.d).toLocaleDateString("en-GB", { weekday: "narrow" })}</b></span>`).join("")}</div>`;
-  }
-
-  // purchases, by day, newest first
-  const list = S.entries.filter(t => !filter || inCat(t, filter)).sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-  let tx = "", day = null;
-  list.forEach(t => {
-    if (t.date !== day) { if (day) tx += `</div>`; day = t.date; tx += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span></div><div class="grp">`; }
+  const byNewest = (x, y) => y.date.localeCompare(x.date) || (y.updatedAt || "").localeCompare(x.updatedAt || "");
+  const rowHTML = t => {
     const title = t.payee || catName(t.categoryId);
     const lc = t.lines ? [...new Set(t.lines.map(l => catName(l.categoryId || t.categoryId)))] : null;
     const sub = [t.lines ? `${t.lines.length} item${t.lines.length === 1 ? "" : "s"}` : null, lc ? lc.slice(0, 3).join(", ") : t.payee ? catName(t.categoryId) : null, t.note, t.kind === "refund" ? "Refund" : null].filter(Boolean).join(" · ");
-    tx += `<button type="button" class="row" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind === "refund" ? " good" : ""}">${t.kind === "refund" ? "+" : ""}${eur(t.amount)}</span></button>`;
+    return `<button type="button" class="row" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span class="rt">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>${t.receiptPath ? `<span class="rc-ic" title="Has a receipt">${icon("cam", "ic xs")}</span>` : ""}<span class="rv${t.kind === "refund" ? " good" : ""}">${t.kind === "refund" ? "+" : ""}${eur(t.amount)}</span></button>`;
+  };
+  // What's behind a bar opens right under it: a list of those purchases, with a day when they span several days.
+  const openList = (items, withDays) => `<div class="grp sp-open">${items.sort(byNewest).map(t => withDays ? rowHTML({ ...t, note: [dayLabel(t.date), t.note].filter(Boolean).join(" · ") }) : rowHTML(t)).join("")}</div>`;
+
+  // a bar a day, for weeks: tap a day for its purchases, under the bars
+  let days = "";
+  if (r.full === 7) {
+    const vals = Array.from({ length: 7 }, (_, k) => { const d = iso(addDays(r.start, k)); return { d, v: Math.max(0, S.byDay[d] || 0), future: d > todayISO() }; }), top = Math.max(1, ...vals.map(x => x.v));
+    if (openDay && !vals.some(x => x.d === openDay)) openDay = null;
+    const longDay = d => parseDay(d).toLocaleDateString("en-GB", { weekday: "long" });
+    days = `<div class="sp-days">${vals.map(x => `<button type="button" class="sd${x.d === todayISO() ? " now" : ""}${x.future ? " later" : ""}" data-sday="${x.d}" aria-expanded="${openDay === x.d}" aria-label="${esc(`${longDay(x.d)}: ${eur0(x.v)}`)}"${x.future ? " disabled" : ""}><small>${x.v ? eur0(x.v) : ""}</small><i style="height:${Math.max(4, Math.round(x.v / top * 84))}px"></i><b>${parseDay(x.d).toLocaleDateString("en-GB", { weekday: "narrow" })}</b></button>`).join("")}</div>`;
+    if (openDay) { const on = S.entries.filter(t => t.date === openDay); days += `<div class="sp-dayopen"><p class="sp-dh">${esc(dayLabel(openDay))}: ${eur(Math.max(0, S.byDay[openDay] || 0))}</p>${on.length ? openList(on, false) : `<p class="hint">Nothing spent.</p>`}</div>`; }
+  }
+
+  // all purchases, by day, newest first
+  const list = S.entries.slice().sort(byNewest);
+  let tx = "", day = null;
+  list.forEach(t => {
+    if (t.date !== day) { if (day) tx += `</div>`; day = t.date; tx += `<div class="gh tx-day"><span>${esc(dayLabel(day))}</span></div><div class="grp">`; }
+    tx += rowHTML(t);
   });
   if (day) tx += `</div>`;
+  if (open && !S.byCat[open]) open = null;
 
   const words = r.k === "custom" ? `from ${labelOf(current)}` : { today: "today", yesterday: "yesterday", week: "this week", lastweek: "last week", month: `in ${monthName()}`, lastmonth: "last month" }[r.k];
   root.innerHTML = `<header class="vh"><div><a class="back" href="#month">${icon("chev", "ic sm flip")} ${esc(monthName())}</a><h1>Spent</h1></div></header>
@@ -137,7 +150,7 @@ export function renderSpending() {
     <div class="sp-big num" aria-label="${esc(eur(S.total))} spent ${words}">${eur(S.total, S.total >= 1000 || Number.isInteger(Math.round(S.total * 100) / 100) ? 0 : 2)}</div>
     <p class="sp-s">${S.total ? `${esc(head)} ${sentenceFor(r, S)}` : `Nothing spent ${words}.`}</p>
     ${days}
-    ${cats.length ? `<div class="sp-cats">${cats.map(([k, v]) => `<button type="button" class="sp-cat" data-sf="${esc(k)}" aria-pressed="${filter === k}"><span class="sc-t"><b>${esc(catName(k))}</b><small>${esc(shops(k))}</small><b class="num">${eur(v)}</b></span><span class="sc-bar"><i style="width:${Math.max(2, v / max * 100)}%;background:${catColor(k)}"></i></span></button>`).join("")}</div>` : ""}
-    ${list.length ? `<div class="gh sp-list-h"><h3>${filter ? `${esc(catName(filter))}: ` : ""}${list.length} purchase${list.length === 1 ? "" : "s"}</h3>${filter ? `<button type="button" class="tlink" data-sf="${esc(filter)}">Show all</button>` : ""}</div>${tx}` : ""}`;
-  bindPicker(root, current, pick => { current = pick; filter = null; history.replaceState(null, "", "#spending/" + (pick.k || pick)); renderSpending(); });
+    ${cats.length ? `<div class="sp-cats">${cats.map(([k, v]) => `<div class="sp-catg"><button type="button" class="sp-cat" data-sf="${esc(k)}" aria-expanded="${open === k}"><span class="sc-t"><b>${esc(catName(k))}</b><small>${esc(shops(k))}</small><b class="num">${eur(v)}</b>${icon("chev", "ic xs sc-chev")}</span><span class="sc-bar"><i style="width:${Math.max(2, v / max * 100)}%;background:${catColor(k)}"></i></span></button>${open === k ? openList(S.entries.filter(t => inCat(t, k)), r.days > 1) : ""}</div>`).join("")}</div>` : ""}
+    ${list.length ? `<div class="gh sp-list-h"><h3>${list.length} purchase${list.length === 1 ? "" : "s"}</h3></div>${tx}` : ""}`;
+  bindPicker(root, current, pick => { current = pick; open = null; openDay = null; history.replaceState(null, "", "#spending/" + (pick.k || pick)); renderSpending(); });
 }

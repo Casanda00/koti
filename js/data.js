@@ -24,10 +24,14 @@ const SEED = [
   ["Tools & household", "ET", "Extension cord / power strip|Soon;Light bulbs|Soon;Scissors|Soon;Tape|Later;Screwdriver set|Soon;Measuring tape|Later;Batteries|Later;First aid kit|Soon;Small household bin|Soon;Doormat|Soon"],
 ];
 const DEFAULT_ROOMS = { "Kitchen & cooking": "K", "Groceries & pantry": "K", "Living room": "OH", "Bedroom": "MH", "Bedroom & living": "MH", "Bathroom & personal care": "KPH", "Laundry & cleaning": "ET", "Tools & household": "ET" };
-const DEFAULT_SETTINGS = { budget: 500, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB", keepReceipts: false,
+const DEFAULT_SETTINGS = { budget: null, extraSpend: 0, carriedSpend: false, notes: "", movedIn: "", monthStart: 1, payday: "last", income: null, voiceLang: "en-GB", keepReceipts: false,
   name: "", avatarColor: "", startBalance: null, startDate: null, askedStart: false, rollover: false, scanDefault: "auto", keepBills: false, palette: "", mode: "",
   reminders: { bills: true, overdue: true, payday: true, budget: true, weekly: false, quietFrom: 21, quietTo: 8, billHour: 9 } };
-export const DEFAULT_CATEGORIES = [["Groceries", 400], ["Eating out", 120], ["Transport", 70], ["Shopping", 150], ["Health", 50], ["Fun", 100], ["Other", 60]];
+/* The categories a new account starts with. No budgets: those are yours to set (Budgets → Edit), and Koti doesn't
+   guess them. Until 6 November 2026 Koti gave each one a made-up budget; upgradeModel clears any still unchanged. */
+export const DEFAULT_CATEGORIES = ["Groceries", "Eating out", "Transport", "Shopping", "Health", "Fun", "Other"];
+const OLD_STARTING_BUDGETS = { "cat-groceries": 400, "cat-eating-out": 120, "cat-transport": 70, "cat-shopping": 150, "cat-health": 50, "cat-fun": 100, "cat-other": 60 };
+const OLD_HOME_BUDGET = 500, STARTING_BUDGETS_UNTIL = "2026-11-06T00:00:00Z";
 export const HOME_SETUP_CAT = "home-setup";   // derived from checklist purchases, not stored
 export const KINDS = ["lists", "items", "categories", "transactions", "bills", "goals", "income", "reminders"];
 export const LIST_KINDS = ["shopping", "project", "room"];
@@ -130,9 +134,9 @@ function cleanGoal(g, pos) {
   return { id: String(g.id || newId("goal")).slice(0, 80), name: String(g.name).slice(0, 80), target: Math.max(0.01, num(g.target, 1)), saved: Math.max(0, num(g.saved, 0)),
     targetDate: validDay(g.targetDate), monthly: num(g.monthly) == null ? null : Math.max(0, num(g.monthly)), position: Number.isFinite(g.position) ? g.position : pos, updatedAt: g.updatedAt || EPOCH };
 }
-export function seedCategories() { return DEFAULT_CATEGORIES.map(([name, budget], k) => cleanCategory({ id: "cat-" + slug(name), name, budget }, k)); }
+export function seedCategories() { return DEFAULT_CATEGORIES.map((name, k) => cleanCategory({ id: "cat-" + slug(name), name, budget: null }, k)); }
 
-const homeProject = (budget = 500, extraSpend = 0, t = EPOCH) => cleanList({ id: HOME_PROJECT, name: "Home setup", kind: "project", budget, extraSpend, plan: HOME_PLAN, room: "OH", position: 1, updatedAt: t }, 1);
+const homeProject = (budget = null, extraSpend = 0, t = EPOCH) => cleanList({ id: HOME_PROJECT, name: "Home setup", kind: "project", budget, extraSpend, plan: HOME_PLAN, room: "OH", position: 1, updatedAt: t }, 1);
 export function seedModel() {
   const lists = [homeProject(), cleanList({ id: "list-groceries", name: "Groceries", kind: "shopping", position: 0, updatedAt: EPOCH }, 0)], items = [];
   SEED.forEach(([name, room, raw], li) => {
@@ -198,7 +202,11 @@ export function normalizeModel(m) {
 /* Brings older data into the Budgets/Income/Expenses shape. Same ids as the database migration, so devices agree.
    Returns the rows it changed, so they can be uploaded. */
 export function upgradeModel(m) {
-  const changed = { lists: [], income: [] }, t = now();
+  const changed = { lists: [], income: [], categories: [] }, t = now();
+  // Budgets Koti made up, still as it set them: cleared. One changed since (even back to the same number) is yours.
+  const untouched = x => !x.updatedAt || x.updatedAt < STARTING_BUDGETS_UNTIL;
+  m.categories.forEach(c => { if (OLD_STARTING_BUDGETS[c.id] != null && Number(c.budget) === OLD_STARTING_BUDGETS[c.id] && untouched(c)) { c.budget = null; c.updatedAt = t; changed.categories.push(c.id); } });
+  m.lists.forEach(l => { if (l.id === HOME_PROJECT && Number(l.budget) === OLD_HOME_BUDGET && untouched(l)) { l.budget = null; l.updatedAt = t; changed.lists.push(l.id); } });
   const orphans = m.lists.filter(l => l.kind === "room" && !l.parentId);
   if (orphans.length && !m.lists.some(l => l.id === HOME_PROJECT)) {
     const p = homeProject(Number(m.settings.budget) || null, Number(m.settings.extraSpend) || 0, t); m.lists.unshift(p); changed.lists.push(p.id);
@@ -354,12 +362,12 @@ export const store = {
     S._t = { ...(S._t || {}), startBalance: t, startDate: t, askedStart: t }; this.touch("settings"); this.persist();
   },
   markAllPending() { KINDS.forEach(kind => this.model[kind].forEach(x => this.touch(kind, x.id))); this.touch("settings"); this.persist(); },
-  upgrade() { const c = upgradeModel(this.model); c.lists.forEach(id => this.touch("lists", id)); c.income.forEach(id => this.touch("income", id)); if (c.lists.length || c.income.length) this.commit(); return c; },
+  upgrade() { const c = upgradeModel(this.model); ["lists", "income", "categories"].forEach(k => c[k].forEach(id => this.touch(k, id))); if (c.lists.length || c.income.length || c.categories.length) this.commit(); return c; },
   seedCategoriesIfEmpty() { if (this.model.categories.length) return false; this.model.categories = seedCategories().map(c => ({ ...c, updatedAt: now() })); this.model.categories.forEach(c => this.touch("categories", c.id)); this.commit(); return true; },
 };
 if (store.migrated) { store.markAllPending(); store.persist(); }
 if (init.newCategories) { store.model.categories.forEach(c => store.touch("categories", c.id)); store.persist(); }
-{ const c = upgradeModel(store.model); c.lists.forEach(id => store.touch("lists", id)); c.income.forEach(id => store.touch("income", id)); store.persist(); }
+{ const c = upgradeModel(store.model); ["lists", "income", "categories"].forEach(k => c[k].forEach(id => store.touch(k, id))); store.persist(); }
 
 /* ---------- Derived values ---------- */
 export const listOf = id => store.model.lists.find(l => l.id === id);

@@ -27,6 +27,7 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 - **Paydays:** one that falls on a weekend or a Finnish public holiday moves to the working day before.
 - **Money figures:** every one is worked out in `js/engine.js`, in whole cents. The reminders server runs a copy, `supabase/functions/send-reminders/engine.js`; after changing the engine, copy it there too (a test fails until the two are the same).
 - **Reminders:** they follow each person's phone time zone, which the app saves in settings. They're worked out from the person's own records, not from figures the phone saved.
+- **Budgets:** Koti doesn't make them up. "Suggest budgets" asks a few questions, and the AI divides what the engine says is left after bills and savings; the server keeps the total within it.
 - **Tests:** `npm test` (Node 22) runs the app's own modules against a pretend server that applies the database's rules. CI runs it on every pull request.
 
 ## Files

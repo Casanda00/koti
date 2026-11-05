@@ -126,6 +126,7 @@ function init() {
 
   document.addEventListener("click", e => {
     if (e.target.closest("[data-scan]")) { e.preventDefault(); openScan(); return; }
+    if (e.target.closest("[data-suggest-budgets]")) { e.preventDefault(); closeSheet(); setTimeout(() => import("./budgetai.js").then(m => m.openBudgetHelp()), 60); return; }
     if (e.target.closest("[data-install]")) { e.preventDefault(); openInstall(); return; }
     if (e.target.closest("[data-install-later]")) { e.preventDefault(); snoozeStrip(); renderCurrent(); return; }
   });

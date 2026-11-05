@@ -56,7 +56,7 @@ async function recordAndAct(mic) {
   let r;
   try {
     r = await record({ maxMs: 20000, onStop: async blob => {
-      stop = null; mic.classList.remove("listening"); mic.disabled = true; input.placeholder = "Working out what you said…";
+      stop = null; mic.classList.remove("listening"); mic.disabled = true;
       try { await ask({ audio: blob }); } finally { reset(); }
     } });
   } catch (e) { reset(); toast(/denied|NotAllowed/i.test(String(e && (e.name || e.message))) ? "Koti can't use the microphone. Allow it in your browser's settings." : "Couldn't start the microphone."); return; }
@@ -69,10 +69,19 @@ export const isSentence = t => String(t).trim().split(/\s+/).length >= 5 || /\b(
 
 /* Sends a recording or a phrase to the AI and does what it meant. Saving always goes through a sheet to check.
    fallback: what the phone's own rules read, used when the AI can't answer or isn't sure. */
+/* The add box while the AI works: a spinner in the Add button, and the box can't be sent twice. */
+function busy(on, what = "Working it out…") {
+  if (!form) return;   // no page (the tests)
+  form.classList.toggle("busy", on); form.setAttribute("aria-busy", on); input.readOnly = on;
+  $("#dockGo").disabled = on; $("#dockGo").setAttribute("aria-label", on ? what : "Add what you spent");
+  if (on) { busy.ph = input.placeholder; input.placeholder = what; } else if (busy.ph) input.placeholder = busy.ph;
+}
 async function ask({ audio = null, text = "", fallback = null }) {
   let d;
+  busy(true, audio ? "Working out what you said…" : "Working it out…");
   try { d = await understand({ audio, text }); }
   catch (e) { if (fallback) { showHeard(fallback); return; } toast(String(e.message || e)); if (text) input.focus(); return; }
+  finally { busy(false); }
   if (fallback && !(d.intent === "spend" && d.spend && d.spend.total) && d.intent !== "question" && d.intent !== "remind") { showHeard(fallback); return; }
   const said = d.transcript || text;
   if (d.intent === "question" && d.range) { input.value = ""; location.hash = "#spending/" + d.range; return; }
@@ -92,14 +101,15 @@ async function ask({ audio = null, text = "", fallback = null }) {
   toast(said ? `Heard “${said.length > 60 ? said.slice(0, 57) + "…" : said}”. Add an amount, like “Lidl 23,40”.` : "Didn't catch that. Try again, or type it.");
 }
 
-function go() {
-  const text = input.value.trim();
+function go() { return handleTyped(input.value.trim()); }
+/* What was typed into the box, and pressed Add. Returns the AI's work when it asks the AI (for the tests). */
+export function handleTyped(text) {
   if (isReminderPhrase(text)) {   // "remind me to pay water on the 15th": open the reminder, filled in, to check and save
     const preset = parseReminder(text, { bills: store.model.bills });
     input.value = ""; import("./reminders.js").then(m => m.openReminder(null, preset)); return;
   }
-  const ask = !listMode() && spendQuestion(text);   // "what did I spend last week?" opens Spent on last week
-  if (ask) { input.value = ""; location.hash = "#spending/" + ask; return; }
+  const range = !listMode() && spendQuestion(text);   // "what did I spend last week?" opens Spent on last week
+  if (range) { input.value = ""; location.hash = "#spending/" + range; return; }
   if (listMode()) {
     if (!text) { input.focus(); return; }
     let l = listTarget();
@@ -113,12 +123,12 @@ function go() {
   const cats = store.model.categories;
   const heard = parseExpense(text, { categories: cats, history: store.model.transactions });
   if (!heard.amount) {
-    if (aiPossible()) { ask({ text }); return; }   // the rules couldn't read it: let the AI try
+    if (aiPossible()) return ask({ text });   // the rules couldn't read it: let the AI try
     toast("Add an amount, like “Lidl 23,40”."); input.focus(); return;
   }
   // A whole sentence ("I paid 11e from my upcoming salary for lunch") goes to the AI too; what the rules read
   // is the answer if the AI can't be reached.
-  if (aiPossible() && isSentence(text)) { ask({ text, fallback: heard }); return; }
+  if (aiPossible() && isSentence(text)) return ask({ text, fallback: heard });
   showHeard(heard);
 }
 

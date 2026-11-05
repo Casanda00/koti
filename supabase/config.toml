@@ -15,3 +15,7 @@ verify_jwt = false
 [functions.hear]
 # Speech and typed phrases from the add box. The function checks the signed-in user itself.
 verify_jwt = false
+
+[functions.suggest-budgets]
+# Budget suggestions after a few questions. The function checks the signed-in user itself.
+verify_jwt = false

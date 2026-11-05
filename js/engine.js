@@ -358,3 +358,26 @@ export function mood(model, today) {
   else { const planned = budgets(model, L.p, today).total / (daysBetween(L.p.from, L.p.to) + 1); m = perDay < (planned > 0 ? planned * 0.6 : 1000) ? "tight" : "calm"; }
   return { mood: m, L, days, perDay, share: D ? D.share : null, leftToday: D ? D.left : null };
 }
+
+/* ---------- What a budget has to fit into ---------- */
+/* The figures a budget suggestion works from, in cents: this budget month's pay (arrived or expected), bills and
+   savings plan, what is left for everyday spending, and what each category took on average over the last few full
+   budget months that had any spending (and so far this month). The AI only divides what's available; it never
+   works these out. */
+export function budgetContext(model, today, months = 3) {
+  const sd = monthStart(model), cur = periodOf(today, sd), T = monthTotals(model, cur, today);
+  const income = T.inc.expected + T.incomeLoose, bills = T.bills.total, savings = goalsMonthly(model);
+  const sums = {}; let counted = 0;
+  for (let k = 0, p = shiftPeriod(cur, -1, sd); k < 24 && counted < months; k++, p = shiftPeriod(p, -1, sd)) {
+    const byCat = spending(model, p.from, p.to).byCat;
+    if (!Object.keys(byCat).some(c => c !== BILLS_CAT && !c.startsWith("proj:") && byCat[c] > 0)) continue;
+    counted++;
+    for (const [c, v] of Object.entries(byCat)) sums[c] = (sums[c] || 0) + v;
+  }
+  const now = spending(model, cur.from, today).byCat;
+  const categories = model.categories.filter(c => c.id !== BILLS_CAT).map(c => ({
+    id: c.id, name: c.name, budget: c.budget == null ? null : cents(c.budget),
+    average: counted ? Math.round(Math.max(0, sums[c.id] || 0) / counted) : null, thisMonth: Math.max(0, now[c.id] || 0),
+  }));
+  return { currency: CURRENCY, period: cur, income, bills, savings, available: income - bills - savings, monthsLookedAt: counted, categories };
+}
