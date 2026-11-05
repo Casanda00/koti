@@ -6,6 +6,9 @@ export const eur = (n, d = 2) => new Intl.NumberFormat("en-FI", { style: "curren
 export const eur0 = n => eur(Math.round(Number(n) || 0), 0);
 export const parseDay = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
 export const fmtDay = d => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+/* The AI is working: a spinner (announced to screen readers), or a whole sheet's worth with what it's doing. */
+export const spinner = (label = "Working…", cls = "") => `<span class="spinner ${cls}" role="status" aria-label="${esc(label)}"></span>`;
+export const aiWait = (what, sub = "") => `<div class="ai-wait">${spinner(what, "lg")}<b>${esc(what)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
 export const icon = (name, cls = "ic") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 export function parseMoney(v) {
   let s = String(v ?? "").replace(/[€\s\u00a0]/g, "");

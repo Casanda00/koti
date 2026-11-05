@@ -7,7 +7,7 @@
 // remembered: it's sent to the reader as an example next time, and wins over what the reader suggests.
 // Money is counted once: from the receipt or the bill. Items a receipt ticks don't add their price again.
 import { store, todayISO, newId, listCategory, listOf, topLists, roomsOf, itemsOf, projectSpent, projectOf, BILLS_CAT } from "./data.js";
-import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast } from "./ui.js";
+import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast, spinner } from "./ui.js";
 import { prepareFile, readReceipt, attach } from "./receipts.js";
 import { catName, periodFor, totals } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
@@ -80,7 +80,7 @@ async function run(S, file, B) {
   const st = $("#scState", B), msg = (t, s = "error") => { const m = $("#scMsg", B); m.textContent = t; m.dataset.state = s; };
   msg("", "");
   try {
-    st.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="scThumb"></div><div style="flex:1"><b id="scLbl">Preparing…</b><div class="meter" style="margin-top:8px"><i id="scBar" style="width:4%"></i></div></div></div>`;
+    st.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="scThumb"></div><div style="flex:1"><div class="sc-lbl">${spinner("Reading the receipt", "sm")}<b id="scLbl">Preparing…</b></div><div class="meter" style="margin-top:8px"><i id="scBar" style="width:4%"></i></div></div></div>`;
     $$("input[type=file]", B).forEach(i => i.disabled = true);
     S.file = await prepareFile(file);
     $("#scThumb", st).innerHTML = thumb(S);

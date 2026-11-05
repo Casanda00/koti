@@ -52,7 +52,7 @@ export function renderMonth() {
   root.innerHTML = `
     ${top}
     <div class="mhead"><h2>Budgets</h2><a href="#budgets">Change</a></div>
-    <div class="mrows">${rows || `<button type="button" class="pill" data-plan-cats>Set budgets</button>`}</div>
+    <div class="mrows">${rows || `<p class="hint" style="margin:0">No budgets yet. Koti can ask you a few questions and suggest them.</p><div class="btns"><button type="button" class="pill" data-suggest-budgets>Suggest budgets</button><button type="button" class="pill ghost" data-plan-cats>Set them myself</button></div>`}</div>
     ${income > 0 && unplanned > 0 && !kept ? `<div class="mplan2"><p>You have ${eur0(unplanned)} left to plan.</p><div class="btns"><button type="button" class="pill" data-plan-cats>Add to a category</button><button type="button" class="pill ghost" data-keep>Keep for ${esc(nextMonthName(p))}</button></div></div>` : ""}
     ${income > 0 && unplanned < 0 ? `<div class="mplan2 warn"><p>Your budgets are ${eur0(-unplanned)} more than your living expenses.</p><div class="btns"><button type="button" class="pill" data-plan-cats>Change budgets</button></div></div>` : ""}
     <nav class="mlinks" aria-label="More in ${esc(m)}"><a href="#bills">Bills</a><a href="#income">Income</a><a href="#spending/month">Spent</a><a href="#budgets">Savings</a><a href="#projects">Projects</a></nav>

@@ -3,7 +3,7 @@
 import { store, todayISO, TX_KINDS, BILLS_CAT, projectOf, listOf, topLists, projectSpent, paidByReceipt } from "./data.js";
 import { billTotals, openBill, goalsHTML, openGoal } from "./plan.js";
 import { incomeTotals, nextPay } from "./income.js";
-import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip } from "./ui.js";
+import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip, spinner } from "./ui.js";
 import { parseExpense } from "./voice.js";
 import { prepareFile, readReceipt, attach, receiptURL, removeReceipt, isPdf } from "./receipts.js";
 import { newId } from "./data.js";
@@ -237,7 +237,7 @@ export function mountMoney(elm) {
     <div class="stats mo-stats"><div class="stat" id="moSpendStat"></div><div class="stat" id="moSetupStat"></div></div>
   </div>
   <div class="mo-mid">
-    <section><div class="gh"><h2>Categories</h2><button type="button" class="link" data-open="categories">Edit</button></div><div class="grp" id="moBudgets"></div><p class="note" id="moPaceNote"></p>
+    <section><div class="gh"><h2>Categories</h2><span class="gh-acts"><button type="button" class="link" data-suggest-budgets>Suggest</button><button type="button" class="link" data-open="categories">Edit</button></span></div><div class="grp" id="moBudgets"></div><p class="note" id="moPaceNote"></p>
       <div id="moProjWrap"><div class="gh"><h2>Projects</h2></div><div class="grp" id="moProjects"></div></div></section>
     <section><div class="gh"><h2>Savings goals</h2><button type="button" class="link" data-goal-add>Add</button></div><div id="moGoals"></div>
       <div class="gh"><h2>By month</h2></div><div class="card"><div class="chart" id="moColsWrap"><svg id="moCols" role="img"></svg><div class="tip"></div></div><div class="key" style="margin-top:8px"><span><i class="sw" style="background:var(--spruce)"></i>Spent</span><span id="moIncKey"><i class="ln" style="background:var(--amber)"></i>Income</span></div></div></section>
@@ -408,7 +408,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
       async function scanFile(file, E) {
         const S = $("#exScan", E);
         try {
-          busy = true; S.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="exThumb"></div><div style="flex:1"><b id="exScanLbl">Preparing the photo…</b><div class="meter" style="margin-top:8px"><i id="exScanBar" style="width:4%"></i></div></div></div>`;
+          busy = true; S.innerHTML = `<div class="scan-state"><div class="scan-thumb" id="exThumb"></div><div style="flex:1"><div class="sc-lbl">${spinner("Reading the receipt", "sm")}<b id="exScanLbl">Preparing the photo…</b></div><div class="meter" style="margin-top:8px"><i id="exScanBar" style="width:4%"></i></div></div></div>`;
           receipt = await prepareFile(file);
           keep = !!store.model.settings.keepReceipts;   // off unless switched on: storage costs
           $("#exThumb", S).innerHTML = receipt.type === "application/pdf" ? `<span class="pdf">PDF</span>` : `<img alt="" src="${URL.createObjectURL(receipt.blob)}">`;
@@ -475,6 +475,7 @@ export function openCategories() {
   openSheet({ title: "Categories and budgets", left: "Done", body: B => {
     const draw = () => {
       B.innerHTML = `<p class="note" style="margin-top:0">Monthly budget for each category. Leave a budget empty to just track spending.</p>
+        <button type="button" class="btn" data-suggest-budgets>${icon("spark", "ic sm")} Let Koti suggest budgets</button>
         <div class="grp">${cats().map(c => `<div class="row" data-c="${esc(c.id)}"><input class="inl" style="text-align:left;flex:1;max-width:none;color:var(--ink)" value="${esc(c.name)}" aria-label="Category name" data-f="name" maxlength="60"><input class="inl" style="max-width:90px" data-f="budget" inputmode="decimal" placeholder="No budget" value="${moneyField(c.budget)}" aria-label="Monthly budget for ${esc(c.name)}"><button type="button" class="x" data-f="del" aria-label="Delete ${esc(c.name)}" style="color:var(--muted);width:32px;height:32px">${icon("trash", "ic sm")}</button></div>`).join("")}</div>
         <div class="field" style="margin-top:6px"><label for="ncName">New category</label><input class="inp" id="ncName" placeholder="e.g. Gifts…" maxlength="60" autocomplete="off"></div>
         <div class="field"><label for="ncBudget">Monthly budget</label><input class="inp" id="ncBudget" inputmode="decimal" placeholder="€0" autocomplete="off"></div>

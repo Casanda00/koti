@@ -56,7 +56,7 @@ async function recordAndAct(mic) {
   let r;
   try {
     r = await record({ maxMs: 20000, onStop: async blob => {
-      stop = null; mic.classList.remove("listening"); mic.disabled = true; input.placeholder = "Working out what you said…";
+      stop = null; mic.classList.remove("listening"); mic.disabled = true;
       try { await ask({ audio: blob }); } finally { reset(); }
     } });
   } catch (e) { reset(); toast(/denied|NotAllowed/i.test(String(e && (e.name || e.message))) ? "Koti can't use the microphone. Allow it in your browser's settings." : "Couldn't start the microphone."); return; }
@@ -69,10 +69,19 @@ export const isSentence = t => String(t).trim().split(/\s+/).length >= 5 || /\b(
 
 /* Sends a recording or a phrase to the AI and does what it meant. Saving always goes through a sheet to check.
    fallback: what the phone's own rules read, used when the AI can't answer or isn't sure. */
+/* The add box while the AI works: a spinner in the Add button, and the box can't be sent twice. */
+function busy(on, what = "Working it out…") {
+  if (!form) return;   // no page (the tests)
+  form.classList.toggle("busy", on); form.setAttribute("aria-busy", on); input.readOnly = on;
+  $("#dockGo").disabled = on; $("#dockGo").setAttribute("aria-label", on ? what : "Add what you spent");
+  if (on) { busy.ph = input.placeholder; input.placeholder = what; } else if (busy.ph) input.placeholder = busy.ph;
+}
 async function ask({ audio = null, text = "", fallback = null }) {
   let d;
+  busy(true, audio ? "Working out what you said…" : "Working it out…");
   try { d = await understand({ audio, text }); }
   catch (e) { if (fallback) { showHeard(fallback); return; } toast(String(e.message || e)); if (text) input.focus(); return; }
+  finally { busy(false); }
   if (fallback && !(d.intent === "spend" && d.spend && d.spend.total) && d.intent !== "question" && d.intent !== "remind") { showHeard(fallback); return; }
   const said = d.transcript || text;
   if (d.intent === "question" && d.range) { input.value = ""; location.hash = "#spending/" + d.range; return; }
