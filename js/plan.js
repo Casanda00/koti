@@ -64,7 +64,7 @@ export function setFailed(o, failed = true) {
 /* ---------- Goals ---------- */
 const monthsBetween = (a, b) => (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) + (b.getDate() >= a.getDate() ? 0 : -1);
 export function goalPlan(g) {
-  const left = Math.max(0, g.target - g.saved);
+  const left = Math.max(0, g.target - savedOf(g));
   if (left <= 0) return { text: "Goal reached", need: 0, state: "done" };
   if (g.targetDate) {
     const months = Math.max(1, monthsBetween(new Date(), parseDay(g.targetDate)) + 1), need = Math.ceil(left / months);
@@ -169,12 +169,23 @@ export function renderPlanView() {
 
 }
 
+/* What a goal holds, in euros (worked out in js/engine.js from the goal and its transfers). */
+export const savedOf = g => E.euros(E.goalSaved(store.model, g));
+/* Moving money to a goal takes it out of what's yours to spend (and counts towards this month's plan); taking it
+   out puts it back. Recorded only as a transfer, never by changing the goal, so it can't be lost or counted twice. */
+export function moveToGoal(goal, sign, v) {
+  if (!v || Number.isNaN(v) || v <= 0) return { error: "Type an amount first." };
+  if (sign < 0 && v > savedOf(goal) + 0.004) return { error: `There's only ${eur(savedOf(goal))} in ${goal.name}.` };
+  const tx = store.put("transactions", { id: `sav:${goal.id}:${newId("t")}`, date: todayISO(), amount: v, kind: sign > 0 ? "expense" : "income", categoryId: SAVINGS_CAT, payee: goal.name, note: sign > 0 ? "Moved to savings" : "Taken from savings", source: "manual" });
+  return { tx };
+}
+
 /* Savings goals as rows, for the Budgets screen. */
 export function goalsHTML() {
   const goals = store.model.goals.slice().sort((a, b) => a.position - b.position);
   const planned = goals.reduce((a, g) => a + goalPlan(g).need, 0);
-  return goals.length ? `<div class="grp">${goals.map(g => { const pl = goalPlan(g), pct = Math.min(100, g.saved / g.target * 100);
-    return `<button type="button" class="row r2" data-goal="${esc(g.id)}" aria-label="${esc(g.name)}: ${eur(g.saved)} of ${eur(g.target)}. ${esc(pl.text)}"><span class="rt">${esc(g.name)}<small class="${pl.state === "behind" ? "warn-t" : ""}">${esc(pl.text)}</small></span><span class="rv num">${eur0(g.saved)} / ${eur0(g.target)}</span><span class="bullet"><i style="width:${pct}%;background:${pl.state === "done" ? "var(--good)" : "var(--spruce)"}"></i></span></button>`; }).join("")}</div>
+  return goals.length ? `<div class="grp">${goals.map(g => { const pl = goalPlan(g), pct = Math.min(100, savedOf(g) / g.target * 100);
+    return `<button type="button" class="row r2" data-goal="${esc(g.id)}" aria-label="${esc(g.name)}: ${eur(savedOf(g))} of ${eur(g.target)}. ${esc(pl.text)}"><span class="rt">${esc(g.name)}<small class="${pl.state === "behind" ? "warn-t" : ""}">${esc(pl.text)}</small></span><span class="rv num">${eur0(savedOf(g))} / ${eur0(g.target)}</span><span class="bullet"><i style="width:${pct}%;background:${pl.state === "done" ? "var(--good)" : "var(--spruce)"}"></i></span></button>`; }).join("")}</div>
     ${planned ? `<p class="note">Your goals ask for about ${eur0(planned)} a month.</p>` : ""}`
     : `<div class="empty" style="text-align:left"><b style="color:var(--ink)">Save toward something</b><p style="margin:6px 0 12px">An emergency fund, a trip, a new laptop. Set a target and Koti works out the monthly amount.</p><button type="button" class="btn primary" data-goal-add style="width:auto;display:inline-block;padding:10px 16px">Add a goal</button></div>`;
 }
@@ -259,8 +270,8 @@ export function openGoal(goal = null) {
   const g = goal || { name: "", target: null, saved: 0, targetDate: "", monthly: null };
   openSheet({ title: goal ? "Goal" : "Add goal", right: "Save", body: B => {
     B.innerHTML = `
-      ${goal ? `<div class="card" style="display:grid;gap:10px"><div style="display:flex;justify-content:space-between;align-items:baseline"><b class="big" style="font-size:30px">${eur0(goal.saved)}</b><span class="hint">of ${eur0(goal.target)}</span></div>
-        <div class="meter"><i style="width:${Math.min(100, goal.saved / goal.target * 100)}%"></i></div>
+      ${goal ? `<div class="card" style="display:grid;gap:10px"><div style="display:flex;justify-content:space-between;align-items:baseline"><b class="big" style="font-size:30px">${eur0(savedOf(goal))}</b><span class="hint">of ${eur0(goal.target)}</span></div>
+        <div class="meter"><i style="width:${Math.min(100, savedOf(goal) / goal.target * 100)}%"></i></div>
         <div style="display:flex;gap:8px;align-items:center"><input class="inp" id="goMove" inputmode="decimal" placeholder="€ amount" autocomplete="off" style="flex:1"><button type="button" class="btn primary" id="goAdd" style="width:auto;padding:12px 14px">Move in</button><button type="button" class="btn" id="goTake" style="width:auto;padding:12px 14px">Take out</button></div></div>` : ""}
       <div class="field"><label for="goName">Name</label><input class="inp" id="goName" value="${esc(g.name)}" placeholder="e.g. Emergency fund…" maxlength="80" autocomplete="off" ${goal ? "" : "autofocus"}></div>
       <div class="field"><label for="goTarget">Target</label><input class="inp" id="goTarget" inputmode="decimal" placeholder="€0" value="${moneyField(g.target)}" autocomplete="off"></div>
@@ -272,13 +283,10 @@ export function openGoal(goal = null) {
       <p class="msg" id="goMsg" aria-live="polite"></p>
       ${goal ? `<button type="button" class="btn" id="goRemind">${icon("bell", "ic sm")} Remind me on payday</button>` : ""}
       ${goal ? `<button type="button" class="btn danger" id="goDel">${icon("trash", "ic sm")} Delete goal</button>` : ""}`;
-    const move = sign => { const v = parseMoney($("#goMove", B).value); if (!v || Number.isNaN(v)) { $("#goMsg", B).dataset.state = "error"; $("#goMsg", B).textContent = "Type an amount first."; return; }
-      // Moving money to a goal takes it out of what's yours to spend (and counts towards this month's plan);
-      // taking it out puts it back. Recorded as a transfer, not as spending.
-      const saved = Math.max(0, Math.round((goal.saved + sign * v) * 100) / 100); store.put("goals", { ...goal, saved });
-      const tx = store.put("transactions", { id: newId("sav"), date: todayISO(), amount: v, kind: sign > 0 ? "expense" : "income", categoryId: SAVINGS_CAT, payee: goal.name, note: sign > 0 ? "Moved to savings" : "Taken from savings", source: "manual" });
+    const move = sign => { const v = parseMoney($("#goMove", B).value), m = $("#goMsg", B); m.dataset.state = "error";
+      const r = moveToGoal(goal, sign, v); if (r.error) { m.textContent = r.error; return; }
       closeSheet();
-      toast(sign > 0 ? `Moved ${eur(v)} to ${goal.name}` : `Took ${eur(v)} out of ${goal.name}`, { label: "Undo", run: () => { store.put("goals", { ...goal }); store.remove("transactions", tx.id); } }); };
+      toast(sign > 0 ? `Moved ${eur(v)} to ${goal.name}` : `Took ${eur(v)} out of ${goal.name}`, { label: "Undo", run: () => store.remove("transactions", r.tx.id) }); };
     if (goal) $("#goRemind", B).onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: goal.monthly ? `Move ${eur(goal.monthly, 0)} to ${goal.name}` : `Put money into ${goal.name}`, when: "monthly", monthDay: -2, aboutKind: "goal", aboutId: goal.id })), 260); };
     if (goal) { $("#goAdd", B).onclick = () => move(1); $("#goTake", B).onclick = () => move(-1); $("#goDel", B).onclick = () => { if (!confirm(`Delete "${goal.name}"?`)) return; closeSheet(); const copy = { ...goal }; store.remove("goals", goal.id); toast(`Deleted ${goal.name}`, { label: "Undo", run: () => store.put("goals", copy) }); }; }
   }, onRight: B => {
