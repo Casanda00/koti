@@ -341,3 +341,20 @@ function planMonth(model, p, today) {
   const billList = plannedBills(model, p), bills = sum(billList, o => o.amount), b = budgets(model, p, today).total, income = plannedIncome(model, p);
   return { kind: "plan", currency: CURRENCY, p, start, bills, budgets: b, goals, left: start - bills - b - goals, income, incomeSum: sum(income, o => o.amount), billList };
 }
+
+/* ---------- How the month is going ---------- */
+/* "over" (less than nothing left, or today's share already spent), "tight" (a bill is late, little of today's
+   share is left, or each day has much less than the budgets plan for a day), or "calm". Today's colour, and the
+   reminders' "money is tight". */
+export function mood(model, today) {
+  const L = state(model, today);
+  if (L.kind !== "current") return { mood: "calm", L };
+  const pd = nextPay(model, today), days = pd ? Math.max(1, pd.days) : null, perDay = days && L.left > 0 ? Math.round(L.left / days) : 0;
+  const D = dayShare(model, today);
+  let m;
+  if (L.left < 0) m = "over";
+  else if (D && D.left != null) m = D.left < 0 ? "over" : D.share > 0 && D.left < D.share * 0.25 ? "tight" : L.overdue.length ? "tight" : "calm";
+  else if (L.overdue.length) m = "tight";
+  else { const planned = budgets(model, L.p, today).total / (daysBetween(L.p.from, L.p.to) + 1); m = perDay < (planned > 0 ? planned * 0.6 : 1000) ? "tight" : "calm"; }
+  return { mood: m, L, days, perDay, share: D ? D.share : null, leftToday: D ? D.left : null };
+}

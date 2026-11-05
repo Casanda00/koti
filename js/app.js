@@ -103,6 +103,10 @@ function syncLook() {
   if (S.palette && S.palette !== cur.palette) T.set("palette", S.palette);
   if (S.mode && S.mode !== cur.mode) T.set("mode", S.mode);
 }
+/* The phone's time zone, saved with the settings: reminders use it for "today" and for the hour they arrive. */
+function saveTimeZone() {
+  try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (tz && store.model.settings.tz !== tz) store.updateSettings({ tz }); } catch { /* the reminders keep Helsinki */ }
+}
 function init() {
   initSheets();
   mountNow($("#view-now")); mountMonth($("#view-month")); mountPlace($("#view-home")); mountReminders($("#view-reminders")); mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountSpending($("#view-spending"));
@@ -116,6 +120,7 @@ function init() {
   });
   onSync((s, ev) => { paintSync(s); renderCurrent(); if (ev === "recovery") openNewPassword(); });
   applyDefaults2();
+  saveTimeZone();
   initSync();
   initReceipts();
 

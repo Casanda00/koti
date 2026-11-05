@@ -4,7 +4,8 @@ import { store, todayISO, BILLS_CAT } from "./data.js";
 import { $, esc, eur, eur0, icon, parseDay, openSheet, closeSheet, toast } from "./ui.js";
 import { periodFor, totals, catName, openStartBalance, openCheckBank } from "./money.js";
 import { setSpendingFilter } from "./spent.js";
-import { monthLedger, startPoint, effectiveBudgets, awaitingIncome } from "./ledger.js";
+import { monthLedger, startPoint, awaitingIncome } from "./ledger.js";
+import * as E from "./engine.js";
 import { occurrences, markPaid, setSkipped, awaitingDebit, setFailed } from "./plan.js";
 import { nextPay, receive } from "./income.js";
 import { wantsStrip, stripHTML } from "./install.js";
@@ -19,21 +20,6 @@ function snooze(k) { try { const s = snoozed(); s[k] = todayISO(); localStorage.
 const isSnoozed = k => snoozed()[k] === todayISO();
 const sourceName = src => src.name.toLowerCase() === "salary" ? "your salary" : `the ${src.name.toLowerCase()} money`;
 
-/* How the month is going: over (spent more than there is), tight (a bill is late, or each day has much less
-   than your budgets plan for a day), or calm. */
-export function moodOf(L, perDay, p) {
-  if (!L || L.kind !== "current") return "calm";
-  if (L.left < 0) return "over";
-  if (L.overdue.length) return "tight";
-  const days = Math.round((p.end - p.start) / 864e5) + 1, planned = effectiveBudgets(p).total / days;
-  return perDay < (planned > 0 ? planned * 0.6 : 10) ? "tight" : "calm";
-}
-/* What Now shows, saved with your settings so reminders can use the same numbers ("Money's tight", "Pays itself",
-   "yours to spend falls under"). The server only trusts it while it's fresh; it changes only when the numbers do. */
-function saveSnapshot(snap) {
-  const old = store.model.settings.snapshot || {};
-  if (["left", "now", "mood", "day", "period", "leftToday"].some(k => old[k] !== snap[k])) store.updateSettings({ snapshot: { ...snap, at: new Date().toISOString() } });
-}
 export function isSetUp() { return startPoint().set || store.model.income.length > 0; }
 
 let root = null;
@@ -61,8 +47,7 @@ function findOverdue(id, due) { const L = monthLedger(periodFor(new Date())); re
 export function renderNow() {
   if (!root) return;
   const p = periodFor(new Date()), L = monthLedger(p), pd = nextPay(), today = todayISO();
-  const days = pd ? Math.max(1, pd.days) : null, perDay = days && L.left > 0 ? L.left / days : 0;
-  document.body.dataset.mood = isSetUp() ? moodOf(L, perDay, p) : "calm";
+  document.body.dataset.mood = isSetUp() ? E.mood(store.model, today).mood : "calm";   // the same rule the reminders use
 
   if (!isSetUp()) {
     root.innerHTML = `<section class="now-top">
@@ -77,9 +62,7 @@ export function renderNow() {
 
   // Today's share and what's left of it
   const D = dayShare(), todayLeft = D && D.left != null ? D.left : null;
-  if (todayLeft != null && L.left >= 0) document.body.dataset.mood = todayLeft < 0 ? "over" : D.share > 0 && todayLeft < D.share * 0.25 ? "tight" : (L.overdue || []).length ? "tight" : "calm";
   const big = todayLeft != null ? todayLeft : L.left;
-  if (L.kind === "current") saveSnapshot({ left: Math.round(L.left), now: Math.round(L.now), perDay: Math.round(perDay), days, mood: document.body.dataset.mood, day: today, period: p.from, share: D && D.share != null ? Math.round(D.share) : null, leftToday: todayLeft != null ? Math.round(todayLeft) : null });
 
   // Questions: income that should have landed, a bill that's late, a balance never set. Two at most.
   const qs = [];
