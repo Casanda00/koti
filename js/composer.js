@@ -1,7 +1,7 @@
 // The box at the bottom of every main screen. On Now and Month you type (or say) what you spent, like "Lidl 23,40",
 // and Koti shows what it heard before saving. On Home and in a list, what you type goes onto a list.
 import { store, todayISO, topLists, listOf, newId } from "./data.js";
-import { $, $$, esc, eur, eur0, openSheet, closeSheet, toast } from "./ui.js";
+import { $, $$, esc, eur, eur0, openSheet, closeSheet, toast, kotiSays } from "./ui.js";
 import { parseExpense, speechSupported, listen } from "./voice.js";
 import { periodFor, totals, openExpense } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
@@ -90,15 +90,16 @@ async function ask({ audio = null, text = "", fallback = null }) {
     let l = listTarget();
     if (!l) { const id = newId("list"); store.put("lists", { id, name: "Groceries", kind: "shopping", position: store.model.lists.length }); l = listOf(id); }
     d.items.forEach(x => store.addItem(l.id, x.name, "Soon", { qty: x.qty && Number.isInteger(x.qty) && x.qty > 1 ? x.qty : null }));
-    input.value = ""; toast(`Added ${d.items.length === 1 ? d.items[0].name : d.items.length + " things"} to ${l.name}`); return;
+    input.value = ""; toast(d.reply || `Added ${d.items.length === 1 ? d.items[0].name : d.items.length + " things"} to ${l.name}`); return;
   }
   if (d.intent === "spend" && d.spend && d.spend.total) {
     const P = toParsed(d.spend); input.value = "";
-    if (P.lines.length > 1 || P.lines.some(l => l.placeId)) { import("./scan.js").then(m => m.openParsed(P)); return; }
-    showHeard({ amount: P.amount, payee: P.payee, date: P.date, note: P.note, categoryId: P.categoryId }, said); return;
+    if (P.lines.length > 1 || P.lines.some(l => l.placeId)) { import("./scan.js").then(m => m.openParsed({ ...P, reply: d.reply })); return; }
+    showHeard({ amount: P.amount, payee: P.payee, date: P.date, note: P.note, categoryId: P.categoryId }, d.reply); return;
   }
+  // Not enough to save: the AI says what it understood and asks for what's missing.
   input.value = said; input.focus();
-  toast(said ? `Heard “${said.length > 60 ? said.slice(0, 57) + "…" : said}”. Add an amount, like “Lidl 23,40”.` : "Didn't catch that. Try again, or type it.");
+  toast(d.reply || (said ? `“${said.length > 60 ? said.slice(0, 57) + "…" : said}”: how much was it?` : "I didn't catch that. Try again, or type it."));
 }
 
 function go() { return handleTyped(input.value.trim()); }
@@ -133,27 +134,33 @@ export function handleTyped(text) {
 }
 
 /* What Koti heard, before it's saved. */
-function showHeard(h) {
+/* Without the AI, the sentence is made from what the phone read, so the sheet still answers in words. */
+export function localReply(h, categories = store.model.categories) {
+  const day = h.date === todayISO() ? "today" : new Date(h.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long" });
+  const cat = h.categoryId && (categories.find(c => c.id === h.categoryId) || {}).name;
+  const what = h.note ? ` for ${h.note}` : cat ? ` on ${cat.toLowerCase()}` : "";
+  return `${eur(h.amount)}${h.payee ? ` at ${h.payee}` : ""}${what}, ${day}.${h.categoryId ? "" : " What was it for?"}`;
+}
+function showHeard(h, reply = null) {
   let catId = h.categoryId;
-  const dayWord = h.date === todayISO() ? "today" : new Date(h.date).toLocaleDateString("en-GB", { weekday: "long" });
   const leftAfter = () => {
     if (!catId) return "";
     const p = periodFor(new Date()), b = effectiveBudgets(p).byId[catId]; if (b == null) return "";
     const left = b - ((totals(p).byCat[catId] || 0) + h.amount), name = (store.model.categories.find(c => c.id === catId) || {}).name || "";
     return left >= 0 ? `That leaves ${eur(left)} for ${name.toLowerCase()} this month.` : `That puts ${name.toLowerCase()} ${eur0(-left)} over this month.`;
   };
-  openSheet({ title: "Here's what we heard", left: "Cancel", right: "Save it", body: B => {
+  openSheet({ title: "", left: "Cancel", right: "Save it", body: B => {
     B.innerHTML = `<div class="heard">
+        ${kotiSays(reply || localReply(h))}
         <div class="heard-amt num">${eur(h.amount)}</div>
-        <p class="heard-s">${h.payee ? `at <b>${esc(h.payee)}</b>, ` : ""}${esc(dayWord)}${h.note ? `, ${esc(h.note)}` : ""}</p>
-        <p class="heard-k" id="hdQ">${catId ? "For" : "What was it for?"}</p>
+        <p class="heard-k" id="hdQ">Category</p>
         <div class="chips cat-chips" role="radiogroup" aria-label="Category">${store.model.categories.map(c => `<button type="button" class="fchip" role="radio" data-c="${esc(c.id)}" aria-checked="${c.id === catId}" aria-pressed="${c.id === catId}">${esc(c.name)}</button>`).join("")}</div>
         <p class="heard-left" id="hdLeft">${esc(leftAfter())}</p>
         <button type="button" class="tlink" id="hdMore">Change the details</button>
       </div>`;
     $(".cat-chips", B).addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; catId = catId === b.dataset.c ? null : b.dataset.c;
       $$("[data-c]", B).forEach(x => { x.setAttribute("aria-checked", x.dataset.c === catId); x.setAttribute("aria-pressed", x.dataset.c === catId); });
-      $("#hdQ", B).textContent = catId ? "For" : "What was it for?"; $("#hdLeft", B).textContent = leftAfter(); });
+      $("#hdLeft", B).textContent = leftAfter(); });
     $("#hdMore", B).onclick = () => { closeSheet(); setTimeout(() => openExpense({ draft: { amount: h.amount, categoryId: catId, payee: h.payee || "", date: h.date, note: h.note || "", kind: "expense", source: stop === null ? "manual" : "voice" } }), 260); input.value = ""; };
   }, onRight: () => {
     const tx = store.put("transactions", { id: newId("tx"), date: h.date, amount: h.amount, kind: "expense", categoryId: catId || null, payee: h.payee || null, note: h.note || null, source: "manual" });

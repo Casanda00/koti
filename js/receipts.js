@@ -100,7 +100,7 @@ async function readWithAI(prepared, hint) {
   let main = Object.entries(sums).sort((a, b) => b[1] - a[1])[0];
   const fromShop = R.shop ? parseExpense(R.shop, { categories: cats, history: store.model.transactions }).categoryId : null;
   if (data.limit) { try { localStorage.setItem("koti.aiLimit", String(data.limit)); } catch {} }
-  return { text: "", ai: true, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, parsed: { amount: R.total, date: validDay(R.date), payee: R.shop, categoryId: main ? main[0] : fromShop, lines, currency: String(R.currency || "EUR").toUpperCase() } };
+  return { text: "", ai: true, reply: data.reply || null, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, parsed: { amount: R.total, date: validDay(R.date), payee: R.shop, categoryId: main ? main[0] : fromShop, lines, currency: String(R.currency || "EUR").toUpperCase() } };
 }
 
 /* hint: "receipt" or "bill" when you already chose where it goes. PDFs are read by AI only. */

@@ -42,15 +42,17 @@ Receipt fields:
 - place: the user may have projects for setting up a home, listed as places ("Project" or "Project › Room"). If the product is something for that home that stays there (furniture, lamps, curtains, rugs, bedding, towels, kitchenware, small appliances, storage, tools, decor, plants), the best place for it: the room it belongs in if there is one, otherwise the project. Food, drink, toiletries and cleaning products that get used up are never a place: use null. When unsure, null. Fill category as well either way.
 - If the user filed the same or a similar product to a place before (listed below), use that place.
 - date as YYYY-MM-DD (two-digit years are 20xx). total: the amount paid (for a bill: the amount to pay). shop: for a bill, the company.
-- is_receipt: true for a receipt or a bill, false for anything else.`;
+- is_receipt: true for a receipt or a bill, false for anything else.
+- reply: Koti telling the person what it found, in English: one or two short, warm sentences in plain words, never a label. For a receipt: the shop, the day, the total, and where most of it went (for example "A K-Market receipt from Tuesday: €23.40, mostly groceries, and the lamp goes to your Living room."). For a bill: who it's from, the amount and when it's due. If something needs checking (a date or total you couldn't read, another currency, a blurry line), say so in a short sentence.`;
 
 function buildSchema(categories: string[], listItems: string[], bills: string[], places: string[]) {
 const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
 const schema = {
   type: "object", additionalProperties: false,
-  required: ["is_receipt", "doc_type", "shop", "date", "total", "currency", "items", "bill"],
+  required: ["is_receipt", "doc_type", "reply", "shop", "date", "total", "currency", "items", "bill"],
   properties: {
     is_receipt: { type: "boolean" },
+    reply: { type: "string" },
     doc_type: { type: "string", enum: ["receipt", "bill", "other"] },
     bill: { anyOf: [{ type: "null" }, {
       type: "object", additionalProperties: false,
@@ -204,5 +206,5 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
     bill = { company: str(b.company, 120) || (typeof r.shop === "string" ? r.shop.slice(0, 120) : null), amount: money(b.amount) ?? total, due_date: due, reference: str(b.reference, 60),
       iban: str(b.iban, 40), invoice_number: str(b.invoice_number, 60), period: str(b.period, 120), match: match ? billSet.get(match.toLowerCase()) || null : null };
   }
-  return json(200, { doc_type: docType, receipt: { shop: typeof r.shop === "string" ? r.shop.slice(0, 120) : null, date, total, currency: r.currency || "EUR", items: docType === "bill" ? [] : items }, bill, model: MODEL, used, limit: LIMIT });
+  return json(200, { doc_type: docType, reply: String(r.reply || "").trim().slice(0, 300), receipt: { shop: typeof r.shop === "string" ? r.shop.slice(0, 120) : null, date, total, currency: r.currency || "EUR", items: docType === "bill" ? [] : items }, bill, model: MODEL, used, limit: LIMIT });
 });

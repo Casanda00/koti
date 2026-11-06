@@ -420,7 +420,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
           source = "receipt"; busy = false;
           if (modeSeg) $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x.dataset.m === "type"));
           paint("type");
-          msg(receipt.type === "application/pdf" ? "PDF attached. Fill in the amount and shop." : P.amount != null ? (lines ? `Read ${lines.length} lines. Check the categories, then Save.` : "Read from the receipt. Check it, then Save.") : "Couldn't read the total. Type it in from the photo.", P.amount != null ? "ok" : "");
+          msg(r.reply ? r.reply : receipt.type === "application/pdf" ? "PDF attached. Fill in the amount and shop." : P.amount != null ? (lines ? `Read ${lines.length} lines. Check the categories, then Save.` : "Read from the receipt. Check it, then Save.") : "Couldn't read the total. Type it in from the photo.", P.amount != null ? "ok" : "");
         } catch (err) { busy = false; S.innerHTML = ""; msg(String(err.message || err)); }
       }
       function paintReceipt(E) {

@@ -35,15 +35,17 @@ const SYSTEM = `You understand short things people say or type into a household 
 - intent "remind": they ask to be reminded of something ("remind me…", "muistuta…").
 - intent "list": they name things to buy or to put on a list, without prices ("milk, eggs and two tomatoes"). items: each thing with qty when said.
 - intent "unclear": anything else.
-transcript: what they said, cleaned up (fix obvious mishearings of shop names and numbers).`;
+transcript: what they said, cleaned up (fix obvious mishearings of shop names and numbers).
+reply: Koti answering them, in the language they used: one or two short, warm sentences saying back what you understood in plain words (the amount, where, what for, when, or the things for the list, or the period they asked about), never a label like "Here's what we heard". If something needed is missing or unclear (no amount, can't tell what it was), ask for it in one short question instead. Never invent amounts.`;
 
 function schema(categories: string[], places: string[]) {
   const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
   return {
     type: "object", additionalProperties: false,
-    required: ["transcript", "intent", "spend", "range", "items"],
+    required: ["transcript", "reply", "intent", "spend", "range", "items"],
     properties: {
       transcript: { type: "string" },
+      reply: { type: "string" },
       intent: { type: "string", enum: ["spend", "question", "remind", "list", "unclear"] },
       spend: { anyOf: [{ type: "null" }, {
         type: "object", additionalProperties: false, required: ["total", "payee", "date", "note", "lines"],
@@ -118,7 +120,7 @@ Deno.serve(async (req) => {
     const res = await fetch(`${OPENAI_BASE}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${openaiKey}` }, body: form });
     if (!res.ok) return await fail(res, await res.json().catch(() => ({})));
     text = String((await res.json()).text || "").trim().slice(0, 500);
-    if (!text) return json(200, { transcript: "", intent: "unclear", spend: null, range: null, items: [], used, limit: LIMIT });
+    if (!text) return json(200, { transcript: "", reply: lang === "fi" ? "En kuullut mitään. Kokeile uudelleen tai kirjoita se." : "I didn't hear anything. Try again, or type it.", intent: "unclear", spend: null, range: null, items: [], used, limit: LIMIT });
   }
 
   // 2. What was meant
@@ -150,5 +152,5 @@ They said: ${JSON.stringify(text)}`;
     spend = { total, payee: str(s.payee, 120), date, note: str(s.note, 200), lines };
   }
   const items = intent === "list" ? (Array.isArray(r.items) ? r.items : []).slice(0, 40).map((x: Record<string, unknown>) => ({ name: String(x.name || "").trim().slice(0, 120), qty: money(x.qty) })).filter((x) => x.name) : [];
-  return json(200, { transcript: String(r.transcript || text).slice(0, 500), intent, spend, range: RANGES.includes(String(r.range)) ? r.range : null, items, used, limit: LIMIT });
+  return json(200, { transcript: String(r.transcript || text).slice(0, 500), reply: String(r.reply || "").trim().slice(0, 300), intent, spend, range: RANGES.includes(String(r.range)) ? r.range : null, items, used, limit: LIMIT });
 });

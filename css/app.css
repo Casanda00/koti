@@ -886,3 +886,8 @@ body[data-mood] .swdots i.on{background:var(--ink)}
 .bh-h{font-size:15px;margin:6px 0 -4px;color:var(--ink-2)}
 .bh-new .rt span{display:flex;align-items:center;gap:8px;font-weight:600}
 .bh-new input[type=checkbox]{width:20px;height:20px;accent-color:var(--spruce)}
+
+/* What Koti's AI says back: its own words, in a bubble with the spark. */
+.ai-says{display:flex;gap:10px;align-items:flex-start;margin:0 0 4px}
+.ai-says p{margin:0;flex:1;background:var(--spruce-soft);color:var(--ink);border-radius:4px 16px 16px 16px;padding:10px 14px;font-size:17px;line-height:1.4}
+.ai-mark{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--spruce);color:var(--on-accent);margin-top:2px}
