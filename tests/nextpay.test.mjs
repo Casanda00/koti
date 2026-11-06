@@ -86,3 +86,13 @@ test("it is stored and synced", () => {
   const sync = readFileSync(new URL("../js/sync.js", import.meta.url), "utf8");
   assert.match(sync, /fromPay: r\.from_pay/); assert.match(sync, /from_pay: t\.fromPay/);
 });
+
+// The morning and evening messages read the database themselves: without from_pay they would count next-pay spending
+// today, and say money is tighter than the app does.
+test("the reminders read it from the database the way the app does", async () => {
+  const R = await import("../supabase/functions/send-reminders/reminders.js");
+  const m = R.modelOf({ tx: [{ id: "tx1", date: "2027-03-10", amount: "11.00", kind: "expense", category_id: "eat", from_pay: "2027-03-25" }] });
+  assert.equal(m.transactions[0].fromPay, "2027-03-25");
+  const idx = readFileSync(new URL("../supabase/functions/send-reminders/index.ts", import.meta.url), "utf8");
+  assert.match(idx, /transactions\?select=[^`]*\bfrom_pay\b/, "the column is fetched");
+});

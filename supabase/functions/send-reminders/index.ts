@@ -149,7 +149,7 @@ async function runAll(secret: string) {
   const [settings, bills, tx, income, cats, goals, log, mineAll, lists, items, events] = await Promise.all([
     restAll(`settings?select=user_id,data&user_id=${inList}`, "user_id"),
     restAll(`bills?select=*&deleted=eq.false&user_id=${inList}`, "user_id,id"),
-    restAll(`transactions?select=user_id,id,date,amount,kind,category_id,payee,bill_id,bill_due,income_id,income_due,lines,updated_at&deleted=eq.false&user_id=${inList}`, "user_id,id"),
+    restAll(`transactions?select=user_id,id,date,amount,kind,category_id,payee,bill_id,bill_due,income_id,income_due,from_pay,lines,updated_at&deleted=eq.false&user_id=${inList}`, "user_id,id"),
     restAll(`income_sources?select=*&deleted=eq.false&user_id=${inList}`, "user_id,id"),
     restAll(`categories?select=user_id,id,name,budget&deleted=eq.false&user_id=${inList}`, "user_id,id"),
     restAll(`goals?select=user_id,id,name,target,saved,monthly&deleted=eq.false&user_id=${inList}`, "user_id,id"),
