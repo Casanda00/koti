@@ -20,6 +20,15 @@ function listTarget() {
 }
 const listMode = () => ["projects", "list", "project"].includes(getView());
 
+/* The round button: + opens the add sheet when the box is empty; once something is typed it is Send. */
+export function goIcon() {
+  if (!form || form.classList.contains("busy")) return;
+  const typed = !!input.value.trim(), lm = listMode(), t = lm ? listTarget() : null, go = $("#dockGo");
+  go.classList.toggle("send", typed);
+  $("use", go).setAttribute("href", typed ? "#i-send" : "#i-plus");
+  go.setAttribute("aria-label", typed ? (lm ? (t ? `Add to ${t.name}` : "Add to a new list") : "Send") : lm ? "Add to the list" : "Add what you spent");
+  input.setAttribute("enterkeyhint", typed && !lm ? "send" : "done");
+}
 export function paintComposer() {
   if (!form) return;
   const v = getView(), off = ["settings", "reminders", "list", "project"].includes(v);   // lists and projects have their own add box
@@ -29,12 +38,13 @@ export function paintComposer() {
   input.placeholder = lm ? (t ? `Add to ${t.name}` : "Start a list: milk, eggs…") : "Spent? Try “Lidl 23,40”";
   $("#dockLbl").textContent = lm ? (t ? `Add to ${t.name}` : "Start a shopping list") : "Spent something?";
   $("#dockCam").hidden = lm;
-  $("#dockGo").setAttribute("aria-label", lm ? "Add to the list" : "Add what you spent");
+  goIcon();
 }
 
 export function initComposer(viewGetter) {
   getView = viewGetter; form = $("#dock"); input = $("#dockIn");
   form.addEventListener("submit", e => { e.preventDefault(); go(); });
+  input.addEventListener("input", goIcon);
   const mic = $("#dockMic");
   if (speechSupported() || aiVoice()) {
     mic.hidden = false;
@@ -43,7 +53,7 @@ export function initComposer(viewGetter) {
       if (aiVoice()) { recordAndAct(mic); return; }
       if (!speechSupported()) { toast("Sign in and go online to use the microphone."); return; }
       mic.classList.add("listening");
-      stop = listen({ lang: store.model.settings.voiceLang || "en-GB", onText: (t, fin) => { input.value = t; if (fin && !listMode()) setTimeout(go, 250); }, onEnd: () => { stop = null; mic.classList.remove("listening"); }, onError: () => { stop = null; mic.classList.remove("listening"); toast("Couldn't hear that. Try typing it."); } });
+      stop = listen({ lang: store.model.settings.voiceLang || "en-GB", onText: (t, fin) => { input.value = t; goIcon(); if (fin && !listMode()) setTimeout(go, 250); }, onEnd: () => { stop = null; mic.classList.remove("listening"); }, onError: () => { stop = null; mic.classList.remove("listening"); toast("Couldn't hear that. Try typing it."); } });
     });
   }
   paintComposer();
@@ -52,7 +62,7 @@ export function initComposer(viewGetter) {
 /* Tap to talk, tap again when you're done (it stops by itself after 20 seconds). */
 async function recordAndAct(mic) {
   const ph = input.placeholder;
-  const reset = () => { stop = null; mic.classList.remove("listening"); mic.disabled = false; input.placeholder = ph; };
+  const reset = () => { stop = null; mic.classList.remove("listening"); mic.disabled = false; input.placeholder = ph; goIcon(); };
   let r;
   try {
     r = await record({ maxMs: 20000, onStop: async blob => {
@@ -73,8 +83,8 @@ export const isSentence = t => String(t).trim().split(/\s+/).length >= 5 || /\b(
 function busy(on, what = "Working it out…") {
   if (!form) return;   // no page (the tests)
   form.classList.toggle("busy", on); form.setAttribute("aria-busy", on); input.readOnly = on;
-  $("#dockGo").disabled = on; $("#dockGo").setAttribute("aria-label", on ? what : "Add what you spent");
-  if (on) { busy.ph = input.placeholder; input.placeholder = what; } else if (busy.ph) input.placeholder = busy.ph;
+  $("#dockGo").disabled = on;
+  if (on) { $("#dockGo").setAttribute("aria-label", what); busy.ph = input.placeholder; input.placeholder = what; } else { if (busy.ph) input.placeholder = busy.ph; goIcon(); }
 }
 async function ask({ audio = null, text = "", fallback = null }) {
   let d;
@@ -102,7 +112,8 @@ async function ask({ audio = null, text = "", fallback = null }) {
   toast(d.reply || (said ? `“${said.length > 60 ? said.slice(0, 57) + "…" : said}”: how much was it?` : "I didn't catch that. Try again, or type it."));
 }
 
-function go() { return handleTyped(input.value.trim()); }
+/* Whatever happened (saved, sent to the AI, put back to fix), the button follows what is left in the box. */
+function go() { const r = handleTyped(input.value.trim()); goIcon(); Promise.resolve(r).finally(goIcon); return r; }
 /* What was typed into the box, and pressed Add. Returns the AI's work when it asks the AI (for the tests). */
 export function handleTyped(text) {
   if (isReminderPhrase(text)) {   // "remind me to pay water on the 15th": open the reminder, filled in, to check and save
@@ -167,10 +178,10 @@ function showHeard(h, reply = null) {
     $(".cat-chips", B).addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; catId = catId === b.dataset.c ? null : b.dataset.c;
       $$("[data-c]", B).forEach(x => { x.setAttribute("aria-checked", x.dataset.c === catId); x.setAttribute("aria-pressed", x.dataset.c === catId); });
       $("#hdLeft", B).textContent = leftAfter(); });
-    $("#hdMore", B).onclick = () => { closeSheet(); setTimeout(() => openExpense({ draft: { amount: h.amount, categoryId: catId, payee: h.payee || "", date: h.date, note: h.note || "", fromPay, kind: "expense", source: stop === null ? "manual" : "voice" } }), 260); input.value = ""; };
+    $("#hdMore", B).onclick = () => { closeSheet(); setTimeout(() => openExpense({ draft: { amount: h.amount, categoryId: catId, payee: h.payee || "", date: h.date, note: h.note || "", fromPay, kind: "expense", source: stop === null ? "manual" : "voice" } }), 260); input.value = ""; goIcon(); };
   }, onRight: () => {
     const tx = store.put("transactions", { id: newId("tx"), date: h.date, amount: h.amount, kind: "expense", categoryId: catId || null, payee: h.payee || null, note: h.note || null, fromPay, source: "manual" });
-    closeSheet(); input.value = "";
+    closeSheet(); input.value = ""; goIcon();
     toast(`Saved ${eur(tx.amount)}${tx.payee ? ` at ${tx.payee}` : ""}${tx.fromPay ? `, from your pay on ${payWords({ date: tx.fromPay })}` : ""}`, { label: "Undo", run: () => store.remove("transactions", tx.id) });
   } });
 }

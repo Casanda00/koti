@@ -82,7 +82,9 @@ body[data-mood] .me{background:var(--on-mood);color:var(--mood)}
 .dk{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--soft-line);color:var(--ink);flex:none}
 .dk.go{background:var(--spruce);color:var(--on-accent)}
 .dk .ic{width:22px;height:22px}
-.dk.go .ic{stroke-width:2.4}
+.dk.go .ic{stroke-width:2.4;transition:transform .18s ease}
+.dk.go.send .ic{stroke-width:2.1;transform:translateX(-1px) rotate(0deg);stroke-linejoin:round}
+@media (prefers-reduced-motion: reduce){.dk.go .ic{transition:none}}
 .dk.listening{background:var(--crit);color:#fff}
 body.no-dock .dock{display:none}
 body.no-dock .views{padding-bottom:calc(var(--safe-bottom) + 40px)}
