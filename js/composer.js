@@ -2,14 +2,15 @@
 // and Koti shows what it heard before saving. On Home and in a list, what you type goes onto a list.
 import { store, todayISO, topLists, listOf, newId } from "./data.js";
 import { $, $$, esc, eur, eur0, openSheet, closeSheet, toast, kotiSays } from "./ui.js";
-import { parseExpense, speechSupported, listen } from "./voice.js";
+import { parseExpense, speechSupported } from "./voice.js";
 import { periodFor, totals, openExpense, payAfter, payWords } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
 import { parseItems, currentList } from "./lists.js";
 import { isReminderPhrase, parseReminder } from "./remindparse.js";
 import { spendQuestion } from "./spent.js";
-import { aiVoice, record, understand, toParsed } from "./hear.js";
+import { aiVoice, understand, toParsed } from "./hear.js";
 import { aiPossible } from "./receipts.js";
+import { initTalk } from "./talk.js";
 
 let getView = () => "now", form, input, stop = null;
 
@@ -46,86 +47,15 @@ export function initComposer(viewGetter) {
   form.addEventListener("submit", e => { e.preventDefault(); go(); });
   input.addEventListener("input", goIcon);
   const mic = $("#dockMic");
-  if (speechSupported() || aiVoice()) { mic.hidden = false; holdToTalk(mic); }
+  if (speechSupported() || aiVoice()) {
+    mic.hidden = false;
+    // Hold to talk (js/talk.js): a recording goes to the AI; the phone's own words are put in the box and added.
+    initTalk(mic, { send: async ({ audio, text }) => {
+      if (audio) { await ask({ audio }); return; }
+      input.value = text; goIcon(); go();
+    } });
+  }
   paintComposer();
-}
-
-/* ---------- The microphone: hold to talk, let go to send, slide away to cancel ---------- */
-export const HOLD = { minMs: 350, cancelPx: 70, maxMs: 60000 };
-/* What letting go means: too short to be speech, slid away, or send. */
-export function releaseAction({ heldMs, away }) { return away ? "cancel" : heldMs < HOLD.minMs ? "short" : "send"; }
-const clock = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-
-function holdToTalk(mic) {
-  let session = null, lastPointerUp = 0;
-  const ph = () => session && session.ph;
-  const show = () => {
-    if (!session || !session.live) return;
-    input.placeholder = session.away ? "Let go to cancel" : `${clock(Date.now() - session.t0)}  ‹ Slide to cancel`;
-    mic.classList.toggle("away", session.away);
-  };
-  const end = () => {
-    if (!session) return;
-    clearInterval(session.tick); mic.classList.remove("listening", "away"); document.body.classList.remove("talking");
-    input.placeholder = ph(); session = null; goIcon();
-  };
-  async function press(mode) {   // mode: "hold" (finger, mouse, Space) or "toggle" (a tap from a screen reader)
-    if (session) return;
-    if (!aiVoice() && !speechSupported()) { toast("Sign in and go online to use the microphone."); return; }
-    session = { mode, t0: Date.now(), ph: input.placeholder, away: false, live: false, released: false, outcome: null };
-    const S = session;
-    mic.classList.add("listening"); document.body.classList.add("talking");
-    input.placeholder = "Starting the microphone…";
-    if (aiVoice()) {
-      try {
-        S.rec = await record({ maxMs: HOLD.maxMs, onStop: async blob => {
-          const outcome = S.outcome || "send";   // the time limit sends what was said
-          end();
-          if (outcome !== "send") { if (outcome === "short") toast("Hold the microphone while you talk, then let go."); return; }
-          mic.disabled = true;
-          try { await ask({ audio: blob }); } finally { mic.disabled = false; goIcon(); }
-        } });
-      } catch (e) { end(); toast(/denied|NotAllowed/i.test(String(e && (e.name || e.message))) ? "Koti can't use the microphone. Allow it in your browser's settings." : "Couldn't start the microphone."); return; }
-      if (session !== S) { S.rec.cancel(); return; }
-      // Let go while the phone was still asking for the microphone (the first time): nothing was said yet.
-      if (S.released) { S.outcome = "cancel"; S.rec.cancel(); toast("The microphone is ready. Hold it while you talk."); return; }
-    } else {
-      S.stopListen = listen({ lang: store.model.settings.voiceLang || "en-GB", continuous: true,
-        onText: t => { input.value = t; goIcon(); },
-        onEnd: () => { const o = S.outcome; end(); if (o === "send" && input.value.trim() && !listMode()) go(); else if (o === "cancel") { input.value = ""; goIcon(); } },
-        onError: () => { end(); toast("Couldn't hear that. Try typing it."); } });
-    }
-    S.live = true; S.t0 = Date.now(); show(); S.tick = setInterval(show, 250);
-  }
-  function release(away = false) {
-    const S = session; if (!S) return;
-    S.released = true;
-    if (!S.live) return;   // still starting: press() sees "released" and stops
-    S.outcome = releaseAction({ heldMs: Date.now() - S.t0, away: away || S.away });
-    if (S.rec) { if (S.outcome === "send") S.rec.stop(); else S.rec.cancel(); }
-    else if (S.stopListen) S.stopListen();
-  }
-
-  mic.setAttribute("aria-label", "Hold to talk");
-  mic.addEventListener("contextmenu", e => e.preventDefault());   // a long press is talking, not a menu
-  mic.addEventListener("pointerdown", e => {
-    if (e.button > 0) return;
-    e.preventDefault(); try { mic.setPointerCapture(e.pointerId); } catch {}
-    session && session.mode === "toggle" ? release() : press("hold");
-  });
-  mic.addEventListener("pointermove", e => {
-    if (!session || session.mode !== "hold") return;
-    const r = mic.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    const away = Math.hypot(dx, dy) > HOLD.cancelPx;
-    if (away !== session.away) { session.away = away; show(); }
-  });
-  const up = e => { lastPointerUp = Date.now(); if (session && session.mode === "hold") release(e.type === "pointercancel"); };
-  mic.addEventListener("pointerup", up); mic.addEventListener("pointercancel", up);
-  // Space held down on a keyboard works like a finger.
-  mic.addEventListener("keydown", e => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); if (e.key === " ") press("hold"); else session ? release() : press("toggle"); } });
-  mic.addEventListener("keyup", e => { if (e.key === " " && session && session.mode === "hold") { e.preventDefault(); release(); } });
-  // A click with no finger before it (a screen reader's double tap): first starts, the next one sends.
-  mic.addEventListener("click", e => { e.preventDefault(); if (Date.now() - lastPointerUp < 700) return; session ? release() : press("toggle"); });
 }
 
 /* More than a shop and an amount: five words or more, or words a person uses about themselves. */
