@@ -90,7 +90,6 @@ body[data-mood] .me{background:var(--on-mood);color:var(--mood)}
 #dockMic{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:transform .15s ease,background .15s ease}
 #dockMic.listening{transform:scale(1.18);box-shadow:0 0 0 0 color-mix(in srgb,var(--crit) 45%,transparent);animation:talkpulse 1.2s ease-out infinite}
 #dockMic.listening.away{background:var(--muted);transform:scale(1);animation:none}
-body.talking #dockIn::placeholder{color:var(--ink);opacity:1}
 @keyframes talkpulse{to{box-shadow:0 0 0 14px transparent}}
 @media (prefers-reduced-motion: reduce){#dockMic,#dockMic.listening{transition:none;animation:none;transform:none}}
 body.no-dock .dock{display:none}
@@ -900,3 +899,34 @@ body[data-mood] .swdots i.on{background:var(--ink)}
 .ai-says{display:flex;gap:10px;align-items:flex-start;margin:0 0 4px}
 .ai-says p{margin:0;flex:1;background:var(--spruce-soft);color:var(--ink);border-radius:4px 16px 16px 16px;padding:10px 14px;font-size:17px;line-height:1.4}
 .ai-mark{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--spruce);color:var(--on-accent);margin-top:2px}
+
+/* Talking to Koti (js/talk.js, design B): a sheet over a dimmed screen, the words as they're said, and Cancel,
+   the microphone and Keep talking. Slid toward Cancel it turns red; toward Keep talking, blue. */
+.talk{position:fixed;inset:0;z-index:60;touch-action:none;-webkit-user-select:none;user-select:none}
+.talk-dim{position:absolute;inset:0;background:rgba(12,16,40,.45);opacity:0;transition:opacity .2s ease}
+.talk-sheet{position:absolute;left:50%;bottom:0;width:min(100%,560px);min-height:min(520px,72vh);box-sizing:border-box;background:var(--bg);color:var(--ink);border-radius:28px 28px 0 0;
+  padding:14px 24px calc(var(--safe-bottom) + 28px);display:flex;flex-direction:column;gap:16px;transform:translate(-50%,100%);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.talk.on .talk-dim{opacity:1}.talk.on .talk-sheet{transform:translate(-50%,0)}
+.talk-grab{align-self:center;width:40px;height:5px;border-radius:3px;background:var(--line)}
+.talk-head{display:flex;align-items:center;gap:10px;font-size:16px}
+.talk-head .ai-mark{margin:0}
+.talk-time{margin-left:auto;color:var(--ink-2);font-size:15px;font-variant-numeric:tabular-nums}
+.talk-words{margin:0;font:700 38px/1.08 var(--display);font-stretch:75%;color:var(--ink);overflow-wrap:anywhere;min-height:2.2em}
+.talk-last{color:var(--muted)}
+.talk-empty .talk-words{font-size:24px;line-height:1.2}
+.talk-hint{margin:0;font-size:14px;color:var(--ink-2)}
+.talk-row{margin-top:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;justify-items:center}
+.talk-opt{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:13px;color:var(--ink-2);text-align:center}
+.talk-t{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--paper);color:var(--ink);border:2px solid var(--line);transition:background .15s,border-color .15s,color .15s}
+.talk-t .ic{width:22px;height:22px}
+.talk-mic{width:104px;height:104px;border-radius:50%;display:grid;place-items:center;background:var(--crit);color:#fff;border:0;margin:16px 0 22px;
+  box-shadow:0 0 0 14px color-mix(in srgb,var(--crit) 16%,transparent),0 0 0 30px color-mix(in srgb,var(--crit) 7%,transparent);animation:talkbreath 1.6s ease-in-out infinite;transition:background .15s}
+.talk-mic .ic{width:38px;height:38px}
+.talk[data-zone=cancel] .talk-cancel{background:var(--crit);border-color:var(--crit);color:#fff}
+.talk[data-zone=cancel] .talk-opt:first-child{color:var(--crit)}
+.talk[data-zone=cancel] .talk-mic{background:var(--muted);box-shadow:0 0 0 14px color-mix(in srgb,var(--muted) 14%,transparent);animation:none}
+.talk[data-zone=cancel] .talk-words,.talk[data-zone=cancel] .talk-last{color:var(--muted)}
+.talk[data-zone=lock] .talk-lock,.talk[data-locked="1"] .talk-lock{background:var(--spruce);border-color:var(--spruce);color:var(--on-accent)}
+.talk[data-locked="1"] .talk-mic{background:var(--spruce);color:var(--on-accent);box-shadow:0 0 0 14px color-mix(in srgb,var(--spruce) 16%,transparent);animation:none}
+@keyframes talkbreath{50%{box-shadow:0 0 0 18px color-mix(in srgb,var(--crit) 14%,transparent),0 0 0 38px color-mix(in srgb,var(--crit) 5%,transparent)}}
+@media (prefers-reduced-motion: reduce){.talk-sheet,.talk-dim{transition:none}.talk-mic{animation:none}}
