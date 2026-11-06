@@ -40,7 +40,10 @@ test("the button and the sheet are wired for a finger, a keyboard and a screen r
   assert.match(t, /setPointerCapture/);
   assert.match(t, /e\.key === "Escape"/, "Escape cancels");
   assert.match(t, /role", "dialog"/);
-  assert.match(t, /me\.released && !me\.locked\) \{ me\.outcome = "cancel"/, "let go while the phone asked for the microphone: nothing is sent");
+  assert.match(t, /if \(me\.released && !me\.locked\) me\.locked = true;/, "lifted while the phone asked for the microphone: it carries on hands free");
+  for (const ev of ["touchstart", "touchmove", "touchend", "touchcancel"]) assert.match(t, new RegExp(`addEventListener\\("${ev}"`), ev);
+  assert.match(t, /"touchcancel", e => \{ if \(touchOf\(e\)\) \{ finger = null; lastPointerUp = Date\.now\(\); interrupt\(\);/, "the phone taking the touch away doesn't cancel");
+  assert.doesNotMatch(t, /pointercancel" && !S\.locked\) S\.zone = "cancel"/, "the old cancel-on-interruption is gone");
   assert.match(read("js/composer.js"), /initTalk\(mic, \{ send:/);
   assert.match(read("index.html"), /id="dockMic" aria-label="Hold to talk"/);
   assert.match(read("index.html"), /<symbol id="i-lock"/);

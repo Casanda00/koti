@@ -111,8 +111,9 @@ export function initTalk(mic, { send }) {
         return;
       }
       if (S !== me) { me.rec.cancel(); return; }
-      // Let go while the phone was still asking for the microphone (the first time): nothing was said yet.
-      if (me.released && !me.locked) { me.outcome = "cancel"; me.rec.cancel(); S = null; close(); toast("The microphone is ready. Hold it while you talk."); return; }
+      // The finger was lifted, or the phone took the touch away, while it was still asking for the microphone (an
+      // installed app on iPhone asks again after each launch): carry on hands free, with Cancel and Send to tap.
+      if (me.released && !me.locked) me.locked = true;
       if (!me.wordsOff) { try { me.stopWords = words(null); } catch { me.wordsOff = true; } }
     } else {
       try { me.stopWords = words(() => { if (me.outcome === "send") doneText(me); }); }
@@ -129,6 +130,14 @@ export function initTalk(mic, { send }) {
     const a = releaseAction({ heldMs: Date.now() - S.t0, zone: S.zone });
     if (a === "lock") { S.locked = true; S.zone = null; paint(); ui.mic.focus(); return; }
     finish(a);
+  }
+  /* The phone took the touch away (a system gesture, the sheet sliding in under the finger, a prompt). Where the
+     finger went is unknown, so nothing is sent or thrown away: it carries on hands free, with Cancel and Send. */
+  function interrupt() {
+    if (!S || S.locked) return;
+    S.released = true;
+    if (!S.live) return;   // press() goes hands free when the microphone is ready
+    S.locked = true; S.zone = null; paint(); ui.mic.focus();
   }
   /* The end of it: send, cancel, or too short. */
   function finish(outcome) {
@@ -158,18 +167,34 @@ export function initTalk(mic, { send }) {
   mic.setAttribute("aria-label", "Hold to talk");
   mic.setAttribute("aria-haspopup", "dialog");
   mic.addEventListener("contextmenu", e => e.preventDefault());   // a long press is talking, not a menu
-  mic.addEventListener("pointerdown", e => {
-    if (e.button > 0 || S) return;
-    e.preventDefault(); try { mic.setPointerCapture(e.pointerId); } catch {}
-    press("hold").then(() => {}); if (S) { S.x0 = e.clientX; S.y0 = e.clientY; }
-  });
-  mic.addEventListener("pointermove", e => {
+  // The finger: touch events, which stay with the finger whatever slides in over the button (pointer events on a
+  // phone can be cancelled by the page changing under them, and that read as "cancel" until 6 November 2026).
+  const down = (x, y) => { if (S) return; press("hold"); if (S) { S.x0 = x; S.y0 = y; } };
+  const move = (x, y) => {
     if (!S || S.mode !== "hold" || S.locked || S.x0 == null) return;
-    const z = zoneOf(e.clientX - S.x0, e.clientY - S.y0);
+    const z = zoneOf(x - S.x0, y - S.y0);
     if (z !== S.zone) { S.zone = z; paint(); }
+  };
+  const up = () => { lastPointerUp = Date.now(); if (S && S.mode === "hold") release(); };
+  let finger = null;
+  const touchOf = e => [...e.changedTouches].find(t => t.identifier === finger);
+  mic.addEventListener("touchstart", e => {
+    if (finger !== null || S) return;
+    e.preventDefault();   // no long-press menu, no text selection, no scrolling, no click afterwards
+    const t = e.changedTouches[0]; finger = t.identifier; down(t.clientX, t.clientY);
+  }, { passive: false });
+  mic.addEventListener("touchmove", e => { const t = touchOf(e); if (t) { e.preventDefault(); move(t.clientX, t.clientY); } }, { passive: false });
+  mic.addEventListener("touchend", e => { if (touchOf(e)) { finger = null; up(); } });
+  mic.addEventListener("touchcancel", e => { if (touchOf(e)) { finger = null; lastPointerUp = Date.now(); interrupt(); } });
+  // A mouse or a pen.
+  mic.addEventListener("pointerdown", e => {
+    if (e.pointerType === "touch" || e.button > 0 || S) return;
+    e.preventDefault(); try { mic.setPointerCapture(e.pointerId); } catch {}
+    down(e.clientX, e.clientY);
   });
-  const up = e => { lastPointerUp = Date.now(); if (S && S.mode === "hold") { if (e.type === "pointercancel" && !S.locked) S.zone = "cancel"; release(); } };
-  mic.addEventListener("pointerup", up); mic.addEventListener("pointercancel", up);
+  mic.addEventListener("pointermove", e => { if (e.pointerType !== "touch") move(e.clientX, e.clientY); });
+  mic.addEventListener("pointerup", e => { if (e.pointerType !== "touch") up(); });
+  mic.addEventListener("pointercancel", e => { if (e.pointerType !== "touch") { lastPointerUp = Date.now(); interrupt(); } });
   mic.addEventListener("keydown", e => {
     if (e.repeat) return;
     if (e.key === " ") { e.preventDefault(); press("hold"); }
