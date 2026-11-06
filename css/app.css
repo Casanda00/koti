@@ -880,6 +880,9 @@ body[data-mood] .swdots i.on{background:var(--ink)}
 .bq legend{font-weight:600;font-size:16px;padding:0;margin-bottom:8px}
 .bq-opts{display:flex;flex-wrap:wrap;gap:7px}
 .bh-row .rt small{white-space:normal}
-.bh-amt{display:flex;align-items:baseline;gap:2px;flex:none}.bh-amt input{max-width:80px}
+.bh-amt{display:flex;align-items:baseline;gap:2px;flex:none}.row .bh-amt input.inl{width:64px;max-width:64px;flex:none}
 .bh-total{margin:0;font-size:15px}
 .gh-acts{display:flex;gap:16px;align-items:center}
+.bh-h{font-size:15px;margin:6px 0 -4px;color:var(--ink-2)}
+.bh-new .rt span{display:flex;align-items:center;gap:8px;font-weight:600}
+.bh-new input[type=checkbox]{width:20px;height:20px;accent-color:var(--spruce)}

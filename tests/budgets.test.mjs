@@ -72,3 +72,49 @@ test("Use these sets the budgets, and Undo puts the old ones back", async () => 
   undo();
   assert.deepEqual(store.model.categories.map(c => c.budget), [null, 50]);
 });
+
+/* ---------- Savings in the plan ---------- */
+const { checkPlan } = await import("../supabase/functions/suggest-budgets/check.js");
+
+test("the AI is told each goal and the pay left after bills, to share between saving and spending", () => {
+  const m = { settings: { startBalance: 1000, startDate: "2026-09-01", monthStart: 1 }, lists: [], items: [],
+    income: [{ id: "sal", name: "Salary", amount: 2400, frequency: "monthly", payDay: 25, active: true, missed: [] }],
+    bills: [{ id: "rent", name: "Rent", amount: 850, frequency: "monthly", dueDay: 1, anchorMonth: 1, active: true, dues: {} }],
+    goals: [{ id: "g", name: "Holiday", target: 1200, saved: 300, monthly: 100, targetDate: "2027-06-01" }],
+    categories: [{ id: "cat-groceries", name: "Groceries", budget: null }],
+    transactions: [{ id: "sav:g:1", date: "2026-11-02", amount: 100, kind: "expense", categoryId: "savings" }] };
+  const C = E.budgetContext(m, "2026-11-06");
+  assert.equal(C.spendable, 155000, "2,400 − 850");
+  assert.deepEqual(C.goals, [{ id: "g", name: "Holiday", target: 120000, saved: 40000, monthly: 10000, targetDate: "2027-06-01" }], "saved counts this month's transfer");
+});
+
+test("the plan is checked: savings come first, budgets shrink to fit what's left after bills", () => {
+  // €1,500 left after bills. The AI asks for €300 + €200 of saving and €1,200 of budgets: €1,700, €200 too much.
+  const r = checkPlan({ savings: [{ goal: "holiday", monthly: 300, why: "a" }, { goal: "Car", monthly: 51 }], newGoal: { name: "Buffer for surprises", target: 1500, monthly: 200, why: "b" },
+    budgets: [{ category: "Groceries", amount: 800 }, { category: "Fun", amount: 400 }] }, ["Groceries", "Fun"], ["Holiday"], 1500);
+  assert.deepEqual(r.savings.map(s => [s.goal, s.monthly]), [["Holiday", 300]], "an unknown goal is dropped");
+  assert.equal(r.newGoal.monthly, 200);
+  assert.equal(r.saveTotal, 500);
+  assert.ok(r.saveTotal + r.budgetTotal <= 1500, `${r.saveTotal} + ${r.budgetTotal}`);
+  assert.deepEqual(r.budgets.map(b => b.amount), [665, 330], "budgets scaled into the €1,000 left, rounded down to 5");
+});
+
+test("a new goal can't duplicate one you have, and saving more than there is gets scaled down", () => {
+  assert.equal(checkPlan({ newGoal: { name: "holiday", target: 500, monthly: 50 } }, [], ["Holiday"], 1000).newGoal, null);
+  const r = checkPlan({ savings: [{ goal: "Holiday", monthly: 900 }], budgets: [{ category: "Fun", amount: 100 }] }, ["Fun"], ["Holiday"], 600);
+  assert.deepEqual([r.savings[0].monthly, r.budgets[0].amount], [600, 0]);
+});
+
+test("Use these sets budgets, goals' monthly amounts and a new goal; Undo puts it all back", async () => {
+  const { store } = D, { applyPlan } = await import("../js/budgetai.js");
+  store.model.categories = [{ id: "cat-fun", name: "Fun", budget: 50, position: 0 }];
+  store.model.goals = [{ id: "g", name: "Holiday", target: 1200, saved: 300, monthly: 100, position: 0 }];
+  const undo = applyPlan({ budgets: [{ id: "cat-fun", amount: 80 }], goals: [{ id: "g", monthly: 150 }], newGoal: { name: "Buffer", target: 1500, monthly: 200 } });
+  assert.equal(store.model.categories[0].budget, 80);
+  assert.equal(store.model.goals.find(g => g.id === "g").monthly, 150);
+  assert.ok(store.model.goals.some(g => g.name === "Buffer" && g.monthly === 200 && g.target === 1500));
+  undo();
+  assert.equal(store.model.categories[0].budget, 50);
+  assert.equal(store.model.goals.find(g => g.id === "g").monthly, 100);
+  assert.ok(!store.model.goals.some(g => g.name === "Buffer"));
+});
