@@ -14,6 +14,15 @@ import { rangeOf, spentBetween } from "./spent.js";
 
 const longDay = d => d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 const money = v => (v < 0 ? "−" : "") + eur0(Math.abs(v));
+/* Under today's share: what's spent of it. Over it: by how much, and what each day is from tomorrow, worked out again
+   from what's left until payday. */
+export function overLine(D, L) {
+  if (D.left >= 0) return `You have spent ${eur0(D.spent)} of ${eur0(D.share)}`;
+  const over = `${eur0(-D.left)} over today.`;
+  if (L.left < 0) return `${over} You're ${eur0(-L.left)} over until payday, so there's nothing to spend each day until then.`;
+  if (D.tomorrow == null) return `${over} Payday is tomorrow.`;
+  return `${over} From tomorrow, ${eur0(D.tomorrow)} a day instead of ${eur0(D.share)}.`;
+}
 const snoozeKey = "koti.notYet";
 function snoozed() { try { return JSON.parse(localStorage.getItem(snoozeKey) || "{}"); } catch { return {}; } }
 function snooze(k) { try { const s = snoozed(); s[k] = todayISO(); localStorage.setItem(snoozeKey, JSON.stringify(s)); } catch {} }
@@ -84,7 +93,7 @@ export function renderNow() {
   root.innerHTML = `${wantsStrip() ? stripHTML() : ""}<section class="now-top">
       <p class="now-k">${todayLeft == null ? (big < 0 ? "Over, after bills" : "In your account, after bills") : big < 0 ? "Over today" : "Left to spend today"}</p>
       <div class="now-big num" style="--n:${money(big).length}">${money(big)}</div>
-      ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : `<button type="button" class="now-how" data-add-pay>When is your payday? Add it for a daily amount</button>`}
+      ${D && D.share != null ? `<p class="now-s">${overLine(D, L)}</p>` : `<button type="button" class="now-how" data-add-pay>When is your payday? Add it for a daily amount</button>`}
       <p class="now-pd">${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}${L.owedSum ? ` · ${eur0(L.owedSum)} to come out of your next pay` : ""}</p>
     </section>
     <section class="now-sheet">
