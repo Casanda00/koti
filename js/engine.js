@@ -283,7 +283,8 @@ export function state(model, today) {
   };
 }
 
-/* Today's share: what was left this morning, shared over the days to payday, less what was spent today.
+/* Today's share: what was left this morning, shared over the days to payday, less what was spent today. Spent more
+   than it, "left" is negative, and "tomorrow" is the new amount a day for the days after today.
    Bills paid today were already taken off, so they don't count against it. */
 export function dayShare(model, today) {
   const L = state(model, today); if (L.kind !== "current") return null;
@@ -291,7 +292,10 @@ export function dayShare(model, today) {
   const S = spending(model, today, today), later = sum(S.entries.filter(fromNextPay), t => cents(t.amount)), saved = flow(model, today, today).fromSavings;
   const spent = S.total - S.bills - later - saved, days = L.payday ? Math.max(1, L.payday.days) : null;
   const morning = L.left + spent, share = days ? Math.round(Math.max(0, morning) / days) : null;
-  return { days, spent, morning, share, left: share != null ? share - spent : null };
+  // Over today's share: what's left is shared again over the days after today, so tomorrow's amount is smaller.
+  // (Under it, tomorrow's is bigger.) None when payday is tomorrow: the new pay sets it.
+  const tomorrow = days && days > 1 ? Math.round(Math.max(0, L.left) / (days - 1)) : null;
+  return { days, spent, morning, share, left: share != null ? share - spent : null, tomorrow };
 }
 
 /* ---------- Budgets ---------- */

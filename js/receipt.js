@@ -18,7 +18,7 @@ export function dayShare() {
   const t = todayISO(), D = E.dayShare(store.model, t);
   if (!D) return null;
   const eu = v => (v == null ? null : E.euros(v));
-  return { L: monthLedger(periodFor(new Date())), pd: nextPay(), days: D.days, spent: eu(D.spent), morning: eu(D.morning), share: eu(D.share), left: eu(D.left),
+  return { L: monthLedger(periodFor(new Date())), pd: nextPay(), days: D.days, spent: eu(D.spent), morning: eu(D.morning), share: eu(D.share), left: eu(D.left), tomorrow: eu(D.tomorrow),
     entries: spentBetween(t, t).entries.filter(e => !(e.categoryId === BILLS_CAT)) };
 }
 
