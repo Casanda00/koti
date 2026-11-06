@@ -9,7 +9,7 @@
 import { store, todayISO, newId, listCategory, listOf, topLists, roomsOf, itemsOf, projectSpent, projectOf, BILLS_CAT } from "./data.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast, spinner, kotiSays } from "./ui.js";
 import { prepareFile, readReceipt, attach } from "./receipts.js";
-import { catName, periodFor, totals } from "./money.js";
+import { catName, periodFor, totals, payAfter } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
 import { alignDue, occurrenceOf, markPaid, bindCopy, FREQ_LABEL } from "./plan.js";
 
@@ -295,7 +295,8 @@ async function saveReceipt(S, B) {
     || (d.kind === "project" ? "proj:" + d.id : (S.r && S.r.parsed && S.r.parsed.categoryId) || null);
   let receiptPath = null;
   if (keep && S.file) { try { receiptPath = await attach(id, S.file); } catch (e) { S.busy = false; return msg("Couldn't keep the photo on this device: " + (e.message || e)); } }
-  const tx = store.put("transactions", { id, date, amount: total, kind: "expense", categoryId: main, payee: shop || null, note: null, source: "receipt", receiptPath, lines: txLines.length ? txLines : null });
+  const fromPay = S.r && S.r.parsed && S.r.parsed.fromNextPay ? (payAfter(date) || {}).date || null : null;   // "from my next pay", said with several things
+  const tx = store.put("transactions", { id, date, amount: total, kind: "expense", fromPay, categoryId: main, payee: shop || null, note: null, source: "receipt", receiptPath, lines: txLines.length ? txLines : null });
   closeSheet(); S.busy = false;
   const ticks = before.length, news = created.length;
   const extra = [ticks ? `${ticks} ticked` : "", news ? `${news} new item${news === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");

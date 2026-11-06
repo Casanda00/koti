@@ -96,11 +96,15 @@ const FI_PLACE = /^(\p{Lu}[\p{L}'&-]*?)(?:i)?(ssa|ssä|sta|stä|lla|llä|lta|lt�
 const STOP = new Set(["for", "at", "from", "in", "on", "the", "a", "an", "i", "spent", "paid", "bought", "euros", "euro", "eur", "cents", "today", "yesterday", "and", "ja", "euroa", "senttiä", "tänään", "eilen", "toissapäivänä", "maksoin", "ostin", "käytin"]);
 /* Words after "from" or "at" that are where the money came from, not a place: "from my upcoming salary". */
 const NOT_PLACE = /^(my|your|our|his|her|their|this|that|next|mun|minun|sun)\b|\b(salary|pay|paycheck|wages?|account|card|wallet|savings|pocket|cash|loan|palkka|palkasta|tili|tililtä|kortti|kortilla|säästöt)\b/i;
+/* Paid out of pay that hasn't come yet: "from my upcoming salary", "next pay", "until payday", "seuraavasta palkasta". */
+export const NEXT_PAY = /\b(?:upcoming|next|coming|future)\s+(?:salary|pay(?:check|cheque|day)?|wages?)\b|\buntil\s+(?:payday|pay\s*day|i\s+get\s+paid)\b|\bwhen\s+i\s+get\s+paid\b|\b(?:seuraava(?:sta)?|ensi|tuleva(?:sta)?)\s+palka(?:sta|n)?\b|\bpalkkapäivä(?:nä|än)\b/i;
 const cap = s => s.replace(/(^|[\s-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
 
 export function parseExpense(text, { categories = [], history = [], today = new Date() } = {}) {
-  const raw = String(text || "").trim(); const lower = raw.toLowerCase();
-  const out = { amount: null, categoryId: null, payee: null, date: null, note: null };
+  // "from my next pay" says when it's paid, not what it was: noted, then taken out before the rest is read.
+  const said = String(text || "").trim(), fromNextPay = NEXT_PAY.test(said);
+  const raw = said.replace(new RegExp(`\\s*(?:(?:from|out of|on)\\s+(?:my\\s+|the\\s+)?)?(?:${NEXT_PAY.source})`, "gi"), " ").replace(/\s+/g, " ").trim(); const lower = raw.toLowerCase();
+  const out = { amount: null, categoryId: null, payee: null, date: null, note: null, fromNextPay };
   if (!raw) return out;
   const amt = parseAmount(raw); if (amt) out.amount = amt.amount;
   const byName = n => categories.find(c => c.name.toLowerCase() === n.toLowerCase());

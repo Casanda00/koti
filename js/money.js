@@ -158,6 +158,7 @@ export function heroHTML(L) {
     <div class="hint" style="font-size:13px">${pd && pd.days === 0 ? "Payday today" : perDay ? `About ${eur0(perDay)} a day for ${days} day${days === 1 ? "" : "s"}` : pd ? `${pd.days} days to payday` : ""}${!startPoint().set ? ` · <button type="button" class="link-inline" data-start>Set your starting balance</button>` : ""}</div>
     ${heroView() === "pie" ? pieHTML(pieParts(L), money0(Math.max(0, L.left)), `left of ${money0(L.carried + L.income + L.adjust)}`) + (L.expectedSum ? `<p class="expect-note">${icon("clock", "ic xs")} ${esc(L.expected.map(o => `${o.src.name} ${eur0(Number(o.src.amount) || 0)} expected ${fmtDay(parseDay(o.due))}`).join(", "))} · not counted until it arrives</p>` : "") : `${waterfall(steps)}
     <div class="key wf-key"><span><i class="sw" style="background:${L.carried < 0 ? "var(--crit)" : "var(--wall)"}"></i>${L.startsHere ? "Starting balance" : "From last month"}</span><span><i class="sw" style="background:var(--wf-out)"></i>Out</span>${L.due ? `<span><i class="sw" style="background:var(--amber)"></i>Still due${L.overdue.length ? ` (${L.overdue.length} overdue)` : ""}</span>` : ""}${L.expectedSum ? `<span><i class="sw gk"></i>Expected, not counted</span>` : ""}</div>`}
+    ${owedHTML(L)}
     <div class="nowrow"><span>In your account now <b class="num">${money0(L.now)}</b></span><button type="button" class="link" data-checkbank>Check with bank</button></div>`;
 }
 export function alertsHTML(L, isCur) {
@@ -323,7 +324,7 @@ const payeeCat = payee => { const t = store.model.transactions.filter(x => x.pay
 export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
   if (mode === "scan" && !tx) { import("./scan.js").then(m => m.openScan()); return; }   // scanning has one place: + → Scan or upload
   const editing = !!tx, d = tx || draft || { amount: null, categoryId: null, payee: "", date: todayISO(), note: "", kind: "expense" };
-  let catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
+  let fromPayOn = !!d.fromPay || !!d.fromNextPay, catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
   let lines = d.lines ? d.lines.map(l => ({ ...l })) : null, aiNote = "";   // receipt lines, each with its own category or project
   let receipt = null, dropExisting = false, busy = false, keep = false;   // keep: save the new photo with the expense   // receipt: a newly prepared file; dropExisting: remove the saved one
   openSheet({
@@ -356,13 +357,23 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
             <div class="grp">
               <label class="row"><span class="rt">Where</span><input class="inl" id="exPayee" list="exPayees" placeholder="Shop or place" autocomplete="off" maxlength="120" value="${esc(d.payee || "")}" style="max-width:60%"></label>
               <label class="row"><span class="rt">Date</span><input class="inl" id="exDate" type="date" value="${esc(d.date || todayISO())}"></label>
+              <label class="row" id="exPayRow"><span class="rt">From my next pay<small id="exPaySm"></small></span><input type="checkbox" class="switch" id="exPay" ${d.fromPay ? "checked" : ""}></label>
               <label class="row"><span class="rt">Note</span><input class="inl" id="exNote" placeholder="Optional" autocomplete="off" maxlength="500" value="${esc(d.note || "")}" style="max-width:60%"></label>
             </div>
             <datalist id="exPayees">${recentPayees().map(p => `<option value="${esc(p)}">`).join("")}</datalist>
             <div class="seg" id="exKind" aria-label="Type">${TX_KINDS.map(k => `<button type="button" data-k="${k}" aria-pressed="${k === kind}">${{ expense: "Paid", refund: "Refund", income: "Income" }[k]}</button>`).join("")}</div>`;
           bindChips(E);
           $("#exPayee", E).addEventListener("change", e => { if (!catId) { const c = payeeCat(e.target.value); if (c) { catId = c; $$(".cat-chips [data-c]", E).forEach(x => x.setAttribute("aria-pressed", x.dataset.c === catId)); } } });
-          $("#exKind", E).addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (!b) return; kind = b.dataset.k; $$("#exKind button", E).forEach(x => x.setAttribute("aria-pressed", x === b)); });
+          // From my next pay: what it means, by the day it comes out; only for something paid (not a refund or income).
+          const payLine = () => {
+            const row = $("#exPayRow", E); if (!row) return; row.hidden = kind !== "expense";
+            const pay = payAfter($("#exDate", E).value || todayISO());
+            $("#exPay", E).disabled = !pay;
+            $("#exPaySm", E).textContent = !pay ? "Add your pay in Income to use this" : fromPayOn ? `Comes out of your pay on ${payWords(pay)}. Today's money stays as it is.` : "Off: it comes out of today's money";
+          };
+          $("#exPay", E).addEventListener("change", e => { fromPayOn = e.target.checked; payLine(); });
+          $("#exDate", E).addEventListener("change", payLine); payLine();
+          $("#exKind", E).addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (!b) return; kind = b.dataset.k; $$("#exKind button", E).forEach(x => x.setAttribute("aria-pressed", x === b)); payLine(); });
           $("#exAmt", E).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
           paintReceipt(E); paintLines(E);
           setTimeout(() => !editing && !receipt && $("#exAmt", E) && $("#exAmt", E).focus(), 80);
@@ -456,7 +467,9 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         let receiptPath = tx && !dropExisting ? tx.receiptPath : null;
         if (receipt && keep) { busy = true; try { if (tx && tx.receiptPath) await removeReceipt(tx.receiptPath); receiptPath = await attach(id, receipt); } catch (err) { busy = false; return msg("Couldn't keep the receipt on this device: " + (err.message || err)); } }
         else if (tx && dropExisting && tx.receiptPath) removeReceipt(tx.receiptPath);
-        const saved = store.put("transactions", { ...(tx || {}), id, date, amount, kind, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source, receiptPath, lines: lines && lines.length ? lines : null });
+        // An edit keeps the payday it was given (that pay may have come since); a new date finds its own.
+        const pay = kind !== "expense" || !fromPayOn ? null : d.fromPay && d.date === date ? { date: d.fromPay } : payAfter(date);
+        const saved = store.put("transactions", { ...(tx || {}), id, date, amount, kind, fromPay: pay ? pay.date : null, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source, receiptPath, lines: lines && lines.length ? lines : null });
         // Tick the shopping-list items this receipt covers, remembering what each cost.
         let ticked = 0;
         (lines || []).forEach(l => { const it = l.itemId && store.model.items.find(i => i.id === l.itemId); if (it && !it.done) { store.updateItem(it.id, { done: true, price: Math.round(l.price / (l.qty && l.qty > 0 ? l.qty : 1) * 100) / 100, boughtAt: date }); ticked++; } });
@@ -513,4 +526,15 @@ export function openReceiptsList() {
       : `<p class="msg">No receipts yet. In Add expense, choose Scan to photograph one.</p>`;
     B.addEventListener("click", e => { const r = e.target.closest("[data-rc]"); if (!r) return; const t = store.model.transactions.find(x => x.id === r.dataset.rc); if (t) { closeSheet(); setTimeout(() => openExpense({ tx: t }), 260); } });
   } });
+}
+
+/* The payday a purchase on this day comes out of, when it's paid from the next pay: the first payday after it. */
+export function payAfter(day) { return E.nextPay(store.model, E.addDays(day, 1)); }
+export const payWords = pay => new Date(pay.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+/* What was bought "from my next pay": not taken from today's money, and named so the next pay isn't a surprise. */
+export function owedHTML(L) {
+  if (!L.owedSum || !L.owed || !L.owed.length) return "";
+  const days = [...new Set(L.owed.map(t => t.fromPay))], what = L.owed.map(t => t.note || t.payee || catName(t.categoryId) || "Spending");
+  const list = what.length > 3 ? `${what.slice(0, 2).join(", ")} and ${what.length - 2} more` : what.join(", ");
+  return `<p class="expect-note owed-note">${icon("clock", "ic xs")} ${esc(eur0(L.owedSum))} comes out of your pay on ${esc(days.map(d => fmtDay(parseDay(d))).join(" and "))}: ${esc(list)}. Not taken from today's money.</p>`;
 }
