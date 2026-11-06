@@ -85,7 +85,7 @@ export function renderNow() {
       <p class="now-k">${todayLeft == null ? (big < 0 ? "Over, after bills" : "In your account, after bills") : big < 0 ? "Over today" : "Left to spend today"}</p>
       <div class="now-big num" style="--n:${money(big).length}">${money(big)}</div>
       ${D && D.share != null ? `<p class="now-s">You have spent ${eur0(D.spent)} of ${eur0(D.share)}</p>` : `<button type="button" class="now-how" data-add-pay>When is your payday? Add it for a daily amount</button>`}
-      <p class="now-pd">${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}</p>
+      <p class="now-pd">${L.left < 0 ? `${eur0(-L.left)} over until payday` : `${eur0(L.left)} left until payday`}${L.owedSum ? ` · ${eur0(L.owedSum)} to come out of your next pay` : ""}</p>
     </section>
     <section class="now-sheet">
       ${qs.slice(0, 2).join("")}

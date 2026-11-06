@@ -3,7 +3,7 @@
 import { store, todayISO, topLists, listOf, newId } from "./data.js";
 import { $, $$, esc, eur, eur0, openSheet, closeSheet, toast, kotiSays } from "./ui.js";
 import { parseExpense, speechSupported, listen } from "./voice.js";
-import { periodFor, totals, openExpense } from "./money.js";
+import { periodFor, totals, openExpense, payAfter, payWords } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
 import { parseItems, currentList } from "./lists.js";
 import { isReminderPhrase, parseReminder } from "./remindparse.js";
@@ -95,7 +95,7 @@ async function ask({ audio = null, text = "", fallback = null }) {
   if (d.intent === "spend" && d.spend && d.spend.total) {
     const P = toParsed(d.spend); input.value = "";
     if (P.lines.length > 1 || P.lines.some(l => l.placeId)) { import("./scan.js").then(m => m.openParsed({ ...P, reply: d.reply })); return; }
-    showHeard({ amount: P.amount, payee: P.payee, date: P.date, note: P.note, categoryId: P.categoryId }, d.reply); return;
+    showHeard({ amount: P.amount, payee: P.payee, date: P.date, note: P.note, categoryId: P.categoryId, fromNextPay: P.fromNextPay }, d.reply); return;
   }
   // Not enough to save: the AI says what it understood and asks for what's missing.
   input.value = said; input.focus();
@@ -139,10 +139,13 @@ export function localReply(h, categories = store.model.categories) {
   const day = h.date === todayISO() ? "today" : new Date(h.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long" });
   const cat = h.categoryId && (categories.find(c => c.id === h.categoryId) || {}).name;
   const what = h.note ? ` for ${h.note}` : cat ? ` on ${cat.toLowerCase()}` : "";
-  return `${eur(h.amount)}${h.payee ? ` at ${h.payee}` : ""}${what}, ${day}.${h.categoryId ? "" : " What was it for?"}`;
+  const pay = h.fromPay ? ` It comes out of your pay on ${payWords({ date: h.fromPay })}, so today's money stays as it is.` : h.fromNextPay ? " Koti doesn't know your payday yet, so it comes out of today's money." : "";
+  return `${eur(h.amount)}${h.payee ? ` at ${h.payee}` : ""}${what}, ${day}.${pay}${h.categoryId ? "" : " What was it for?"}`;
 }
 function showHeard(h, reply = null) {
-  let catId = h.categoryId;
+  // "From my upcoming salary": it comes out of the first payday after the day it was bought.
+  if (h.fromNextPay && !h.fromPay) { const pay = payAfter(h.date); if (pay) h = { ...h, fromPay: pay.date }; }
+  let catId = h.categoryId, fromPay = h.fromPay || null;
   const leftAfter = () => {
     if (!catId) return "";
     const p = periodFor(new Date()), b = effectiveBudgets(p).byId[catId]; if (b == null) return "";
@@ -156,15 +159,18 @@ function showHeard(h, reply = null) {
         <p class="heard-k" id="hdQ">Category</p>
         <div class="chips cat-chips" role="radiogroup" aria-label="Category">${store.model.categories.map(c => `<button type="button" class="fchip" role="radio" data-c="${esc(c.id)}" aria-checked="${c.id === catId}" aria-pressed="${c.id === catId}">${esc(c.name)}</button>`).join("")}</div>
         <p class="heard-left" id="hdLeft">${esc(leftAfter())}</p>
+        ${h.fromPay ? `<label class="row heard-pay"><span class="rt">From my next pay<small id="hdPaySm"></small></span><input type="checkbox" class="switch" id="hdPay" checked></label>` : ""}
         <button type="button" class="tlink" id="hdMore">Change the details</button>
       </div>`;
+    const paySm = () => { const s = $("#hdPaySm", B); if (s) s.textContent = fromPay ? `Comes out of your pay on ${payWords({ date: fromPay })}` : "Off: it comes out of today's money"; };
+    paySm(); const sw = $("#hdPay", B); if (sw) sw.onchange = () => { fromPay = sw.checked ? h.fromPay : null; paySm(); };
     $(".cat-chips", B).addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; catId = catId === b.dataset.c ? null : b.dataset.c;
       $$("[data-c]", B).forEach(x => { x.setAttribute("aria-checked", x.dataset.c === catId); x.setAttribute("aria-pressed", x.dataset.c === catId); });
       $("#hdLeft", B).textContent = leftAfter(); });
-    $("#hdMore", B).onclick = () => { closeSheet(); setTimeout(() => openExpense({ draft: { amount: h.amount, categoryId: catId, payee: h.payee || "", date: h.date, note: h.note || "", kind: "expense", source: stop === null ? "manual" : "voice" } }), 260); input.value = ""; };
+    $("#hdMore", B).onclick = () => { closeSheet(); setTimeout(() => openExpense({ draft: { amount: h.amount, categoryId: catId, payee: h.payee || "", date: h.date, note: h.note || "", fromPay, kind: "expense", source: stop === null ? "manual" : "voice" } }), 260); input.value = ""; };
   }, onRight: () => {
-    const tx = store.put("transactions", { id: newId("tx"), date: h.date, amount: h.amount, kind: "expense", categoryId: catId || null, payee: h.payee || null, note: h.note || null, source: "manual" });
+    const tx = store.put("transactions", { id: newId("tx"), date: h.date, amount: h.amount, kind: "expense", categoryId: catId || null, payee: h.payee || null, note: h.note || null, fromPay, source: "manual" });
     closeSheet(); input.value = "";
-    toast(`Saved ${eur(tx.amount)}${tx.payee ? ` at ${tx.payee}` : ""}`, { label: "Undo", run: () => store.remove("transactions", tx.id) });
+    toast(`Saved ${eur(tx.amount)}${tx.payee ? ` at ${tx.payee}` : ""}${tx.fromPay ? `, from your pay on ${payWords({ date: tx.fromPay })}` : ""}`, { label: "Undo", run: () => store.remove("transactions", tx.id) });
   } });
 }

@@ -30,13 +30,14 @@ const RANGES = ["today", "yesterday", "week", "lastweek", "month", "lastmonth"];
 
 const SYSTEM = `You understand short things people say or type into a household money app, in English or Finnish, and return what they meant. Never invent amounts.
 - intent "spend": they bought something. total: the amount paid in euros (Finnish "kaksikymmentäkolme neljäkymmentä" is 23.40; "23,40" is 23.40). payee: the shop or place if said (Lidl, Prisma, K-Market, Alepa, S-Market, Tokmanni, IKEA, Clas Ohlson…), otherwise null. Where the money came from (my salary, my next pay, my card, savings) is not the payee. date: YYYY-MM-DD from words like yesterday, eilen, on Monday, maanantaina, relative to today's date given below; null means today. note: a few words of what it was if said and not already a line, otherwise null.
+  from_next_pay: true when they say it is paid out of pay they haven't received yet: "from my upcoming salary", "from my next pay", "until payday", "I'll pay it back when I get paid", "seuraavasta palkasta", "ensi palkasta", "palkkapäivänä". Then the money leaves on their next payday (given below), not today. false otherwise, including "from my salary" with no word saying the salary is still to come.
   lines: when they name parts with their own prices ("86 at Prisma, the lamp was 35 of it"), one line per named part with its price, plus one line for the rest ("Other groceries") so the lines add up to the total. When there's only one thing, one line with the whole total. Each line: name in English, price, category (one of the user's categories, by what it is), and place (one of the user's places when it is something for setting up the home that stays there — furniture, lamps, curtains, rugs, bedding, kitchenware, tools, decor — otherwise null).
 - intent "question": they ask how much they spent or what went where. range: today, yesterday, week (this week), lastweek, month (this month) or lastmonth.
 - intent "remind": they ask to be reminded of something ("remind me…", "muistuta…").
 - intent "list": they name things to buy or to put on a list, without prices ("milk, eggs and two tomatoes"). items: each thing with qty when said.
 - intent "unclear": anything else.
 transcript: what they said, cleaned up (fix obvious mishearings of shop names and numbers).
-reply: Koti answering them, in the language they used: one or two short, warm sentences saying back what you understood in plain words (the amount, where, what for, when, or the things for the list, or the period they asked about), never a label like "Here's what we heard". If something needed is missing or unclear (no amount, can't tell what it was), ask for it in one short question instead. Never invent amounts.`;
+reply: Koti answering them, in the language they used: one or two short, warm sentences saying back what you understood in plain words (the amount, where, what for, when, or the things for the list, or the period they asked about), never a label like "Here's what we heard". When from_next_pay is true, say it comes out of their pay on that payday (by its day, e.g. "on the 25th") and that today's money stays as it is; if no payday is known, ask when they get paid. If something needed is missing or unclear (no amount, can't tell what it was), ask for it in one short question instead. Never invent amounts.`;
 
 function schema(categories: string[], places: string[]) {
   const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
@@ -48,9 +49,9 @@ function schema(categories: string[], places: string[]) {
       reply: { type: "string" },
       intent: { type: "string", enum: ["spend", "question", "remind", "list", "unclear"] },
       spend: { anyOf: [{ type: "null" }, {
-        type: "object", additionalProperties: false, required: ["total", "payee", "date", "note", "lines"],
+        type: "object", additionalProperties: false, required: ["total", "payee", "date", "note", "from_next_pay", "lines"],
         properties: {
-          total: { type: ["number", "null"] }, payee: { type: ["string", "null"] }, date: { type: ["string", "null"], description: "YYYY-MM-DD" }, note: { type: ["string", "null"] },
+          total: { type: ["number", "null"] }, payee: { type: ["string", "null"] }, date: { type: ["string", "null"], description: "YYYY-MM-DD" }, note: { type: ["string", "null"] }, from_next_pay: { type: "boolean" },
           lines: { type: "array", items: { type: "object", additionalProperties: false, required: ["name", "price", "category", "place"],
             properties: { name: { type: "string" }, price: { type: "number" }, category: categories.length ? { type: ["string", "null"], enum: [...categories, null] } : { type: "null" }, place: oneOf(places) } } },
         },
@@ -97,6 +98,7 @@ Deno.serve(async (req) => {
   const lang = String(body.lang || "en").toLowerCase().startsWith("fi") ? "fi" : "en";
   const categories = uniq(strList(body.categories, 40, 60)), places = uniq(strList(body.places, 60, 120));
   const today = typeof body.today === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.today) ? body.today : new Date().toISOString().slice(0, 10);
+  const nextPay = typeof body.nextPay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.nextPay) && body.nextPay > today ? body.nextPay : null;
 
   const use = await fetch(`${url}/rest/v1/rpc/koti_ai_use`, { method: "POST", headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ daily_limit: LIMIT }) });
   if (!use.ok) return json(429, { error: `That's today's ${LIMIT} AI uses (scans and the microphone together). The microphone still works on this phone.`, code: "limit" });
@@ -127,6 +129,7 @@ Deno.serve(async (req) => {
   const prompt = `Today is ${today} (${new Date(today + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long" })}). They were using the app in ${lang === "fi" ? "Finnish" : "English"}.
 The user's categories: ${categories.length ? categories.join(" | ") : "(none)"}
 Places in the user's home projects: ${places.length ? places.join(" | ") : "(none)"}
+Their next payday: ${nextPay ? `${nextPay} (${new Date(nextPay + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })})` : "not known"}
 They said: ${JSON.stringify(text)}`;
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST", headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
@@ -149,7 +152,7 @@ They said: ${JSON.stringify(text)}`;
     })).filter((l) => l.price !== 0);
     const total = money(s.total) ?? (lines.length ? Math.round(lines.reduce((a, l) => a + l.price, 0) * 100) / 100 : null);
     const date = realDay(s.date, today);
-    spend = { total, payee: str(s.payee, 120), date, note: str(s.note, 200), lines };
+    spend = { total, payee: str(s.payee, 120), date, note: str(s.note, 200), fromNextPay: s.from_next_pay === true, lines };
   }
   const items = intent === "list" ? (Array.isArray(r.items) ? r.items : []).slice(0, 40).map((x: Record<string, unknown>) => ({ name: String(x.name || "").trim().slice(0, 120), qty: money(x.qty) })).filter((x) => x.name) : [];
   return json(200, { transcript: String(r.transcript || text).slice(0, 500), reply: String(r.reply || "").trim().slice(0, 300), intent, spend, range: RANGES.includes(String(r.range)) ? r.range : null, items, used, limit: LIMIT });

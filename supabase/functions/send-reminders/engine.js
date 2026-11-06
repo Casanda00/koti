@@ -161,12 +161,23 @@ export function startPoint(model, today) {
   const first = model.transactions.filter(t => t.date).reduce((m, t) => (!m || t.date < m ? t.date : m), null);
   return { date: periodOf(first || today, monthStart(model)).from, amount: 0, set: false };
 }
-/* Money in and out between two days (inclusive). */
+/* "From my next pay": an expense bought today and paid out of the coming salary (a card paid off on payday, money
+   borrowed until then). It counts in Spent and its category's budget on the day it was bought, and in the balance on
+   the payday it comes out of, so today's money doesn't drop and the next pay starts that much lower. */
+export const fromNextPay = t => !!(t.fromPay && t.kind === "expense" && t.fromPay > t.date);
+export const moneyDay = t => (fromNextPay(t) ? t.fromPay : t.date);
+/* Expenses still waiting for the pay they come out of, after today. */
+export function owedFromPay(model, today) {
+  const list = model.transactions.filter(t => fromNextPay(t) && t.fromPay > today && t.date <= today).sort((a, b) => a.fromPay.localeCompare(b.fromPay) || a.date.localeCompare(b.date));
+  return { list, total: sum(list, t => cents(t.amount)) };
+}
+/* Money in and out between two days (inclusive), each payment on the day it leaves the account (moneyDay). */
 export function flow(model, from, to) {
   let income = 0, spent = 0, bills = 0, adjust = 0, refunds = 0, saved = 0;
   if (from > to) return { income, spent, bills, adjust, saved, net: 0 };
   model.transactions.forEach(t => {
-    if (t.date < from || t.date > to) return;
+    const day = moneyDay(t);
+    if (day < from || day > to) return;
     const a = cents(t.amount);
     if (t.categoryId === ADJUST_CAT) { adjust += t.kind === "expense" ? -a : a; return; }
     if (t.categoryId === SAVINGS_CAT) { saved += t.kind === "expense" ? a : -a; return; }
@@ -224,7 +235,7 @@ export function committedBills(model, p, until, start, today) {
 }
 /* Payments already entered for a later day, up to the horizon. */
 export function aheadOut(model, today, until) {
-  const list = model.transactions.filter(t => t.date > today && t.date <= until && t.kind !== "income" && t.categoryId !== ADJUST_CAT);
+  const list = model.transactions.filter(t => t.date > today && t.date <= until && t.kind !== "income" && t.categoryId !== ADJUST_CAT && !fromNextPay(t));
   return { list, total: sum(list, t => (t.kind === "refund" ? -1 : 1) * cents(t.amount)) };
 }
 /* What a goal holds: the amount saved outside Koti's transfers (the goal's own "saved"; transfers made before
@@ -251,16 +262,17 @@ export function state(model, today) {
   const ahead = aheadOut(model, today, until), savingsDue = Math.max(0, goalsMonthly(model) - flow(model, p.from, p.to).saved);
   const inc = incomeOccurrences(model, p);
   const expected = inc.filter(o => !o.missed && !o.got && o.due >= today), late = inc.filter(o => !o.missed && !o.got && o.due < today);
-  const left = now - due - ahead.total - savingsDue;
+  const left = now - due - ahead.total - savingsDue, owed = owedFromPay(model, today);
   return {
     kind: "current", currency: CURRENCY, today, p, startsHere: from === st.date && st.set, carried, ...f, now,
     dueThisMonth, overdue, due, ahead: ahead.list, aheadSum: ahead.total, savingsDue, until, payday, left,
-    expected, late, expectedSum: sum(expected, o => o.amount),
+    expected, late, expectedSum: sum(expected, o => o.amount), owed: owed.list, owedSum: owed.total,
     assumptions: [
       `Counted from ${st.set ? `your starting balance on ${st.date}` : `${st.date}, with no starting balance`}, up to ${today}`,
       "Only income that has arrived is counted",
       payday ? `Money has to last until ${until}, the day before payday` : `No payday is known, so money has to last until ${until}, the end of the budget month`,
       "Unpaid bills due by then and overdue bills are set aside, and so are payments dated ahead and this month's savings plan not yet moved",
+      "Spending you said comes out of your next pay leaves the balance on that payday, not before",
     ],
   };
 }
@@ -269,7 +281,7 @@ export function state(model, today) {
    Bills paid today were already taken off, so they don't count against it. */
 export function dayShare(model, today) {
   const L = state(model, today); if (L.kind !== "current") return null;
-  const S = spending(model, today, today), spent = S.total - S.bills, days = L.payday ? Math.max(1, L.payday.days) : null;
+  const S = spending(model, today, today), later = sum(S.entries.filter(fromNextPay), t => cents(t.amount)), spent = S.total - S.bills - later, days = L.payday ? Math.max(1, L.payday.days) : null;
   const morning = L.left + spent, share = days ? Math.round(Math.max(0, morning) / days) : null;
   return { days, spent, morning, share, left: share != null ? share - spent : null };
 }
@@ -334,7 +346,7 @@ export function month(model, p, today) {
 /* A month ahead: what's left now plus pay still expected, then each month's planned pay less bills, budgets and goals. */
 function planMonth(model, p, today) {
   const sd = monthStart(model), cur = periodOf(today, sd), L = state(model, today), goals = goalsMonthly(model);
-  let start = L.left + L.expectedSum + sum(L.late, o => o.amount);
+  let start = L.left + L.expectedSum + sum(L.late, o => o.amount) - L.owedSum;
   for (let m = shiftPeriod(cur, 1, sd); m.from < p.from; m = shiftPeriod(m, 1, sd)) {
     start += sum(plannedIncome(model, m), o => o.amount) - sum(plannedBills(model, m), o => o.amount) - budgets(model, m, today).total - goals;
   }
