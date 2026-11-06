@@ -144,9 +144,9 @@ export function parseExpense(text, { categories = [], history = [], today = new 
 
 /* ---------- Speech recognition ---------- */
 export const speechSupported = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-export function listen({ lang = "en-GB", onText, onEnd, onError }) {
+export function listen({ lang = "en-GB", onText, onEnd, onError, continuous = false }) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const r = new SR(); r.lang = lang; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  const r = new SR(); r.lang = lang; r.interimResults = true; r.continuous = continuous; r.maxAlternatives = 1;
   r.onresult = e => { let s = ""; for (const res of e.results) s += res[0].transcript; onText(s, e.results[e.results.length - 1].isFinal); };
   r.onerror = e => onError && onError(e.error);
   r.onend = () => onEnd && onEnd();
