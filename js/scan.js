@@ -7,7 +7,7 @@
 // remembered: it's sent to the reader as an example next time, and wins over what the reader suggests.
 // Money is counted once: from the receipt or the bill. Items a receipt ticks don't add their price again.
 import { store, todayISO, newId, listCategory, listOf, topLists, roomsOf, itemsOf, projectSpent, projectOf, BILLS_CAT } from "./data.js";
-import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast, spinner } from "./ui.js";
+import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, closeSheet, toast, spinner, kotiSays } from "./ui.js";
 import { prepareFile, readReceipt, attach } from "./receipts.js";
 import { catName, periodFor, totals } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
@@ -206,6 +206,7 @@ function receiptReview(S) {
   openSheet({ title: name, left: "Cancel", right: "Save", body: B => {
     const total = E.total ?? (P.amount != null ? money2(P.amount) : "");
     B.innerHTML = `
+      ${kotiSays(r.reply || P.reply)}
       ${r.docType === "bill" ? `<div class="suggest warn">${icon("bill", "ic")}<div><b>This looks like a bill</b><small>Bills go to Bills with their due date and reference.</small></div><button type="button" class="btn sm" id="rvToBill">Add as a bill</button></div>` : ""}
       ${P.currency && P.currency !== "EUR" ? `<div class="suggest warn">${icon("alert", "ic")}<div><b>This receipt is in ${esc(P.currency)}</b><small>Koti counts in euros. Change the total to what your bank charged.</small></div></div>` : ""}
       <div class="rv-top"><div class="rv-big num" id="rvBig"></div>${S.file ? `<span class="scan-thumb">${thumb(S)}</span>` : ""}</div>
@@ -329,7 +330,7 @@ function billReview(S) {
     const paint = () => {
       const m = W.sel !== "new" ? store.model.bills.find(x => x.id === W.sel) : null;
       const due = W.due ? parseDay(W.due) : null;
-      B.innerHTML = `
+      B.innerHTML = `${kotiSays(r.reply)}
         <div class="billcard"><div class="bc-top"><span class="ico r">${icon("bill")}</span><div class="rt"><b>${esc(b.company || P.payee || "Bill")}</b><small>${esc([b.period, b.invoice_number ? "Invoice " + b.invoice_number : ""].filter(Boolean).join(" · ") || (r.ai ? "Read by AI" : "Fill in from the bill"))}</small></div>
           <span class="chip ${m ? "ok" : ""}">${m ? `Your bill “${esc(m.name)}”` : "New bill"}</span></div></div>
         <div class="grp">
