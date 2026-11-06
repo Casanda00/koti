@@ -1,7 +1,7 @@
 // Budgets (what's left until payday, categories, projects, savings goals, spending by month). Spent is in spent.js.
 // Also the add/edit expense, categories and receipt sheets.
 import { store, todayISO, TX_KINDS, BILLS_CAT, projectOf, listOf, topLists, projectSpent, paidByReceipt } from "./data.js";
-import { billTotals, openBill, goalsHTML, openGoal } from "./plan.js";
+import { billTotals, openBill, goalsHTML, openGoal, savedOf, spendOf, spendId, spendFromGoal } from "./plan.js";
 import { incomeTotals, nextPay } from "./income.js";
 import { $, $$, esc, eur, eur0, icon, parseMoney, moneyField, parseDay, fmtDay, openSheet, closeSheet, toast, svgEl as el, showTip, hideTip, spinner } from "./ui.js";
 import { parseExpense } from "./voice.js";
@@ -324,7 +324,9 @@ const payeeCat = payee => { const t = store.model.transactions.filter(x => x.pay
 export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
   if (mode === "scan" && !tx) { import("./scan.js").then(m => m.openScan()); return; }   // scanning has one place: + → Scan or upload
   const editing = !!tx, d = tx || draft || { amount: null, categoryId: null, payee: "", date: todayISO(), note: "", kind: "expense" };
-  let fromPayOn = !!d.fromPay || !!d.fromNextPay, catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
+  const spent0 = tx ? spendOf(tx.id) : null;   // an expense paid from savings: its withdrawal
+  let goalOn = spent0 ? spent0.id.split(":")[1] : d.goalId || null;
+  let fromPayOn = !goalOn && (!!d.fromPay || !!d.fromNextPay), catId = d.categoryId, kind = d.kind || "expense", source = (tx && tx.source) || (draft && draft.source) || "manual", stop = null;
   let lines = d.lines ? d.lines.map(l => ({ ...l })) : null, aiNote = "";   // receipt lines, each with its own category or project
   let receipt = null, dropExisting = false, busy = false, keep = false;   // keep: save the new photo with the expense   // receipt: a newly prepared file; dropExisting: remove the saved one
   openSheet({
@@ -339,7 +341,11 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
       const sw = $("[data-switch=item]", B); if (sw) sw.onclick = () => { closeSheet(); setTimeout(() => import("./setup.js").then(m => m.openAdd()), 260); };
       const modeSeg = $("#exMode", B);
       if (modeSeg) modeSeg.addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (!b) return; if (stop) { stop(); stop = null; } $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x === b)); paint(b.dataset.m); });
-      const del = $("#exDel", B); if (del) del.onclick = () => { closeSheet(); const copy = { ...tx }; store.remove("transactions", tx.id); toast(`Deleted ${eur(tx.amount)}`, { label: "Undo", run: () => store.put("transactions", copy) }); };
+      const del = $("#exDel", B); if (del) del.onclick = () => {   // paid from savings: the money goes back into the goal too
+        closeSheet(); const copy = { ...tx }, out = spendOf(tx.id), outCopy = out && { ...out };
+        store.remove("transactions", tx.id); if (out) store.remove("transactions", out.id);
+        toast(`Deleted ${eur(tx.amount)}`, { label: "Undo", run: () => { store.put("transactions", copy); if (outCopy) store.put("transactions", outCopy); } });
+      };
       paint(editing || mode !== "scan" ? "type" : "scan");
 
       function msg(t, s = "error") { const m = $("#exMsg", B); m.textContent = t; m.dataset.state = s; }
@@ -357,7 +363,10 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
             <div class="grp">
               <label class="row"><span class="rt">Where</span><input class="inl" id="exPayee" list="exPayees" placeholder="Shop or place" autocomplete="off" maxlength="120" value="${esc(d.payee || "")}" style="max-width:60%"></label>
               <label class="row"><span class="rt">Date</span><input class="inl" id="exDate" type="date" value="${esc(d.date || todayISO())}"></label>
-              <label class="row" id="exPayRow"><span class="rt">From my next pay<small id="exPaySm"></small></span><input type="checkbox" class="switch" id="exPay" ${d.fromPay ? "checked" : ""}></label>
+              <label class="row" id="exPayRow"><span class="rt">From my next pay<small id="exPaySm"></small></span><input type="checkbox" class="switch" id="exPay" ${fromPayOn ? "checked" : ""}></label>
+              ${store.model.goals.length ? `<div class="row" id="exSaveRow"><label class="rt" for="exSave">From my savings<small id="exSaveSm"></small></label>
+                ${store.model.goals.length > 1 ? `<select class="inl" id="exGoal" aria-label="Which savings">${store.model.goals.map(g => `<option value="${esc(g.id)}"${g.id === goalOn ? " selected" : ""}>${esc(g.name)}</option>`).join("")}</select>` : ""}
+                <input type="checkbox" class="switch" id="exSave" ${goalOn ? "checked" : ""}></div>` : ""}
               <label class="row"><span class="rt">Note</span><input class="inl" id="exNote" placeholder="Optional" autocomplete="off" maxlength="500" value="${esc(d.note || "")}" style="max-width:60%"></label>
             </div>
             <datalist id="exPayees">${recentPayees().map(p => `<option value="${esc(p)}">`).join("")}</datalist>
@@ -369,9 +378,20 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
             const row = $("#exPayRow", E); if (!row) return; row.hidden = kind !== "expense";
             const pay = payAfter($("#exDate", E).value || todayISO());
             $("#exPay", E).disabled = !pay;
-            $("#exPaySm", E).textContent = !pay ? "Add your pay in Income to use this" : fromPayOn ? `Comes out of your pay on ${payWords(pay)}. Today's money stays as it is.` : "Off: it comes out of today's money";
+            $("#exPay", E).checked = fromPayOn;
+            $("#exPaySm", E).textContent = !pay ? "Add your pay in Income to use this" : fromPayOn ? `Comes out of your pay on ${payWords(pay)}` : "Off: it comes out of today's money";
+            const sr = $("#exSaveRow", E); if (!sr) return;
+            sr.hidden = kind !== "expense"; $("#exSave", E).checked = !!goalOn;
+            const g = goalOn && store.model.goals.find(x => x.id === goalOn), pick = $("#exGoal", E);
+            const back = spent0 && spent0.id.split(":")[1] === goalOn ? spent0.amount : 0;   // already taken out for this expense
+            $("#exSaveSm", E).textContent = g ? `Comes out of ${g.name}, ${eur(savedOf(g) + back)} saved` : "Off: it comes out of today's money";
+            if (pick) pick.disabled = !goalOn;
           };
-          $("#exPay", E).addEventListener("change", e => { fromPayOn = e.target.checked; payLine(); });
+          // Pay or savings: one or the other, or neither (today's money).
+          $("#exPay", E).addEventListener("change", e => { fromPayOn = e.target.checked; if (fromPayOn) goalOn = null; payLine(); });
+          const sv = $("#exSave", E), gp = $("#exGoal", E);
+          if (sv) sv.addEventListener("change", () => { goalOn = sv.checked ? (gp ? gp.value : store.model.goals[0].id) : null; if (goalOn) fromPayOn = false; payLine(); });
+          if (gp) gp.addEventListener("change", () => { if (goalOn) goalOn = gp.value; payLine(); });
           $("#exDate", E).addEventListener("change", payLine); payLine();
           $("#exKind", E).addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (!b) return; kind = b.dataset.k; $$("#exKind button", E).forEach(x => x.setAttribute("aria-pressed", x === b)); payLine(); });
           $("#exAmt", E).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
@@ -469,7 +489,12 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         else if (tx && dropExisting && tx.receiptPath) removeReceipt(tx.receiptPath);
         // An edit keeps the payday it was given (that pay may have come since); a new date finds its own.
         const pay = kind !== "expense" || !fromPayOn ? null : d.fromPay && d.date === date ? { date: d.fromPay } : payAfter(date);
+        const goal = kind === "expense" && !pay && goalOn ? store.model.goals.find(x => x.id === goalOn) : null;
         const saved = store.put("transactions", { ...(tx || {}), id, date, amount, kind, fromPay: pay ? pay.date : null, categoryId: catId, payee: payee || null, note: note || null, source: tx ? tx.source : source, receiptPath, lines: lines && lines.length ? lines : null });
+        // Its withdrawal from savings follows it: made, changed to match, or taken away.
+        const was = spendOf(id);
+        if (was && (!goal || was.id !== spendId(goal.id, id))) store.remove("transactions", was.id);
+        if (goal) spendFromGoal(goal, saved);
         // Tick the shopping-list items this receipt covers, remembering what each cost.
         let ticked = 0;
         (lines || []).forEach(l => { const it = l.itemId && store.model.items.find(i => i.id === l.itemId); if (it && !it.done) { store.updateItem(it.id, { done: true, price: Math.round(l.price / (l.qty && l.qty > 0 ? l.qty : 1) * 100) / 100, boughtAt: date }); ticked++; } });

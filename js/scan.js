@@ -11,7 +11,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, c
 import { prepareFile, readReceipt, attach } from "./receipts.js";
 import { catName, periodFor, totals, payAfter } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
-import { alignDue, occurrenceOf, markPaid, bindCopy, FREQ_LABEL } from "./plan.js";
+import { alignDue, occurrenceOf, markPaid, bindCopy, FREQ_LABEL, goalFor, spendFromGoal } from "./plan.js";
 
 const cats = () => store.model.categories.filter(c => c.id !== BILLS_CAT).sort((a, b) => a.position - b.position);
 const keepDefault = kind => (kind === "bill" ? !!store.model.settings.keepBills : !!store.model.settings.keepReceipts);   // off unless switched on: storage costs
@@ -297,11 +297,12 @@ async function saveReceipt(S, B) {
   if (keep && S.file) { try { receiptPath = await attach(id, S.file); } catch (e) { S.busy = false; return msg("Couldn't keep the photo on this device: " + (e.message || e)); } }
   const fromPay = S.r && S.r.parsed && S.r.parsed.fromNextPay ? (payAfter(date) || {}).date || null : null;   // "from my next pay", said with several things
   const tx = store.put("transactions", { id, date, amount: total, kind: "expense", fromPay, categoryId: main, payee: shop || null, note: null, source: "receipt", receiptPath, lines: txLines.length ? txLines : null });
+  const P0 = (S.r && S.r.parsed) || {}, goal = !fromPay && P0.fromSavings ? goalFor(P0.goal) : null, out = goal ? spendFromGoal(goal, tx) : null;   // "from my savings"
   closeSheet(); S.busy = false;
   const ticks = before.length, news = created.length;
   const extra = [ticks ? `${ticks} ticked` : "", news ? `${news} new item${news === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   toast(`Saved ${eur(tx.amount)}${d.kind === "mix" ? (shop ? ` at ${shop}` : "") : ` to ${destName(d)}`}${extra ? " · " + extra : ""}`, { label: "Undo", run: () => {
-    store.remove("transactions", tx.id);
+    store.remove("transactions", tx.id); if (out) store.remove("transactions", out.id);
     before.forEach(it => store.updateItem(it.id, { done: it.done, price: it.price, boughtAt: it.boughtAt }));
     created.forEach(i => store.deleteItem(i));
   } });

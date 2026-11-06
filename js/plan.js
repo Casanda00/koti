@@ -181,6 +181,20 @@ export function moveToGoal(goal, sign, v) {
 }
 
 /* Savings goals as rows, for the Budgets screen. */
+/* Spending paid "from my savings": which goal. The one named, else the only one, else the one holding the most. */
+export function goalFor(name = null) {
+  const gs = store.model.goals; if (!gs.length) return null;
+  const named = name && gs.find(g => g.name.toLowerCase() === String(name).toLowerCase());
+  return named || (gs.length === 1 ? gs[0] : gs.slice().sort((a, b) => savedOf(b) - savedOf(a))[0]);
+}
+/* The withdrawal that pays for an expense out of a goal, linked to it by id ("sav:<goal>:spend-<expense id>"), so the
+   goal goes down and the balance doesn't (engine.js isSpendFromSavings). */
+export const spendId = (goalId, txId) => `sav:${goalId}:spend-${txId}`;
+export const spendOf = txId => store.model.transactions.find(t => t.categoryId === SAVINGS_CAT && t.kind === "income" && String(t.id).endsWith(`:spend-${txId}`)) || null;
+export function spendFromGoal(goal, tx) {
+  return store.put("transactions", { id: spendId(goal.id, tx.id), date: tx.date, amount: tx.amount, kind: "income", categoryId: SAVINGS_CAT, payee: goal.name,
+    note: `For ${tx.note || tx.payee || "spending"}`, source: "manual" });
+}
 export function goalsHTML() {
   const goals = store.model.goals.slice().sort((a, b) => a.position - b.position);
   const planned = goals.reduce((a, g) => a + goalPlan(g).need, 0);

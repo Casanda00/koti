@@ -28,7 +28,7 @@ export async function record({ maxMs = 20000, onStop } = {}) {
 
 /* What was meant, from a recording or from text. */
 export async function understand({ audio = null, text = "" } = {}) {
-  const body = { lang: store.model.settings.voiceLang || "en-GB", today: todayISO(), categories: store.model.categories.map(c => c.name), nextPay: (nextPay(store.model, todayISO()) || {}).date || null, places: places().map(p => p.name) };
+  const body = { lang: store.model.settings.voiceLang || "en-GB", today: todayISO(), categories: store.model.categories.map(c => c.name), goals: store.model.goals.map(g => g.name), nextPay: (nextPay(store.model, todayISO()) || {}).date || null, places: places().map(p => p.name) };
   if (audio) { if (audio.size < 1200) throw Object.assign(new Error("Didn't hear anything. Hold the button a moment longer."), { code: "short" }); body.audio = await blobToDataURL(audio); }
   else body.text = text;
   const { data, error } = await sync.client.functions.invoke("hear", { body });
@@ -46,5 +46,5 @@ export function toParsed(spend) {
   const catId = n => (cats.find(c => c.name.toLowerCase() === String(n || "").toLowerCase()) || {}).id || null;
   const placeId = n => (P.find(p => p.name.toLowerCase() === String(n || "").toLowerCase()) || {}).id || null;
   const lines = (spend.lines || []).map(l => ({ name: l.name, nameFi: null, qty: null, price: l.price, categoryId: catId(l.category), placeId: placeId(l.place), itemId: null }));
-  return { amount: spend.total, payee: spend.payee, date: spend.date || todayISO(), note: spend.note, fromNextPay: !!spend.fromNextPay, categoryId: lines.length ? lines.slice().sort((a, b) => b.price - a.price)[0].categoryId : null, lines };
+  return { amount: spend.total, payee: spend.payee, date: spend.date || todayISO(), note: spend.note, fromNextPay: !!spend.fromNextPay, fromSavings: !!spend.fromSavings, goal: spend.goal || null, categoryId: lines.length ? lines.slice().sort((a, b) => b.price - a.price)[0].categoryId : null, lines };
 }

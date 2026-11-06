@@ -64,7 +64,9 @@ test("only an expense dated before its payday counts this way", () => {
 test("the phone's own rules spot it", () => {
   const cats = [{ id: "eat", name: "Eating out" }];
   for (const t of ["I paid 11e from my upcoming salary for lunch", "lunch 12 from next pay", "borrowed 30 until payday", "maksoin 20 seuraavasta palkasta", "Lidl 30 from my next salary"]) assert.ok(NEXT_PAY.test(t), t);
-  for (const t of ["Lidl 23,40", "paid 11 from my salary", "salary came, lunch 10"]) assert.ok(!NEXT_PAY.test(t), t);
+  // The owner's rule (6 November 2026): said where it came from, it isn't today's money. "From my salary" counts, upcoming or not.
+  for (const t of ["paid 11 from my salary", "maksoin 20 palkasta"]) assert.ok(NEXT_PAY.test(t), t);
+  for (const t of ["Lidl 23,40", "salary came, lunch 10", "paid 11 by card for lunch"]) assert.ok(!NEXT_PAY.test(t), t);
   const h = parseExpense("I paid 11e from my upcoming salary for lunch", { categories: cats });
   assert.equal(h.amount, 11); assert.equal(h.fromNextPay, true); assert.equal(h.payee, null, "the salary isn't the shop");
   const n = parseExpense("lunch 12 from next pay", { categories: cats });

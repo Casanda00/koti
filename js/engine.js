@@ -173,13 +173,14 @@ export function owedFromPay(model, today) {
 }
 /* Money in and out between two days (inclusive), each payment on the day it leaves the account (moneyDay). */
 export function flow(model, from, to) {
-  let income = 0, spent = 0, bills = 0, adjust = 0, refunds = 0, saved = 0;
-  if (from > to) return { income, spent, bills, adjust, saved, net: 0 };
+  let income = 0, spent = 0, bills = 0, adjust = 0, refunds = 0, saved = 0, fromSavings = 0;
+  if (from > to) return { income, spent, bills, adjust, saved, fromSavings, net: 0 };
   model.transactions.forEach(t => {
     const day = moneyDay(t);
     if (day < from || day > to) return;
     const a = cents(t.amount);
     if (t.categoryId === ADJUST_CAT) { adjust += t.kind === "expense" ? -a : a; return; }
+    if (isSpendFromSavings(t)) { fromSavings += a; return; }
     if (t.categoryId === SAVINGS_CAT) { saved += t.kind === "expense" ? a : -a; return; }
     if (t.kind === "income") income += a;
     else if (t.kind === "refund") refunds += a;
@@ -188,7 +189,7 @@ export function flow(model, from, to) {
   });
   projectEntries(model, from, to).forEach(e => { spent += e.amount; });
   spent -= refunds;
-  return { income, spent, bills, adjust, saved, net: income - spent - bills + adjust - saved };
+  return { income, spent, bills, adjust, saved, fromSavings, net: income - spent - bills + adjust - saved + fromSavings };
 }
 export function balanceAt(model, day, today = day) {
   const st = startPoint(model, today);
@@ -241,6 +242,10 @@ export function aheadOut(model, today, until) {
 /* What a goal holds: the amount saved outside Koti's transfers (the goal's own "saved"; transfers made before
    5 November 2026 were added there too), plus every transfer in or out recorded since, each carrying the goal in its
    id ("sav:<goal id>:…"). Worked out from the transfers, two phones moving money at once both count. */
+/* Spending paid "from my savings": the expense, and beside it a withdrawal from the goal with an id
+   "sav:<goal id>:spend-…". The goal goes down; the balance doesn't (the withdrawal brings the money in for the
+   expense), and the month's savings plan doesn't ask for it back. */
+export const isSpendFromSavings = t => t.categoryId === SAVINGS_CAT && t.kind === "income" && /^sav:[^:]+:spend-/.test(String(t.id));
 export const isGoalTransfer = (t, goalId) => t.categoryId === SAVINGS_CAT && String(t.id).startsWith(`sav:${goalId}:`);
 export function goalSaved(model, g) {
   const moved = sum(model.transactions.filter(t => isGoalTransfer(t, g.id)), t => (t.kind === "expense" ? 1 : -1) * cents(t.amount));
@@ -273,6 +278,7 @@ export function state(model, today) {
       payday ? `Money has to last until ${until}, the day before payday` : `No payday is known, so money has to last until ${until}, the end of the budget month`,
       "Unpaid bills due by then and overdue bills are set aside, and so are payments dated ahead and this month's savings plan not yet moved",
       "Spending you said comes out of your next pay leaves the balance on that payday, not before",
+      "Spending you said comes out of your savings comes out of that goal",
     ],
   };
 }
@@ -281,7 +287,9 @@ export function state(model, today) {
    Bills paid today were already taken off, so they don't count against it. */
 export function dayShare(model, today) {
   const L = state(model, today); if (L.kind !== "current") return null;
-  const S = spending(model, today, today), later = sum(S.entries.filter(fromNextPay), t => cents(t.amount)), spent = S.total - S.bills - later, days = L.payday ? Math.max(1, L.payday.days) : null;
+  // Not today's money: spending from the next pay, and spending paid for out of savings (its withdrawal is today's).
+  const S = spending(model, today, today), later = sum(S.entries.filter(fromNextPay), t => cents(t.amount)), saved = flow(model, today, today).fromSavings;
+  const spent = S.total - S.bills - later - saved, days = L.payday ? Math.max(1, L.payday.days) : null;
   const morning = L.left + spent, share = days ? Math.round(Math.max(0, morning) / days) : null;
   return { days, spent, morning, share, left: share != null ? share - spent : null };
 }
