@@ -379,5 +379,7 @@ export function budgetContext(model, today, months = 3) {
     id: c.id, name: c.name, budget: c.budget == null ? null : cents(c.budget),
     average: counted ? Math.round(Math.max(0, sums[c.id] || 0) / counted) : null, thisMonth: Math.max(0, now[c.id] || 0),
   }));
-  return { currency: CURRENCY, period: cur, income, bills, savings, available: income - bills - savings, monthsLookedAt: counted, categories };
+  // Savings goals, so a plan can weigh saving against spending: what each holds now and what it puts aside a month.
+  const goals = model.goals.map(g => ({ id: g.id, name: g.name, target: cents(g.target), saved: goalSaved(model, g), monthly: g.monthly == null ? null : cents(g.monthly), targetDate: g.targetDate || null }));
+  return { currency: CURRENCY, period: cur, income, bills, savings, spendable: income - bills, available: income - bills - savings, monthsLookedAt: counted, categories, goals };
 }
