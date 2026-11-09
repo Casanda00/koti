@@ -2,6 +2,7 @@
 // Local-first: every change is saved on the device and queued; the queue is uploaded when online and signed in.
 // Pulls fetch rows changed since the last pull (by the server's synced_at); realtime pushes changes from other devices.
 // Conflicts: the newer updated_at wins, row by row; settings are merged setting by setting (see mergeSettings).
+import { returnURL } from "./platform.js";
 import { store, now, seedModel } from "./data.js";
 
 const CFG = window.KOTI_CONFIG || {};
@@ -252,7 +253,7 @@ export function initSync() {
 }
 
 /* ---------- Account actions ---------- */
-const redirect = () => location.origin + location.pathname;
+const redirect = () => returnURL();   // the website, also from the phone app (js/platform.js)
 export async function signIn(email, password) { const { error } = await sync.client.auth.signInWithPassword({ email, password }); if (error) throw error; }
 export async function signUp(email, password) {
   const { data, error } = await sync.client.auth.signUp({ email, password, options: { emailRedirectTo: redirect() } });

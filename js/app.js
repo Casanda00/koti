@@ -24,6 +24,7 @@ import { shouldOnboard, openOnboarding, dismissIfAnswered } from "./onboarding.j
 import { startInstall, openInstall, snoozeStrip } from "./install.js";
 import { monthName } from "./period.js";
 import { showConsentBanner } from "./privacy.js";
+import { isNative } from "./platform.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills", more: "settings", expenses: "projects", home: "projects", today: "now" };   // links from earlier versions
 const TAB = { now: "now", month: "month", budgets: "month", income: "month", spending: "month", bills: "month", projects: "month", list: "month", project: "month", settings: "settings", reminders: "settings" };
@@ -166,7 +167,7 @@ function init() {
   if (q.get("ask") != null) { history.replaceState(null, "", location.pathname + "#now"); import("./koti.js").then(m => m.openKoti({ message: q.get("ask") || "" })); }
   if (q.get("payments")) { const sel = q.get("payments"); history.replaceState(null, "", location.pathname + "#now"); import("./receipt.js").then(m => m.openPayments(["today", "yesterday", "week", "lastweek", "month", "lastmonth"].includes(sel) ? sel : "today")); }
 
-  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  if (!isNative() && "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {   // the phone app carries its own files
     navigator.serviceWorker.register("sw.js").then(reg => {
       reg.addEventListener("updatefound", () => { const w = reg.installing; w && w.addEventListener("statechange", () => {
         if (w.state === "installed" && navigator.serviceWorker.controller) checkForUpdate({ quiet: true });

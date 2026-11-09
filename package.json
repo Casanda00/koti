@@ -2,5 +2,14 @@
   "name": "koti",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests/*.test.mjs" }
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "app:build": "node tools/build-app.mjs",
+    "app:sync": "node tools/build-app.mjs && cap sync ios"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/ios": "8.6.0"
+  }
 }

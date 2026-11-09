@@ -4,6 +4,7 @@
 //   Inside Instagram, WhatsApp or Facebook: those windows can't install, so open Koti in a real browser first.
 // First visit: a sheet, once. After "Not now": a strip on Now, hidden for a week by its ×. Installed: never again,
 // and the first open from the Home Screen says thanks once. Remembered per device (localStorage), as it should be.
+import { isNative } from "./platform.js";
 import { $, esc, openSheet, closeSheet, toast } from "./ui.js";
 
 const KEY = "koti.install", WEEK = 7 * 864e5, APP_URL = "https://casanda00.github.io/koti/";
@@ -23,6 +24,7 @@ window.addEventListener("appinstalled", () => { deferred = null; write({ install
 
 /* Show the strip on Now? Only after the sheet was seen, never once installed, and not during a week's snooze. */
 export function wantsStrip() {
+  if (isNative()) return false;   // the phone app is already on the Home Screen
   if (isInstalled()) return false;
   const s = read(); return !!s.seen && !s.installed && !(s.snoozeUntil && Date.now() < s.snoozeUntil);
 }
@@ -31,6 +33,7 @@ export const stripHTML = () => `<div class="inst-strip" role="region" aria-label
 
 /* On every start: thank once after installing, or ask once on a first visit. */
 export function startInstall({ firstVisitDelay = 4000, ready = () => true } = {}) {
+  if (isNative()) return;
   const s = read();
   if (isInstalled()) { if (!s.thanked) { write({ thanked: true, installed: true, seen: true }); setTimeout(() => toast("Koti is on your Home Screen. Welcome."), 800); } return; }
   if (new URLSearchParams(location.search).get("install") === "1") { setTimeout(() => openInstall(), 600); return; }
