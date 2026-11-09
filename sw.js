@@ -1,15 +1,15 @@
 // Koti service worker: the app opens offline, and updates arrive on the next launch.
 // Bump VERSION with every release so phones pick up new files.
-const VERSION = "koti-2026-11-09-46";
+const VERSION = "koti-2026-11-09-47";
 const SHELL = [
-  "./", "index.html", "manifest.webmanifest", "css/app.css",
-  "js/config.js", "js/theme.js", "js/vendor/supabase-2.117.3.js", "js/app.js", "js/data.js", "js/sync.js", "js/ui.js", "js/charts.js", "js/setup.js", "js/more.js", "js/money.js", "js/voice.js", "js/talk.js", "js/ptr.js", "js/plan.js", "js/receipts.js", "js/income.js", "js/lists.js", "js/version.js", "js/update.js", "js/scan.js", "js/ledger.js", "js/push.js", "js/now.js", "js/month.js", "js/place.js", "js/composer.js", "js/onboarding.js", "js/paydays.js", "js/reminders.js", "js/remindparse.js", "js/install.js", "js/spent.js", "js/hear.js", "js/period.js", "js/receipt.js", "js/engine.js", "js/budgetai.js", "js/brain.js", "js/koti.js",
+  "./", "index.html", "manifest.webmanifest", "css/app.css", "css/fonts.css", "fonts/archivo-latin.woff2", "fonts/archivo-latin-ext.woff2",
+  "js/config.js", "js/theme.js", "js/vendor/supabase-2.117.3.js", "js/app.js", "js/data.js", "js/sync.js", "js/ui.js", "js/charts.js", "js/setup.js", "js/more.js", "js/money.js", "js/voice.js", "js/talk.js", "js/ptr.js", "js/plan.js", "js/receipts.js", "js/income.js", "js/lists.js", "js/version.js", "js/update.js", "js/scan.js", "js/ledger.js", "js/push.js", "js/now.js", "js/month.js", "js/place.js", "js/composer.js", "js/onboarding.js", "js/paydays.js", "js/reminders.js", "js/remindparse.js", "js/install.js", "js/spent.js", "js/hear.js", "js/period.js", "js/receipt.js", "js/engine.js", "js/budgetai.js", "js/brain.js", "js/koti.js", "js/privacy.js",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== "koti-fonts" && k !== SHARED).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== SHARED).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 /* A screenshot or photo shared to Koti from another app (manifest share_target): kept for a moment in a cache of its
    own, then Koti opens and reads it (app.js, ?add=shared). */
@@ -27,11 +27,6 @@ self.addEventListener("fetch", e => {
     return;
   }
   if (req.method !== "GET") return;
-  // Fonts: keep a copy so the app looks right offline
-  if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
-    e.respondWith(caches.open("koti-fonts").then(async c => { const hit = await c.match(req); const net = fetch(req).then(r => { if (r.ok || r.type === "opaque") c.put(req, r.clone()); return r; }).catch(() => hit); return hit || net; }));
-    return;
-  }
   if (url.origin !== self.location.origin) return; // Supabase and others go straight to the network
   // Pages: network first so updates show up, cache when offline
   if (req.mode === "navigate") {

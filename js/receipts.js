@@ -2,6 +2,7 @@
 // until it's uploaded to the private "receipts" bucket, and show it again later.
 import { store, topLists, roomsOf, itemsOf, validDay, todayISO } from "./data.js";
 import { sync, onSync } from "./sync.js";
+import { aiAllowed } from "./privacy.js";
 import { KNOWN_PLACES, parseExpense } from "./voice.js";
 
 const BUCKET = "receipts", TESS = "js/vendor/tesseract-7.0.0/";
@@ -75,7 +76,10 @@ export function filedBefore() {
   }));
   return seen;
 }
-export const aiPossible = () => !!(sync.client && sync.user && navigator.onLine && sync.client.functions);
+/* Koti's AI can be used: signed in, online, and allowed on this device (js/privacy.js). */
+export const aiPossible = () => !!(sync.client && sync.user && navigator.onLine && sync.client.functions) && aiAllowed();
+/* Why it can't, in words: the choice comes first, because signing in won't help if the AI is off. */
+export const aiOffReason = (what = "Koti's AI") => !aiAllowed() ? `Koti's AI is off. Switch it on in You → Privacy to use ${what}.` : `Sign in and go online to use ${what}.`;
 async function readWithAI(prepared, hint) {
   const image = await blobToDataURL(prepared.blob);
   const cats = store.model.categories, open = openItems(), filed = filedBefore(), P = places();

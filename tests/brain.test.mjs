@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setToday } from "./_env.mjs";
 setToday("2027-03-10");
+localStorage.setItem("koti.consent", JSON.stringify({ v: 1, ai: true, at: "2027-03-01T10:00:00Z" }));   // Koti's AI allowed on this device (js/privacy.js)
 const { store } = await import("../js/data.js");
 const { sync } = await import("../js/sync.js");
 const B = await import("../js/brain.js");

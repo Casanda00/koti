@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { setToday } from "./_env.mjs";
 import { cleanPayments, realDay, paymentSchema, PAYMENT_RULES } from "../supabase/functions/read-receipt/payments.js";
 setToday("2027-03-10");
+localStorage.setItem("koti.consent", JSON.stringify({ v: 1, ai: true, at: "2027-03-01T10:00:00Z" }));   // Koti's AI allowed on this device (js/privacy.js)
 globalThis.FileReader = class { readAsDataURL(b) { b.arrayBuffer().then(a => { this.result = `data:${b.type};base64,` + Buffer.from(a).toString("base64"); this.onload(); }); } };
 const { store } = await import("../js/data.js");
 const { sync } = await import("../js/sync.js");

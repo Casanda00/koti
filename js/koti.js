@@ -7,12 +7,13 @@
 // Replies to something said out loud are read out loud too, unless that's switched off in You.
 import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
-import { ask, conversation, saveConversation, newConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
+import { ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
 import { aiVoice } from "./hear.js";
+import { aiOffReason } from "./receipts.js";
 import { speechSupported } from "./voice.js";
 
-let ui = null, msgs = [], busy = false;
+let ui = null, msgs = [], busy = false, past = false;
 const STARTERS = ["How am I doing this month?", "Can I afford a €60 dinner out?", "What bills are coming before payday?", "Where did my money go last week?"];
 const STARTERS_FI = ["Miten kuukausi menee?", "Onko minulla varaa 60 € illalliseen?", "Mitä laskuja tulee ennen palkkapäivää?", "Mihin rahani menivät viime viikolla?"];
 const fi = () => String(store.model.settings.voiceLang || "").startsWith("fi");
@@ -25,6 +26,7 @@ function sheet() {
   el.innerHTML = `<div class="kchat-dim" data-kclose></div>
     <section class="kchat-sheet">
       <header class="kchat-h"><span class="ai-mark" aria-hidden="true">${icon("spark", "ic sm")}</span><b id="kcT">Koti</b>
+        <button type="button" class="kchat-new" id="kcPast">Earlier</button>
         <button type="button" class="kchat-new" id="kcNew">New chat</button>
         <button type="button" class="kchat-x" data-kclose aria-label="Close">${icon("x")}</button></header>
       <div class="kchat-log" id="kcLog" aria-live="polite"></div>
@@ -41,7 +43,10 @@ function sheet() {
   ui = { el, log: $("#kcLog", el), ups: $("#kcUps", el), form: $("#kcForm", el), input: $("#kcIn", el), mic: $("#kcMic", el), go: $("#kcGo", el) };
   el.addEventListener("click", e => {
     if (e.target.closest("[data-kclose]")) { closeKoti(); return; }
-    if (e.target.closest("#kcNew")) { newConversation(); msgs = []; paint(); ui.input.focus(); return; }
+    if (e.target.closest("#kcNew")) { if (msgs.length) persist(); newConversation(); msgs = []; past = false; paint(); ui.input.focus(); return; }
+    if (e.target.closest("#kcPast")) { past = !past; paint(); return; }
+    const op = e.target.closest("[data-open-chat]"); if (op) { msgs = openConversation(op.dataset.openChat); past = false; paint(); return; }
+    const del = e.target.closest("[data-del-chat]"); if (del) { deleteConversation(del.dataset.delChat); paint(); toast("Conversation deleted"); return; }
     const up = e.target.closest("[data-up]"); if (up) { send({ message: up.dataset.up }); return; }
     const act = e.target.closest("[data-act]"); if (act) { runCard(act); return; }
     const und = e.target.closest("[data-unremember]"); if (und) { const [i, j] = und.dataset.unremember.split(":").map(Number); const a = msgs[i] && msgs[i].remembered && msgs[i].remembered[j]; if (a && a.undo) { a.undo(); a.undone = true; delete a.undo; persist(); paint(); toast("Undone"); } }
@@ -59,8 +64,21 @@ function sheet() {
 
 const persist = () => saveConversation(msgs.map(m => ({ ...m, remembered: (m.remembered || []).map(({ undo, ...r }) => r) })));
 
+/* Earlier chats, on this device for 30 days. */
+function paintPast(u) {
+  const list = pastConversations();
+  $("#kcPast", u.el).textContent = "Back";
+  u.ups.innerHTML = "";
+  u.log.innerHTML = `<div class="kpast"><p class="kpast-h">Earlier chats</p>
+    ${list.length ? list.map(c => `<div class="kpast-row"><button type="button" class="kpast-o" data-open-chat="${esc(c.id)}"><span>${esc(c.title)}</span><small>${esc(new Date(c.at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }))}</small></button>
+      <button type="button" class="kpast-x" data-del-chat="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">${icon("trash", "ic sm")}</button></div>`).join("")
+      : `<p class="kchat-sub">No earlier chats on this device yet.</p>`}
+    <p class="note">Kept on this device for 30 days, then deleted. What Koti remembers about you is in You → What Koti remembers.</p></div>`;
+}
 function paint() {
   const u = ui; if (!u) return;
+  if (past) { paintPast(u); return; }
+  $("#kcPast", u.el).textContent = "Earlier";
   const name = String(store.model.settings.name || "").split(" ")[0];
   if (!msgs.length) {
     u.log.innerHTML = `<div class="kchat-hello"><p class="kchat-hi">${esc(fi() ? `Hei${name ? " " + name : ""}! Mitä haluat tietää?` : `Hi${name ? " " + name : ""}. What would you like to know?`)}</p>
@@ -110,7 +128,7 @@ function speak(text) {
 
 async function send({ message = "", audio = null, spoken = false }) {
   if (busy) return;
-  if (!canAsk()) { toast("Sign in and go online to talk to Koti."); return; }
+  if (!canAsk()) { toast(aiOffReason("Koti")); return; }
   const history = msgs.filter(m => m.role !== "error");
   if (message) msgs.push({ role: "user", content: message });
   ui.input.value = ""; busy = true; paint();
@@ -126,9 +144,9 @@ async function send({ message = "", audio = null, spoken = false }) {
 }
 
 export function openKoti({ message = "" } = {}) {
-  if (!canAsk() && !message) { toast("Sign in and go online to talk to Koti."); return; }
+  if (!canAsk() && !message) { toast(aiOffReason("Koti")); return; }
   const u = sheet();
-  msgs = conversation();
+  msgs = conversation(); past = false;
   u.el.hidden = false; requestAnimationFrame(() => u.el.classList.add("on"));
   document.body.classList.add("kchat-open");
   paint();

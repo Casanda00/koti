@@ -1,13 +1,16 @@
-// "Suggest budgets": the AI asks a few questions (one always about saving), then plans the month: a monthly amount
+// "Plan my month": Koti asks what decides the plan, one question to a screen, then plans the month: a monthly amount
 // for each savings goal, a new goal when one would help (a buffer for surprises), and a budget for each category.
-// The money figures come from js/engine.js (budgetContext): this month's pay and bills, the pay left after bills,
-// each goal, and what each category took lately. The suggest-budgets function checks the plan (only these categories
-// and goals, rounded to €5, savings and budgets together never more than the pay left after bills). Nothing changes
-// until "Use these", and Undo puts budgets and goals back as they were.
+// Every question is one whose answer changes the plan (planQuestions): this month's pay and bills, whether to learn from
+// past spending (offered only when there is past spending to learn from), saving, who lives with you, how you eat and
+// get around, and anything big coming. Each has its own box for saying it in your words, and the last one is only
+// that. Answers you'd give again (household, food, transport) are kept and offered first next time.
+// The money figures come from js/engine.js (budgetContext). The suggest-budgets function checks the plan (only these
+// categories and goals, rounded to €5, savings and budgets together never more than the pay left after bills).
+// Nothing changes until "Use these", and Undo puts budgets and goals back as they were.
 import { store, todayISO, newId } from "./data.js";
-import { $, $$, esc, eur0, openSheet, closeSheet, toast, aiWait, parseMoney } from "./ui.js";
+import { $, $$, esc, eur0, openSheet, closeSheet, toast, aiWait, parseMoney, icon } from "./ui.js";
 import { sync } from "./sync.js";
-import { aiPossible } from "./receipts.js";
+import { aiPossible, aiOffReason } from "./receipts.js";
 import * as E from "./engine.js";
 
 const eu = c => (c == null ? null : E.euros(c));
@@ -46,38 +49,101 @@ export function applyPlan({ budgets = [], goals = [], newGoal = null }) {
 /* Budgets alone (the tests use it; kept for anything that sets only budgets). */
 export const applyBudgets = rows => applyPlan({ budgets: rows });
 
+/* ---------- The questions ---------- */
+/* What decides the plan, in the order Koti asks. C: budgetContext (cents). prev: the answers kept from last time.
+   Each question: id, text, options [{v, label, money?}] (money: picking it opens a box for an amount), free (the box
+   for your own words: true, or a placeholder), freeOnly (no options: the last question). */
+export function planQuestions(C, prev = {}) {
+  const q = [], money = c => eur0(eu(c));
+  if (C.income > 0) q.push({ id: "pay", text: `Is your pay this month ${money(C.income)}?`, options: [{ v: "yes", label: `Yes, ${money(C.income)}` }, { v: "other", label: "It's a different amount", money: true }] });
+  else q.push({ id: "pay", text: "How much pay comes in this month?", options: [{ v: "other", label: "This much", money: true }, { v: "skip", label: "I'd rather not say" }] });
+  q.push(C.bills > 0
+    ? { id: "bills", text: `Your bills this month come to ${money(C.bills)}. Is that all of them?`, options: [{ v: "yes", label: "That's all of them" }, { v: "more", label: "There are more", money: true }] }
+    : { id: "bills", text: "Do you have bills this month: rent, electricity, phone?", options: [{ v: "more", label: "Yes, about this much", money: true }, { v: "none", label: "None this month" }] });
+  if (C.monthsLookedAt > 0) q.push({ id: "basis", text: "Should Koti learn from what you've spent before?", options: [
+    { v: "past", label: C.monthsLookedAt === 1 ? "Yes, from last month" : `Yes, from the last ${C.monthsLookedAt} months` }, { v: "fresh", label: "No, start from my answers" }] });
+  const monthly = C.savings;
+  if (C.goals.length) q.push({ id: "save", text: "How much should go to saving?", options: [
+    ...(monthly > 0 ? [{ v: "keep", label: `Keep it at ${money(monthly)} a month` }] : []), { v: "more", label: "Save more" }, { v: "less", label: monthly > 0 ? "Save less" : "Just a little" },
+    { v: "amount", label: "This much a month", money: true }, { v: "none", label: "Nothing this month" }] });
+  else {
+    q.push({ id: "buffer", text: "Do you have money set aside for surprises?", options: [{ v: "enough", label: "Yes, enough" }, { v: "some", label: "A little" }, { v: "no", label: "No" }] });
+    q.push({ id: "goal", text: "Would you like to save for something?", free: "What for, like a holiday", options: [{ v: "buffer", label: "A buffer for surprises" }, { v: "thing", label: "Something I'll name" }, { v: "no", label: "Not now" }] });
+  }
+  q.push({ id: "home", text: "Who lives with you?", options: [{ v: "alone", label: "Just me" }, { v: "partner", label: "Me and a partner" }, { v: "kids", label: "A family with children" }, { v: "shared", label: "A shared flat" }] });
+  q.push({ id: "food", text: "How do you eat most days?", options: [{ v: "cook", label: "I cook at home" }, { v: "mix", label: "A mix" }, { v: "out", label: "I eat out often" }] });
+  q.push({ id: "move", text: "How do you get around?", options: [{ v: "public", label: "Public transport" }, { v: "car", label: "Car" }, { v: "bike", label: "Bike or on foot" }, { v: "mix", label: "A mix" }] });
+  q.push({ id: "big", text: "Anything big coming this month?", free: "What, and about how much", options: [{ v: "no", label: "Nothing big" }, { v: "yes", label: "Yes" }] });
+  q.push({ id: "more", text: "Anything else Koti should know?", freeOnly: true, free: "Optional, in your words" });
+  q.forEach(x => { if (prev[x.id] && x.options && x.options.some(o => o.v === prev[x.id]) && ["home", "food", "move"].includes(x.id)) x.preset = prev[x.id]; });
+  return q;
+}
+/* Answers that are worth offering first next time: the same next month unless life changed. */
+const KEEP = ["home", "food", "move"];
+
+/* The answers, as the planner reads them: the figures they change go into the context (pay, bills, and no history
+   when they'd rather start fresh); everything said goes in as words. a: { id: { v, amount, free } }. */
+export function planRequest(send, qs, a) {
+  const ctx = JSON.parse(JSON.stringify(send)), answers = [];
+  const pay = a.pay, bills = a.bills;
+  if (pay && pay.v === "other" && pay.amount > 0) ctx.income = pay.amount;
+  if (bills && bills.v === "more" && bills.amount > 0) ctx.bills = (send.bills || 0) + bills.amount;
+  if (ctx.income > 0 && (ctx.income !== send.income || ctx.bills !== send.bills)) ctx.spendable = Math.round((ctx.income - ctx.bills) * 100) / 100;
+  if (a.basis && a.basis.v === "fresh") { ctx.monthsLookedAt = 0; ctx.categories = ctx.categories.map(c => ({ ...c, average: null })); }
+  for (const q of qs) {
+    const x = a[q.id]; if (!x) continue;
+    const o = (q.options || []).find(y => y.v === x.v);
+    const said = [o && o.label, o && o.money && x.amount > 0 ? `€${x.amount}` : null, x.free].filter(Boolean).join(": ");
+    if (said) answers.push({ question: q.text, answer: said });
+  }
+  return { context: ctx, answers };
+}
+
 export function openBudgetHelp() {
-  if (!aiPossible()) { toast("Sign in and go online to get budget suggestions."); return; }
-  const ctx = budgetHelpContext(), C = ctx.raw, answers = [], hasPay = C.income > 0;
-  const figures = () => hasPay
-    ? `<p class="bh-fig">Your pay ${eur0(eu(C.income))} − bills ${eur0(eu(C.bills))} leaves <b>${eur0(eu(C.spendable))}</b> a month to share between saving and everyday spending.${C.goals.length ? ` ${C.goals.length === 1 ? "Your goal puts" : "Your goals put"} ${eur0(eu(C.savings))} aside now.` : ""}</p>`
-    : `<p class="bh-fig">Koti doesn't know your pay yet, so the plan will follow what you've spent. <a href="#income" data-close>Add your pay</a> for one that fits it.</p>`;
+  if (!aiPossible()) { toast(aiOffReason("budget suggestions")); return; }
+  const ctx = budgetHelpContext(), C = ctx.raw;
+  const prev = store.model.settings.planAnswers || {}, qs = planQuestions(C, prev), A = {};
+  let at = 0, req = null;
+  qs.forEach(q => { if (q.preset) A[q.id] = { v: q.preset }; });
   openSheet({ title: "Plan my month", left: "Cancel", body: B => {
-    const fail = e => { B.innerHTML = `<p class="msg" data-state="error">${esc(e.message || e)}</p><button type="button" class="btn" data-again>Try again</button>`; $("[data-again]", B).onclick = start; };
-    async function start() {
-      B.innerHTML = aiWait("Looking at your month…", "Your pay, bills, savings and what you've spent lately");
-      let q; try { q = await call({ step: "questions", context: ctx.send }); } catch (e) { fail(e); return; }
-      askQuestions(q);
-    }
-    function askQuestions(q) {
-      const qs = q.questions || []; if (!qs.length) { suggest(); return; }
-      B.innerHTML = `${figures()}${q.intro ? `<p class="note" style="margin:0">${esc(q.intro)}</p>` : ""}
-        ${qs.map((x, i) => `<fieldset class="bq" data-q="${i}"><legend>${esc(x.text)}</legend><div class="bq-opts">${x.options.map(o => `<button type="button" class="fchip" aria-pressed="false" data-o="${esc(o)}">${esc(o)}</button>`).join("")}</div>
-          <input class="inp" data-free placeholder="Or in your own words" maxlength="200" autocomplete="off" aria-label="${esc(x.text)} In your own words"></fieldset>`).join("")}
-        <button type="button" class="btn primary" data-go>Plan my month</button>`;
-      $$(".bq", B).forEach(f => f.addEventListener("click", e => { const b = e.target.closest("[data-o]"); if (!b) return; const on = b.getAttribute("aria-pressed") !== "true"; $$("[data-o]", f).forEach(x => x.setAttribute("aria-pressed", x === b && on)); }));
-      $("[data-go]", B).onclick = () => {
-        answers.length = 0;
-        $$(".bq", B).forEach(f => { const pick = $("[data-o][aria-pressed=true]", f), free = $("[data-free]", f).value.trim(), a = [pick && pick.dataset.o, free].filter(Boolean).join(". "); if (a) answers.push({ question: qs[f.dataset.q].text, answer: a }); });
-        suggest();
-      };
+    const fail = e => { B.innerHTML = `<p class="msg" data-state="error">${esc(e.message || e)}</p><button type="button" class="btn" data-again>Try again</button>`; $("[data-again]", B).onclick = () => (req ? suggest() : ask(0)); };
+    /* One question to a screen: the options, a box for your own words, Back and Next. */
+    function ask(i) {
+      at = i; const q = qs[i], x = A[q.id] || {}, last = i === qs.length - 1;
+      const pick = q.options ? q.options.find(o => o.v === x.v) : null;
+      B.innerHTML = `<div class="pw">
+        <div class="pw-dots" aria-hidden="true">${qs.map((_, k) => `<i class="${k < i ? "done" : k === i ? "on" : ""}"></i>`).join("")}</div>
+        <h2 class="pw-q" id="pwQ" tabindex="-1">${esc(q.text)}</h2>
+        ${q.options ? `<div class="pw-opts" role="radiogroup" aria-labelledby="pwQ">${q.options.map(o => `<button type="button" class="pw-o" role="radio" data-v="${esc(o.v)}" aria-checked="${o.v === x.v}"><span>${esc(o.label)}</span>${icon("check", "ic sm")}</button>`).join("")}</div>` : ""}
+        <label class="pw-money" ${pick && pick.money ? "" : "hidden"}><span aria-hidden="true">€</span><input class="num" id="pwAmt" inputmode="decimal" placeholder="0" value="${x.amount != null ? x.amount : ""}" aria-label="Amount in euros" autocomplete="off"></label>
+        <label class="pw-free"><span class="sr">In your own words</span><textarea id="pwFree" rows="${q.freeOnly ? 4 : 2}" maxlength="300" placeholder="${esc(typeof q.free === "string" ? q.free : "Or tell Koti in your own words")}">${esc(x.free || "")}</textarea></label>
+        <div class="pw-nav">${i > 0 ? `<button type="button" class="btn pw-back" data-back>Back</button>` : `<span></span>`}<button type="button" class="btn primary pw-next" data-next>${last ? "Plan my month" : "Next"}</button></div>
+      </div>`;
+      const read = () => { const cur = A[q.id] || {}; const amt = parseMoney($("#pwAmt", B).value); A[q.id] = { ...cur, amount: amt != null && !Number.isNaN(amt) && amt > 0 ? amt : null, free: $("#pwFree", B).value.trim() || null }; };
+      const ready = () => { const y = A[q.id] || {}, o = q.options ? q.options.find(z => z.v === y.v) : null;
+        $("[data-next]", B).disabled = !q.freeOnly && !y.v && !y.free || !!(o && o.money && !y.amount && !y.free); };
+      $$(".pw-o", B).forEach(b => b.onclick = () => {
+        read(); A[q.id] = { ...A[q.id], v: b.dataset.v };
+        $$(".pw-o", B).forEach(z => z.setAttribute("aria-checked", z === b));
+        const o = q.options.find(z => z.v === b.dataset.v), m = $(".pw-money", B); m.hidden = !o.money; if (o.money) $("#pwAmt", B).focus();
+        ready();
+      });
+      B.oninput = () => { read(); ready(); }; B.onchange = null;   // one screen at a time: replaced, not added to
+      $("[data-next]", B).onclick = () => { read(); if (last) suggest(); else ask(i + 1); };
+      const back = $("[data-back]", B); if (back) back.onclick = () => { read(); ask(i - 1); };
+      ready(); const h = $("#pwQ", B); if (h) h.focus({ preventScroll: true });
     }
     async function suggest() {
-      B.innerHTML = aiWait("Planning your month…", hasPay ? `Sharing ${eur0(eu(C.spendable))} between saving and spending` : "From what you've spent lately");
-      let s; try { s = await call({ step: "suggest", context: ctx.send, answers }); } catch (e) { fail(e); return; }
-      show(s);
+      B.oninput = null; B.onchange = null;
+      const keep = {}; KEEP.forEach(k => { if (A[k] && A[k].v) keep[k] = A[k].v; });
+      if (Object.keys(keep).length) store.updateSettings({ planAnswers: { ...prev, ...keep } });
+      req = planRequest(ctx.send, qs, A);
+      const spendable = req.context.spendable;
+      B.innerHTML = aiWait("Planning your month…", spendable != null ? `Sharing ${eur0(spendable)} between saving and spending` : "From your answers");
+      let s; try { s = await call({ step: "suggest", context: req.context, answers: req.answers }); } catch (e) { fail(e); return; }
+      show(s, spendable);
     }
-    function show(s) {
+    function show(s, spendable) {
       const catBy = new Map(C.categories.map(c => [c.name, c])), goalBy = new Map(C.goals.map(g => [g.name, g]));
       const budgets = (s.budgets || []).filter(b => catBy.has(b.category)), savings = (s.savings || []).filter(x => goalBy.has(x.goal)), ng = s.newGoal || null;
       if (!budgets.length && !savings.length && !ng) { fail(new Error("The AI didn't suggest anything. Try again.")); return; }
@@ -102,19 +168,19 @@ export function openBudgetHelp() {
       const paintTotal = () => {
         const r = read(), vals = [...r.budgets.map(x => x.amount), ...r.goals.map(x => x.monthly), ...(r.newGoal ? [r.newGoal.monthly] : [])], bad = vals.some(v => Number.isNaN(v) || v < 0);
         const save = r.goals.reduce((a, x) => a + (Number(x.monthly) || 0), 0) + (r.newGoal ? Number(r.newGoal.monthly) || 0 : 0), spend = r.budgets.reduce((a, x) => a + (Number(x.amount) || 0), 0);
-        const room = hasPay ? eu(C.spendable) : null, total = save + spend;
+        const room = spendable != null ? spendable : null, total = save + spend;
         $(".bh-total", B).innerHTML = bad ? `<span class="danger">Type each amount as a number.</span>`
           : `Saving <b class="num">${eur0(save)}</b> and spending <b class="num">${eur0(spend)}</b>${room != null ? ` of <b class="num">${eur0(room)}</b> left after bills${total > room ? ` <span class="danger">(${eur0(total - room)} more than you have)</span>` : `, with ${eur0(room - total)} unplanned`}` : ""}.`;
         $("[data-use]", B).disabled = bad;
       };
-      B.addEventListener("input", paintTotal); B.addEventListener("change", paintTotal); paintTotal();
-      $("[data-again]", B).onclick = start;
+      B.oninput = paintTotal; B.onchange = paintTotal; paintTotal();
+      $("[data-again]", B).onclick = () => { req = null; ask(0); };
       $("[data-use]", B).onclick = () => {
         const r = read(), round = v => Math.round(v * 100) / 100;
         const undo = applyPlan({ budgets: r.budgets.map(x => ({ id: x.id, amount: round(x.amount) })), goals: r.goals.map(x => ({ id: x.id, monthly: round(x.monthly) })), newGoal: r.newGoal && { ...r.newGoal, monthly: round(r.newGoal.monthly) } });
         closeSheet(); toast(r.newGoal || r.goals.length ? "Budgets and savings set" : "Budgets set", { label: "Undo", run: undo });
       };
     }
-    start();
+    ask(0);
   } });
 }

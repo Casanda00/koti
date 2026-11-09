@@ -1,6 +1,7 @@
 // Settings: profile, money, scanning, reminders, appearance, data and app. Home setup things live in the project's menu.
 import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO, roomsOf, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
+import { aiAllowed, openPrivacy } from "./privacy.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount, failedChanges, retryFailed, dropFailed } from "./sync.js";
 import { openCategories, openReceiptsList, openStartBalance } from "./money.js";
 import { startPoint } from "./ledger.js";
@@ -50,12 +51,13 @@ export function renderMore() {
     <button type="button" class="row" data-ask-koti><span class="ico g">${icon("spark")}</span><span class="rt">Talk to Koti<small>Ask about your money, or tell it what to add</small></span>${chev}</button>
     <button type="button" class="row" data-open="memory"><span class="ico w">${icon("note")}</span><span class="rt">What Koti remembers<small>${(S.memory || []).length ? `${(S.memory || []).length} thing${(S.memory || []).length === 1 ? "" : "s"} about you` : "Nothing yet: tell Koti about yourself"}</small></span>${chev}</button>
     <label class="row"><span class="rt">Koti answers out loud<small>When you talk to it with the microphone</small></span><input type="checkbox" class="switch" data-set="kotiSpeaks" ${S.kotiSpeaks !== false ? "checked" : ""}></label>
+    <button type="button" class="row" data-open="privacy"><span class="ico w">${icon("lock")}</span><span class="rt">Privacy<small>${aiAllowed() ? "Koti's AI is on" : "Koti's AI is off"} · no cookies, no tracking</small></span>${chev}</button>
     <label class="row"><span class="rt">First choice when scanning</span><select class="inl" data-set="scanDefault">${scanOpts.map(([v, t]) => `<option value="${v}"${(S.scanDefault || "auto") === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
     <label class="row"><span class="rt">Keep receipt photos<small>Off: receipts are read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
     <label class="row"><span class="rt">Keep bill documents<small>Off: bills are read, the document isn't stored</small></span><input type="checkbox" class="switch" data-set="keepBills" ${S.keepBills ? "checked" : ""}></label>
     <div class="row"><span class="rt">AI uses today<small>Scans, the microphone, talking to Koti and today's note together</small></span><span class="rv num" id="moAiUse">–</span></div>
   </div>
-  <p class="note">When you're signed in and online, receipts, what you say to the microphone and what you ask Koti are sent to OpenAI to be read and answered. To answer, Koti reads your own records in Koti (only yours) and what it remembers about you. Nothing is kept at OpenAI or in Koti beyond your records, unless you switch on keeping photos; conversations stay on this phone for a few hours. Offline, the phone does what it can itself.</p>
+  <p class="note">With Koti's AI on, and when you're signed in and online, receipts, what you say to the microphone and what you ask Koti are sent to OpenAI to be read and answered; to answer, Koti reads your own records (only yours) and what it remembers about you. OpenAI says it doesn't train its models on this and keeps it at most 30 days to check for abuse. Receipt photos are kept only if you switch that on. Conversations stay on this phone for 30 days. Offline, or with the AI off, the phone does what it can itself.</p>
 
   <div class="gh"><h2>Reminders</h2></div>
   <div class="grp"><a class="row" href="#reminders"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders<small>${remSummary()}</small></span>${chev}</a></div>
@@ -139,7 +141,7 @@ function keptAsideHTML() {
 }
 export function bindMore() {
   document.addEventListener("click", e => {
-    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList, profile: openProfile, start: openStartBalance, memory: () => import("./koti.js").then(m => m.openMemory()) }[o.dataset.open]; if (f) f(); return; }
+    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList, profile: openProfile, start: openStartBalance, memory: () => import("./koti.js").then(m => m.openMemory()), privacy: openPrivacy }[o.dataset.open]; if (f) f(); return; }
     const rt = e.target.closest("[data-retry]"); if (rt && root && root.contains(rt)) { const [k, id] = rt.dataset.retry.split("|"); retryFailed(k, id); toast("Trying again"); renderMore(); return; }
     const df = e.target.closest("[data-dropf]"); if (df && root && root.contains(df)) { const [k, id] = df.dataset.dropf.split("|"); dropFailed(k, id); toast("Kept on this device only"); renderMore(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
