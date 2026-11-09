@@ -32,6 +32,7 @@ function sheet() {
       <form class="kchat-in" id="kcForm" autocomplete="off">
         <label class="sr" for="kcIn">Ask Koti</label>
         <input id="kcIn" type="text" enterkeyhint="send" placeholder="Ask Koti anything" maxlength="1000">
+        <label class="dk" for="kcPic" id="kcPicL" aria-label="Give Koti a screenshot or a photo" title="Screenshot or photo">${icon("cam")}</label><input type="file" id="kcPic" accept="image/*,application/pdf" class="sr">
         <button type="button" class="dk" id="kcMic" aria-label="Hold to talk" hidden>${icon("mic")}</button>
         <button type="submit" class="dk go send" id="kcGo" aria-label="Send">${icon("send")}</button>
       </form>
@@ -47,6 +48,8 @@ function sheet() {
   });
   el.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); closeKoti(); } });
   ui.form.addEventListener("submit", e => { e.preventDefault(); const t = ui.input.value.trim(); if (t) send({ message: t }); });
+  // A screenshot or a photo: a payment, a receipt or a bill is read and checked the usual way, over the conversation.
+  $("#kcPic", el).addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) import("./scan.js").then(m => m.openScan({ file: f })); });
   if (aiVoice() || speechSupported()) {
     ui.mic.hidden = false;
     initTalk(ui.mic, { send: async ({ audio, text }) => { if (audio) await send({ audio }); else if (text) await send({ message: text, spoken: true }); } });
@@ -61,7 +64,7 @@ function paint() {
   const name = String(store.model.settings.name || "").split(" ")[0];
   if (!msgs.length) {
     u.log.innerHTML = `<div class="kchat-hello"><p class="kchat-hi">${esc(fi() ? `Hei${name ? " " + name : ""}! Mitä haluat tietää?` : `Hi${name ? " " + name : ""}. What would you like to know?`)}</p>
-      <p class="kchat-sub">${esc(fi() ? "Kysy rahoistasi, laskuista tai säästöistä. Voit myös pyytää lisäämään ostoksen, muistutuksen tai listan." : "Ask about your money, bills or savings, or tell me what to add: a purchase, a reminder, things for a list.")}</p></div>`;
+      <p class="kchat-sub">${esc(fi() ? "Kysy rahoistasi, laskuista tai säästöistä. Voit myös pyytää lisäämään ostoksen, muistutuksen tai listan, tai antaa kuvakaappauksen maksusta." : "Ask about your money, bills or savings, or tell me what to add: a purchase, a reminder, things for a list. Give me a screenshot of a payment and I'll read it.")}</p></div>`;
     u.ups.innerHTML = (fi() ? STARTERS_FI : STARTERS).map(s => `<button type="button" class="fchip" data-up="${esc(s)}">${esc(s)}</button>`).join("");
     return;
   }

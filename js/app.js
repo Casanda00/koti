@@ -107,6 +107,17 @@ function syncLook() {
 function saveTimeZone() {
   try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (tz && store.model.settings.tz !== tz) store.updateSettings({ tz }); } catch { /* the reminders keep Helsinki */ }
 }
+/* A screenshot or photo shared to Koti from another app: the service worker kept it; read it like a scan. */
+async function openShared() {
+  history.replaceState(null, "", location.pathname + "#now");
+  try {
+    const c = await caches.open("koti-shared"), r = await c.match("shared-file");
+    if (!r) { toast("Nothing came through. Try sharing it again."); return; }
+    const blob = await r.blob(), name = decodeURIComponent(r.headers.get("X-Name") || "screenshot");
+    await c.delete("shared-file");
+    openScan({ file: new File([blob], name, { type: blob.type || "image/png" }) });
+  } catch { toast("Couldn't open what was shared."); }
+}
 function init() {
   initSheets();
   mountNow($("#view-now")); mountMonth($("#view-month")); mountPlace($("#view-home")); mountReminders($("#view-reminders")); mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountSpending($("#view-spending"));
@@ -148,6 +159,7 @@ function init() {
   if (q.get("add") === "item") openAddToList();
   if (q.get("add") === "expense") { if (q.get("mode") === "scan") openScan(); else openExpense(); }
   if (q.get("add") === "scan") openScan();
+  if (q.get("add") === "shared") openShared();
   if (q.get("ask") != null) { history.replaceState(null, "", location.pathname + "#now"); import("./koti.js").then(m => m.openKoti({ message: q.get("ask") || "" })); }
   if (q.get("payments")) { const sel = q.get("payments"); history.replaceState(null, "", location.pathname + "#now"); import("./receipt.js").then(m => m.openPayments(["today", "yesterday", "week", "lastweek", "month", "lastmonth"].includes(sel) ? sel : "today")); }
 

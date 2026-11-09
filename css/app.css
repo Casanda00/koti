@@ -985,3 +985,11 @@ body[data-mood] .askk{background:color-mix(in srgb,var(--on-mood) 18%,transparen
 .kbrief-ups .fchip{white-space:normal;text-align:left}
 .fchip.ask{display:inline-flex;gap:6px;align-items:center;color:var(--spruce);border-color:var(--spruce-soft);font-weight:600}
 .kchat-in input:focus-visible{outline:none}
+/* Payments read from a screenshot */
+.pay-row{align-items:flex-start}
+.pay-row .pay-on{width:22px;height:22px;margin-top:2px;accent-color:var(--spruce);flex:none}
+.pay-row .rt b{font-weight:600}
+.pay-row .pay-cat{margin-top:6px;justify-self:start;max-width:100%;border:1px solid var(--line);border-radius:10px;padding:5px 10px;background:var(--paper);text-align:left}
+.pay-row .num{white-space:nowrap}
+#rvDir{margin:2px 0}
+label#kcPicL{cursor:pointer}

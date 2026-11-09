@@ -1,9 +1,13 @@
-// Koti: read a receipt or a bill (photo or PDF) with OpenAI.
+// Koti: read a receipt, a bill or a screenshot of a payment (photo, screenshot or PDF) with OpenAI.
 // Receipts: shop, date, total and every line. Bills: company, amount, due date, payment reference and account (IBAN).
+// Payments (payments.js): one payment on a bank, card or payment app's screen, or an order confirmation, money out or
+// in; or several, as a bank app lists them.
 // The OpenAI key lives only here, as the Edge Function secret OPENAI_API_KEY.
 // Optional secrets: OPENAI_MODEL, OPENAI_REASONING (see ../_shared/openai.js), AI_DAILY_LIMIT (scans per user per day, default 30).
 // @ts-ignore: plain JavaScript module, shared with the tests
 import { chatBody, openaiError, OPENAI_BASE, MODEL } from "../_shared/openai.js";
+// @ts-ignore: plain JavaScript module, shared with the tests (screenshots of payments)
+import { PAYMENT_RULES, paymentSchema, cleanPayments, realDay as dayUpTo } from "./payments.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -23,8 +27,8 @@ function projectKey(): string {
 
 const SYSTEM = `You read shop receipts and bills (invoices), mostly from Finland (Finnish or Swedish text, comma decimals like 2,49).
 Return only what is printed. Never invent items, prices, references or account numbers.
-- doc_type: "receipt" for a shop or restaurant receipt (already paid), "bill" for an invoice or bill to pay (lasku, e-lasku, eräpäivä, viitenumero, tilinumero/IBAN), "other" for anything else.
-For a bill, fill "bill" and leave items empty; for a receipt, set "bill" to null.
+- doc_type: "receipt" for a shop or restaurant receipt (already paid), "bill" for an invoice or bill to pay (lasku, e-lasku, eräpäivä, viitenumero, tilinumero/IBAN), "payment" or "payments" for a screenshot of a payment or of several (see below), "other" only when it shows no money paid, owed or received at all.
+For a bill, fill "bill" and leave items empty; for a receipt, set "bill" to null. "payments" is null unless doc_type is "payments"; "direction" is null unless doc_type is "payment".
 - bill.company: who sent the bill. bill.amount: the amount to pay (Maksettava, Yhteensä). bill.due_date: eräpäivä as YYYY-MM-DD.
 - bill.reference: the payment reference (viitenumero, RF reference) exactly as printed, with spaces. bill.iban: the recipient account (IBAN) as printed.
 - bill.invoice_number: laskun numero, or null. bill.period: what the bill covers in a few words (e.g. "Electricity, October 2026"), or null.
@@ -42,18 +46,20 @@ Receipt fields:
 - place: the user may have projects for setting up a home, listed as places ("Project" or "Project › Room"). If the product is something for that home that stays there (furniture, lamps, curtains, rugs, bedding, towels, kitchenware, small appliances, storage, tools, decor, plants), the best place for it: the room it belongs in if there is one, otherwise the project. Food, drink, toiletries and cleaning products that get used up are never a place: use null. When unsure, null. Fill category as well either way.
 - If the user filed the same or a similar product to a place before (listed below), use that place.
 - date as YYYY-MM-DD (two-digit years are 20xx). total: the amount paid (for a bill: the amount to pay). shop: for a bill, the company.
-- is_receipt: true for a receipt or a bill, false for anything else.
-- reply: Koti telling the person what it found, in English: one or two short, warm sentences in plain words, never a label. For a receipt: the shop, the day, the total, and where most of it went (for example "A K-Market receipt from Tuesday: €23.40, mostly groceries, and the lamp goes to your Living room."). For a bill: who it's from, the amount and when it's due. If something needs checking (a date or total you couldn't read, another currency, a blurry line), say so in a short sentence.`;
+- is_receipt: true for a receipt, a bill or a payment, false for anything else.
+- reply: Koti telling the person what it found, in English: one or two short, warm sentences in plain words, never a label. For a receipt: the shop, the day, the total, and where most of it went (for example "A K-Market receipt from Tuesday: €23.40, mostly groceries, and the lamp goes to your Living room."). For a bill: who it's from, the amount and when it's due. If something needs checking (a date or total you couldn't read, another currency, a blurry line), say so in a short sentence.
+${PAYMENT_RULES}`;
 
 function buildSchema(categories: string[], listItems: string[], bills: string[], places: string[]) {
 const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
 const schema = {
   type: "object", additionalProperties: false,
-  required: ["is_receipt", "doc_type", "reply", "shop", "date", "total", "currency", "items", "bill"],
+  required: ["is_receipt", "doc_type", "reply", "shop", "date", "total", "currency", "items", "bill", "direction", "payments"],
   properties: {
     is_receipt: { type: "boolean" },
     reply: { type: "string" },
-    doc_type: { type: "string", enum: ["receipt", "bill", "other"] },
+    doc_type: { type: "string", enum: ["receipt", "bill", "payment", "payments", "other"] },
+    ...paymentSchema(categories),
     bill: { anyOf: [{ type: "null" }, {
       type: "object", additionalProperties: false,
       required: ["company", "amount", "due_date", "reference", "iban", "invoice_number", "period", "match"],
@@ -109,7 +115,6 @@ function realDay(v: unknown, latest: string) {
   const d = new Date(v + "T12:00:00Z");
   return d.toISOString().slice(0, 10) === v && v >= "1990-01-01" && v <= latest ? v : null;
 }
-const tomorrow = () => new Date(Date.now() + 864e5).toISOString().slice(0, 10);
 /* Gives one AI use back (the reading failed), with the server's own key so a user can't do it themselves. */
 async function giveBack(url: string, userId: string) {
   const key = (() => { try { const k = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); if (k.default) return k.default; } catch { /* legacy */ } return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""; })();
@@ -141,6 +146,7 @@ Deno.serve(async (req) => {
   const uniq = (xs: string[]) => { const m = new Map<string, string>(); xs.forEach((x) => { if (!m.has(x.toLowerCase())) m.set(x.toLowerCase(), x); }); return [...m.values()]; };
   const categories = uniq(strList(body.categories, 40, 60)), listItems = uniq(strList(body.listItems, 200, 120)), bills = uniq(strList(body.bills, 60, 80)), places = uniq(strList(body.places, 60, 120));
   const hint = ["receipt", "bill"].includes(String(body.hint)) ? String(body.hint) : null;
+  const today = typeof body.today === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.today) ? body.today : new Date().toISOString().slice(0, 10);
   const catLower = new Map([...categories, ...places].map((c) => [c.toLowerCase(), c]));
   const examples = (Array.isArray(body.examples) ? body.examples : []).slice(0, 80)
     .filter((x: Record<string, unknown>) => x && typeof x.name === "string" && typeof x.category === "string" && catLower.has(String(x.category).toLowerCase()))
@@ -156,7 +162,8 @@ Places in the user's home projects: ${places.length ? places.join(" | ") : "(non
 Open items on the user's shopping lists: ${listItems.length ? listItems.join(" | ") : "(none)"}
 The user's existing bills: ${bills.length ? bills.join(" | ") : "(none)"}
 How the user filed products before (follow these): ${examples.length ? examples.join("; ") : "(none yet)"}
-${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The user says this is a receipt." : "It may be a receipt or a bill."} Read it.`;
+Today is ${today} (${new Date(today + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" })}).
+${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The user says this is a receipt, or a payment." : "It may be a receipt, a bill, or a screenshot of a payment."} Read it.`;
   const doc = isPdf ? { type: "file", file: { filename: "document.pdf", file_data: image } } : { type: "image_url", image_url: { url: image, detail: "high" } };
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST",
@@ -180,7 +187,13 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   const data = await res.json();
   let r: Record<string, unknown>;
   try { r = JSON.parse(data.choices?.[0]?.message?.content || "{}"); } catch { if (me.id) await giveBack(url, me.id); return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
-  if (r.is_receipt === false || r.doc_type === "other") return json(422, { error: "That doesn't look like a receipt or a bill. Try another photo.", code: "not_receipt" });
+  if (r.is_receipt === false || r.doc_type === "other") return json(422, { error: "Koti couldn't find a payment, a receipt or a bill in that. Try a clearer picture, with the amount showing.", code: "not_receipt" });
+  // Several payments, as a bank app lists them: each one on its own, for the person to tick.
+  if (r.doc_type === "payments") {
+    const payments = cleanPayments(r.payments, categories, today);
+    if (!payments.length) return json(422, { error: "Koti saw payments but couldn't read any amount in full. Try a sharper screenshot.", code: "not_receipt" });
+    return json(200, { doc_type: "payments", reply: String(r.reply || "").trim().slice(0, 300), payments, receipt: { shop: null, date: null, total: null, currency: r.currency || "EUR", items: [] }, bill: null, model: MODEL, used, limit: LIMIT });
+  }
 
   const catSet = new Set(categories.map((c) => c.toLowerCase())), listSet = new Map(listItems.map((x) => [x.toLowerCase(), x])), placeSet = new Map(places.map((x) => [x.toLowerCase(), x]));
   const items = (Array.isArray(r.items) ? r.items : []).slice(0, 150).map((x: Record<string, unknown>) => ({
@@ -195,10 +208,14 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   // Rail: English names must be English (the Finnish name is kept separately in name_fi). Anything that still looks Finnish or Swedish gets one more, translation-only pass.
   const left = items.map((it, k) => [k, it.name] as [number, string]).filter(([, n]) => NON_ENGLISH.test(n));
   if (left.length) { const t = await translateLeftovers(openaiKey, left.map(([, n]) => n)); if (t) left.forEach(([k], j) => { if (t[j] && t[j].trim()) items[k].name = t[j].trim().slice(0, 120); }); }
-  const date = realDay(r.date, tomorrow());
+  const date = dayUpTo(r.date, today);
   const total = money(r.total) ?? Math.round(items.reduce((a, i) => a + i.price, 0) * 100) / 100;
-  const docType = r.doc_type === "bill" ? "bill" : "receipt";
+  const docType = r.doc_type === "bill" ? "bill" : r.doc_type === "payment" ? "payment" : "receipt";
   let bill = null;
+  if (docType === "payment" && r.bill && typeof r.bill === "object") {   // a payment of one of their bills
+    const m = String((r.bill as Record<string, unknown>).match || "").toLowerCase(), hit = bills.find((x) => x.toLowerCase() === m);
+    if (hit) bill = { company: null, amount: total, due_date: null, reference: null, iban: null, invoice_number: null, period: null, match: hit };
+  }
   if (docType === "bill" && r.bill && typeof r.bill === "object") {
     const b = r.bill as Record<string, unknown>, str = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
     const due = realDay(b.due_date, "2100-12-31");
@@ -206,5 +223,6 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
     bill = { company: str(b.company, 120) || (typeof r.shop === "string" ? r.shop.slice(0, 120) : null), amount: money(b.amount) ?? total, due_date: due, reference: str(b.reference, 60),
       iban: str(b.iban, 40), invoice_number: str(b.invoice_number, 60), period: str(b.period, 120), match: match ? billSet.get(match.toLowerCase()) || null : null };
   }
-  return json(200, { doc_type: docType, reply: String(r.reply || "").trim().slice(0, 300), receipt: { shop: typeof r.shop === "string" ? r.shop.slice(0, 120) : null, date, total, currency: r.currency || "EUR", items: docType === "bill" ? [] : items }, bill, model: MODEL, used, limit: LIMIT });
+  const direction = docType === "payment" && r.direction === "in" ? "in" : docType === "payment" ? "out" : null;
+  return json(200, { doc_type: docType, direction, reply: String(r.reply || "").trim().slice(0, 300), receipt: { shop: typeof r.shop === "string" ? r.shop.slice(0, 120) : null, date, total, currency: r.currency || "EUR", items: docType === "bill" ? [] : items }, bill, model: MODEL, used, limit: LIMIT });
 });
