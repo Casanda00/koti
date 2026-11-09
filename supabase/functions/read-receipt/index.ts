@@ -1,15 +1,15 @@
 // Koti: read a receipt or a bill (photo or PDF) with OpenAI.
 // Receipts: shop, date, total and every line. Bills: company, amount, due date, payment reference and account (IBAN).
 // The OpenAI key lives only here, as the Edge Function secret OPENAI_API_KEY.
-// Optional secrets: OPENAI_MODEL (default below), AI_DAILY_LIMIT (scans per user per day, default 30).
+// Optional secrets: OPENAI_MODEL, OPENAI_REASONING (see ../_shared/openai.js), AI_DAILY_LIMIT (scans per user per day, default 30).
+// @ts-ignore: plain JavaScript module, shared with the tests
+import { chatBody, openaiError, OPENAI_BASE, MODEL } from "../_shared/openai.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const OPENAI_BASE = Deno.env.get("OPENAI_BASE_URL") || "https://api.openai.com/v1";
-const MODEL = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
 const LIMIT = Math.max(1, Number(Deno.env.get("AI_DAILY_LIMIT") || 30));
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -94,10 +94,10 @@ const NON_ENGLISH = /[äöå]|maito|leipä|leipa|liha|juusto|kahvi|jogurtti|kerm
 async function translateLeftovers(openaiKey: string, names: string[]): Promise<string[] | null> {
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST", headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, temperature: 0,
+    body: JSON.stringify(chatBody({ model: MODEL, temperature: 0,
       messages: [{ role: "system", content: "Translate Finnish or Swedish shop receipt product names into short, plain English product names. Keep brand names. Expand abbreviations. Return the same number of names, in the same order." },
         { role: "user", content: JSON.stringify(names) }],
-      response_format: { type: "json_schema", json_schema: { name: "names", strict: true, schema: { type: "object", additionalProperties: false, required: ["names"], properties: { names: { type: "array", items: { type: "string" } } } } } } }),
+      response_format: { type: "json_schema", json_schema: { name: "names", strict: true, schema: { type: "object", additionalProperties: false, required: ["names"], properties: { names: { type: "array", items: { type: "string" } } } } } } }, { effort: "minimal" })),
   }).catch(() => null);
   if (!res || !res.ok) return null;
   try { const out = JSON.parse((await res.json()).choices?.[0]?.message?.content || "{}").names; return Array.isArray(out) && out.length === names.length ? out.map(String) : null; } catch { return null; }
@@ -161,11 +161,11 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
+    body: JSON.stringify(chatBody({
       model: MODEL, temperature: 0,
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: [{ type: "text", text: prompt }, doc] }],
       response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema: buildSchema(categories, listItems, bills, places) } },
-    }),
+    }, { effort: "low" })),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({})) as { error?: { message?: string; code?: string } };

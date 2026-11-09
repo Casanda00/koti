@@ -19,3 +19,7 @@ verify_jwt = false
 [functions.suggest-budgets]
 # Budget suggestions after a few questions. The function checks the signed-in user itself.
 verify_jwt = false
+
+[functions.koti]
+# Talking to Koti and today's note. The function checks the signed-in user itself and reads only their rows.
+verify_jwt = false

@@ -14,8 +14,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const OPENAI_BASE = Deno.env.get("OPENAI_BASE_URL") || "https://api.openai.com/v1";
-const MODEL = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
+// @ts-ignore: plain JavaScript module, shared with the tests (the model and how it's asked)
+import { chatBody, openaiError, OPENAI_BASE, MODEL } from "../_shared/openai.js";
 const LIMIT = Math.max(1, Number(Deno.env.get("AI_DAILY_LIMIT") || 30));
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 type Row = Record<string, unknown>;
@@ -100,13 +100,13 @@ Deno.serve(async (req) => {
   const prompt = `${describe(ctx)}${ctx.daysLeft ? `\nDays left in this budget month: ${ctx.daysLeft}.` : ""}${answers.length ? `\nTheir answers:\n${answers.join("\n")}` : ""}\n\n${step === "suggest" ? SUGGEST : QUESTIONS}`;
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST", headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, temperature: 0.2, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }],
-      response_format: { type: "json_schema", json_schema: { name: step, strict: true, schema: step === "suggest" ? suggestSchema(names, goalNames) : questionsSchema } } }),
+    body: JSON.stringify(chatBody({ model: MODEL, temperature: 0.2, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }],
+      response_format: { type: "json_schema", json_schema: { name: step, strict: true, schema: step === "suggest" ? suggestSchema(names, goalNames) : questionsSchema } } }, { effort: "low" })),
   });
   if (!res.ok) {
     if (me.id) await giveBack(url, me.id);
     const e = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    return json(502, { error: res.status === 401 ? "OpenAI didn't accept the key." : res.status === 429 ? "OpenAI is out of credit or busy. Try again in a minute." : `OpenAI couldn't do it: ${e.error?.message || res.statusText}`, code: "openai" });
+    return json(502, { error: openaiError(res.status, e.error?.message || res.statusText), code: "openai" });
   }
   let r: Row;
   try { r = JSON.parse((await res.json()).choices?.[0]?.message?.content || "{}"); } catch { if (me.id) await giveBack(url, me.id); return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }

@@ -11,6 +11,7 @@ import { nextPay, receive } from "./income.js";
 import { wantsStrip, stripHTML } from "./install.js";
 import { dayShare, openPayments } from "./receipt.js";
 import { rangeOf, spentBetween } from "./spent.js";
+import { briefHTML, briefClick } from "./koti.js";
 
 const longDay = d => d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 const money = v => (v < 0 ? "−" : "") + eur0(Math.abs(v));
@@ -36,6 +37,7 @@ export function mountNow(el) {
   root = el;
   root.addEventListener("click", e => {
     const t = e.target;
+    if (briefClick(e)) return;   // Koti noticed: ask Koti, or do what it suggests
     if (t.closest("[data-how]")) { openPayments("today"); return; }
     if (t.closest("[data-start-setup]")) { import("./onboarding.js").then(m => m.openOnboarding()); return; }
     if (t.closest("[data-bal]")) { openStartBalance(); return; }
@@ -98,6 +100,7 @@ export function renderNow() {
     </section>
     <section class="now-sheet">
       ${qs.slice(0, 2).join("")}
+      ${briefHTML(() => { if (root && !root.hidden && root.isConnected) renderNow(); })}
       <div class="tlist"><div class="tl-h"><button type="button" class="tl-t" data-how>Today's payments ${icon("chev", "ic xs")}</button><a href="#spending/week">This week ${eur0(week)}</a></div>
         ${tx.map(rowTx).join("") || `<p class="tl-none">Nothing yet.</p>`}
         ${soon.map(rowBill).join("")}

@@ -12,6 +12,8 @@ import { aiVoice, understand, toParsed } from "./hear.js";
 import { aiPossible } from "./receipts.js";
 import { initTalk } from "./talk.js";
 import { goalFor, savedOf, spendFromGoal } from "./plan.js";
+import { looksLikeQuestion } from "./brain.js";
+const toKoti = message => import("./koti.js").then(m => m.openKoti({ message }));
 
 let getView = () => "now", form, input, stop = null;
 
@@ -77,8 +79,10 @@ async function ask({ audio = null, text = "", fallback = null }) {
   try { d = await understand({ audio, text }); }
   catch (e) { if (fallback) { showHeard(fallback); return; } toast(String(e.message || e)); if (text) input.focus(); return; }
   finally { busy(false); }
-  if (fallback && !(d.intent === "spend" && d.spend && d.spend.total) && d.intent !== "question" && d.intent !== "remind") { showHeard(fallback); return; }
+  if (fallback && !(d.intent === "spend" && d.spend && d.spend.total) && d.intent !== "question" && d.intent !== "remind" && d.intent !== "ask") { showHeard(fallback); return; }
   const said = d.transcript || text;
+  // A question or a request beyond a purchase: Koti's brain answers it, with the person's own figures.
+  if (d.intent === "ask" && said) { input.value = ""; toKoti(said); return; }
   if (d.intent === "question" && d.range) { input.value = ""; location.hash = "#spending/" + d.range; return; }
   if (d.intent === "remind") { input.value = ""; import("./reminders.js").then(m => m.openReminder(null, parseReminder(said, { bills: store.model.bills }))); return; }
   if (d.intent === "list" && d.items.length) {
@@ -117,6 +121,8 @@ export function handleTyped(text) {
     return;
   }
   if (!text) { openExpense(); return; }
+  // "Can I afford a sofa?", "how much on coffee in October?": a question for Koti, not something spent.
+  if (aiPossible() && looksLikeQuestion(text)) { if (input) input.value = ""; return toKoti(text); }
   const cats = store.model.categories;
   const heard = parseExpense(text, { categories: cats, history: store.model.transactions });
   if (!heard.amount) {
@@ -141,6 +147,8 @@ export function localReply(h, categories = store.model.categories) {
     : !h.goalName && h.fromSavings ? " You don't have a savings goal in Koti yet, so it comes out of today's money." : "";
   return `${eur(h.amount)}${h.payee ? ` at ${h.payee}` : ""}${what}, ${day}${from}.${why}${h.categoryId ? "" : " What was it for?"}`;
 }
+/* The same check-before-saving sheet, for a purchase Koti proposed in a conversation. */
+export const confirmSpend = (h, reply = null) => showHeard(h, reply);
 function showHeard(h, reply = null) {
   // Said where the money came from: pay (the first payday after the day it was bought), or a savings goal.
   if (h.fromNextPay && !h.fromPay) { const pay = payAfter(h.date); if (pay) h = { ...h, fromPay: pay.date }; }

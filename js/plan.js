@@ -211,7 +211,8 @@ export function bindCopy(scope) {
     try { await navigator.clipboard.writeText(c.dataset.copy); toast("Copied"); } catch { prompt("Copy this:", c.dataset.copy); } });
 }
 export function openBill(bill = null, preset = {}) {
-  const b = bill || { name: preset.name || "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "", dueDate: null, reference: "", iban: "" };
+  // preset: what's known already (a quick name, or a bill Koti heard about in a conversation)
+  const b = bill || { name: "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "", dueDate: null, reference: "", iban: "", ...preset };
   let freq = b.frequency;
   const ord = n => n + (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th");
   const QUICK = ["Rent", "Electricity", "Internet", "Phone", "Home insurance", "Streaming", "Gym", "Water"];

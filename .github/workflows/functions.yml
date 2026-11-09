@@ -37,4 +37,5 @@ jobs:
       - name: Deploy
         if: steps.secrets.outputs.ready == 'true'
         run: |
-          for f in supabase/functions/*/; do supabase functions deploy "$(basename "$f")" --project-ref "$SUPABASE_PROJECT_REF"; done
+          # _shared holds code the functions import (the model and how it's asked); it isn't a function itself.
+          for f in supabase/functions/*/; do n="$(basename "$f")"; case "$n" in _*) continue;; esac; supabase functions deploy "$n" --project-ref "$SUPABASE_PROJECT_REF"; done
