@@ -1,4 +1,7 @@
-// Scan or upload a receipt or a bill. One step: take the photo. Koti reads every line and sorts it, then you check it.
+// Scan or upload a receipt, a bill, or a screenshot of a payment. One step: take the photo (or pick the screenshot).
+//   A payment on a bank, card or payment app's screen, or an order confirmation, is checked like a receipt; money that
+//     came in is saved as money in; a payment of one of your bills offers to mark that bill paid.
+//   A screenshot listing several payments shows each one to tick; ones already in Koti are left unticked. Koti reads every line and sorts it, then you check it.
 //   Sorted by Koti (the usual): each line goes where it belongs. Food ticks off your shopping list or goes to its
 //     category; a lamp or curtains become a bought item in a home project's room; the rest goes to a category.
 //     A bill goes to Bills.
@@ -11,7 +14,7 @@ import { $, $$, esc, eur, eur0, icon, parseMoney, parseDay, fmtDay, openSheet, c
 import { prepareFile, readReceipt, attach } from "./receipts.js";
 import { catName, periodFor, totals, payAfter } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
-import { alignDue, occurrenceOf, markPaid, bindCopy, FREQ_LABEL, goalFor, spendFromGoal } from "./plan.js";
+import { alignDue, occurrenceOf, markPaid, bindCopy, FREQ_LABEL, goalFor, spendFromGoal, occurrences } from "./plan.js";
 
 const cats = () => store.model.categories.filter(c => c.id !== BILLS_CAT).sort((a, b) => a.position - b.position);
 const keepDefault = kind => (kind === "bill" ? !!store.model.settings.keepBills : !!store.model.settings.keepReceipts);   // off unless switched on: storage costs
@@ -43,18 +46,18 @@ function contextDest() {
 }
 
 /* ---------- Step 1: the photo ---------- */
-export function openScan({ dest = null } = {}) {
+export function openScan({ dest = null, file = null } = {}) {
   const pref = store.model.settings.scanDefault;
   const S = { dest: dest || contextDest() || { kind: ["spending", "bill"].includes(pref) ? pref : "mix" }, keep: null, keepTouched: false, file: null, r: null, lines: null, linesFor: null, edits: {} };
   S.keep = keepDefault(S.dest.kind);
   const d = S.dest, where = d.kind === "bill" ? "a bill" : d.kind === "list" || d.kind === "project" ? esc(destName(d)) : null;
   openSheet({ title: "Scan", left: "Close", body: B => {
-    B.innerHTML = `<h2 class="sc-h">${d.kind === "bill" ? "Take a photo of the bill" : "Take a photo of a receipt or a bill"}</h2>
-      <p class="sc-p">${d.kind === "bill" ? "Koti reads the amount, the due date, the reference and the account. You check it before it's saved." : where ? `Koti reads every line for ${where}: what's on it gets ticked off. You check it before anything is saved.` : "Koti reads every line and sorts it for you: the milk to groceries, the lamp to your home project, a bill to Bills. You check it before anything is saved."}</p>
+    B.innerHTML = `<h2 class="sc-h">${d.kind === "bill" ? "Take a photo of the bill" : "A receipt, a bill or a screenshot"}</h2>
+      <p class="sc-p">${d.kind === "bill" ? "Koti reads the amount, the due date, the reference and the account. You check it before it's saved." : where ? `Koti reads every line for ${where}: what's on it gets ticked off. You check it before anything is saved.` : "Koti reads every line and sorts it for you: the milk to groceries, the lamp to your home project, a bill to Bills. A screenshot of a payment from your bank, MobilePay or an online order works too. You check it before anything is saved."}</p>
       <div id="scState"><div class="sc-frame" aria-hidden="true">${icon("cam", "ic")}<span>Flat, in good light, the whole ${d.kind === "bill" ? "page" : "receipt"}</span></div></div>
       <div class="scan-btns">
         <label class="btn primary sc-go" for="scCam">${icon("cam", "ic sm")} Take photo</label><input type="file" id="scCam" accept="image/*" capture="environment" class="sr">
-        <label class="btn sc-up" for="scFile">${icon("up", "ic sm")} Upload a photo or PDF</label><input type="file" id="scFile" accept="image/*,application/pdf" class="sr">
+        <label class="btn sc-up" for="scFile">${icon("up", "ic sm")} Upload a screenshot, photo or PDF</label><input type="file" id="scFile" accept="image/*,application/pdf" class="sr">
       </div>
       <label class="sc-keep"><span id="scKeepLbl">Keep the photo with it<small id="scKeepSub"></small></span><input type="checkbox" class="switch" id="scKeep" aria-labelledby="scKeepLbl"></label>
       <p class="msg" id="scMsg" aria-live="polite"></p>`;
@@ -62,6 +65,7 @@ export function openScan({ dest = null } = {}) {
     paintKeep(); k.onchange = () => { S.keep = k.checked; S.keepTouched = true; paintKeep(); };
     const onFile = e => { const f = e.target.files[0]; e.target.value = ""; if (f) run(S, f, B); };
     ["#scCam", "#scFile"].forEach(id => $(id, B).addEventListener("change", onFile));
+    if (file) run(S, file, B);   // given already: a screenshot shared to Koti, or picked in a conversation
   } });
 }
 
@@ -88,6 +92,8 @@ async function run(S, file, B) {
     S.r = await readReceipt(S.file, (p, label) => { const l = $("#scLbl", st), b = $("#scBar", st); if (l) l.textContent = label; if (b) b.style.width = Math.round(p * 100) + "%"; }, hint);
     S.lines = null;
     if (S.dest.kind === "mix" && S.r.docType === "bill") { S.dest = { kind: "bill" }; if (!S.keepTouched) S.keep = keepDefault("bill"); }
+    if (S.r.docType === "payments" && S.r.payments && S.r.payments.length) { paymentsReview(S); return; }
+    if (S.r.docType === "payment") { S.moneyIn = !!(S.r.parsed && S.r.parsed.moneyIn); S.billPay = billPaymentFor(S.r); }
     review(S);
   } catch (err) {
     st.innerHTML = ""; $$("input[type=file]", B).forEach(i => i.disabled = false);
@@ -208,12 +214,14 @@ function receiptReview(S) {
     B.innerHTML = `
       ${kotiSays(r.reply || P.reply)}
       ${r.docType === "bill" ? `<div class="suggest warn">${icon("bill", "ic")}<div><b>This looks like a bill</b><small>Bills go to Bills with their due date and reference.</small></div><button type="button" class="btn sm" id="rvToBill">Add as a bill</button></div>` : ""}
+      ${S.billPay && !S.moneyIn ? `<div class="suggest">${icon("bill", "ic")}<div><b>Your ${esc(S.billPay.bill.name)} payment?</b><small>Due ${esc(fmtDay(parseDay(S.billPay.due)))}, ${esc(eur(S.billPay.amount))}. Mark it paid instead of adding it as spending.</small></div><button type="button" class="btn sm" id="rvBillPaid">Mark paid</button></div>` : ""}
+      ${r.docType === "payment" ? `<div class="seg" id="rvDir" role="group" aria-label="Money out or in"><button type="button" data-in="0" aria-pressed="${!S.moneyIn}">I paid</button><button type="button" data-in="1" aria-pressed="${!!S.moneyIn}">I received</button></div>` : ""}
       ${P.currency && P.currency !== "EUR" ? `<div class="suggest warn">${icon("alert", "ic")}<div><b>This receipt is in ${esc(P.currency)}</b><small>Koti counts in euros. Change the total to what your bank charged.</small></div></div>` : ""}
       <div class="rv-top"><div class="rv-big num" id="rvBig"></div>${S.file ? `<span class="scan-thumb">${thumb(S)}</span>` : ""}</div>
       <p class="rv-s" id="rvS"></p>
       <details class="rv-more"${total ? "" : " open"}><summary>Shop, date and total</summary>
       <div class="grp">
-        <label class="row"><span class="rt">Shop</span><input class="inl" id="rvShop" value="${esc(E.shop ?? P.payee ?? "")}" placeholder="Where" maxlength="120" autocomplete="off" style="max-width:60%"></label>
+        <label class="row"><span class="rt">${S.moneyIn ? "From" : r.docType === "payment" ? "Paid to" : "Shop"}</span><input class="inl" id="rvShop" value="${esc(E.shop ?? P.payee ?? "")}" placeholder="${S.moneyIn ? "Who" : "Where"}" maxlength="120" autocomplete="off" style="max-width:60%"></label>
         <label class="row"><span class="rt">Date</span><input class="inl" id="rvDate" type="date" value="${esc(E.date ?? P.date ?? todayISO())}"></label>
         <label class="row"><span class="rt">Total</span><input class="inl num" id="rvTotal" inputmode="decimal" value="${esc(total)}" placeholder="0,00" autocomplete="off" style="max-width:40%"></label>
         <label class="row"${S.file ? "" : " hidden"}><span class="rt" id="rvKeepLbl">Keep the photo<small id="rvKeepSub"></small></span><input type="checkbox" class="switch" id="rvKeep" aria-labelledby="rvKeepLbl" ${S.keep ? "checked" : ""}></label>
@@ -225,6 +233,9 @@ function receiptReview(S) {
     keepSub(); $("#rvKeep", B).onchange = keepSub;
     ["#rvShop", "#rvDate", "#rvTotal"].forEach(id => $(id, B).addEventListener("input", () => { saveEdits(S); paintHead(S, B); }));
     const tb = $("#rvToBill", B); if (tb) tb.onclick = () => { saveEdits(S); S.dest = { kind: "bill" }; if (!S.keepTouched) S.keep = true; billReview(S); };
+    const dir = $("#rvDir", B); if (dir) dir.onclick = e => { const x = e.target.closest("[data-in]"); if (!x) return; saveEdits(S); S.moneyIn = x.dataset.in === "1"; receiptReview(S); };
+    const bp = $("#rvBillPaid", B); if (bp) bp.onclick = () => { saveEdits(S); const o = S.billPay, date = $("#rvDate", B).value || todayISO(), tx = markPaid(o, date > todayISO() ? todayISO() : date, true);
+      closeSheet(); toast(`${o.bill.name} marked paid`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); };
     paintHead(S, B); paintLines(S, B);
   }, onRight: B => saveReceipt(S, B) });
 }
@@ -245,6 +256,7 @@ function paintHead(S, B) {
 function paintLines(S, B) {
   const d = S.dest, L = $("#rvLines", B), lines = S.lines, r = S.r || {};
   const how = r.heard ? "Heard by AI. Check it, then Save." : r.ai ? `Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}` : r.aiError ? `Read on this device, total only. AI: ${r.aiError.message}` : "Read on this device, total only.";
+  if (S.moneyIn) { L.innerHTML = `<p class="note ai-note">${esc(how)}</p><p class="note">Money you received is saved as money in. It adds to what's yours to spend.</p>`; paintHead(S, B); return; }
   if (!lines.length) { L.innerHTML = `<p class="note ai-note">${esc(how)}</p><p class="note">No lines were read, so the total goes to ${d.kind === "project" ? esc(listOf(d.id).name) : "one category"}. Tap the title to choose where.</p>`; paintHead(S, B); return; }
   const G = groupsOf(S), sum = lines.reduce((a, l) => a + l.price, 0);
   L.innerHTML = `${G.length > 1 ? `<div class="rv-bar" role="img" aria-label="${esc(G.map(g => `${g.k === "none" ? "No category" : catName(g.k)} ${eur(g.total)}`).join(", "))}">${G.map(g => `<i style="flex:${Math.max(0.01, g.total)};background:${groupColor(g.k)}"></i>`).join("")}</div>` : ""}
@@ -277,8 +289,17 @@ async function saveReceipt(S, B) {
   if (["list", "project"].includes(d.kind) && !listOf(d.id)) return msg("That list was deleted. Tap the title to choose another place.");
   if (date > todayISO()) return msg("That date is in the future. Check the date.");
   // The same receipt twice: same day, same total, same shop (or no shop)
-  const twin = store.model.transactions.find(t => t.date === date && Math.abs(t.amount - total) < 0.005 && t.kind === "expense" && (!shop || !t.payee || t.payee.toLowerCase() === shop.toLowerCase()));
-  if (twin && !S.twinOk) { S.twinOk = true; return msg(`You already have ${twin.payee || "an expense"}, ${eur(twin.amount)}, on this day. Tap Save again to keep both.`); }
+  const twin = twinOf({ date, amount: total, payee: shop, kind: S.moneyIn ? "income" : "expense" });
+  if (twin && !S.twinOk) { S.twinOk = true; return msg(`You already have ${twin.payee || (S.moneyIn ? "money in" : "an expense")}, ${eur(twin.amount)}, on this day. Tap Save again to keep both.`); }
+  if (S.moneyIn) {   // money received, from a screenshot: income, no lines
+    S.busy = true;
+    let receiptPath = null; const id = newId("tx");
+    if (keep && S.file) { try { receiptPath = await attach(id, S.file); } catch (e) { S.busy = false; return msg("Couldn't keep the picture on this device: " + (e.message || e)); } }
+    const tx = store.put("transactions", { id, date, amount: total, kind: "income", categoryId: null, payee: shop || null, note: null, source: "receipt", receiptPath });
+    closeSheet(); S.busy = false;
+    toast(`Saved ${eur(tx.amount)} in${shop ? ` from ${shop}` : ""}`, { label: "Undo", run: () => store.remove("transactions", tx.id) });
+    return;
+  }
   S.busy = true;
   const id = newId("tx"), unit = l => Math.round(l.price / (l.qty && l.qty > 0 && Number.isInteger(l.qty) ? l.qty : 1) * 100) / 100;
   const before = [], created = [], txLines = [];
@@ -388,4 +409,60 @@ async function saveBill(S, B) {
   else if (o.paid && Math.abs(o.paid.amount - W.amount) >= 0.005) store.put("transactions", { ...o.paid, amount: W.amount });
   closeSheet(); S.busy = false;
   toast(`Added as a bill · ${bill.name} ${eur(W.amount)} ${W.paid ? "paid" : "due " + fmtDay(due)}`, { label: "Open", run: () => { location.hash = "#bills"; } });
+}
+
+/* ---------- Payments on a screen ---------- */
+/* The same payment already in Koti: same day, same amount, same direction, and the same payee when both have one.
+   A screenshot of a bank app is often taken again a day later; the second one shouldn't count twice. */
+export function twinOf({ date, amount, payee, kind = "expense" }) {
+  const p = low(payee).replace(/\s+(oy|oyj|ab)$/, "").trim();
+  return store.model.transactions.find(t => t.date === date && Math.abs(t.amount - amount) < 0.005 && (kind === "income" ? t.kind === "income" : t.kind === "expense")
+    && (!p || !t.payee || low(t.payee).includes(p) || p.includes(low(t.payee)))) || null;
+}
+
+/* A payment of one of your bills: the bill the reader named, or one whose payee or name matches, with an unpaid due date
+   within three weeks of the payment. */
+export function billPaymentFor(r) {
+  const P = (r && r.parsed) || {}; if (!P.amount || P.moneyIn) return null;
+  const bill = matchBill({ match: r.bill && r.bill.match, company: P.payee }, P); if (!bill) return null;
+  const day = P.date || todayISO(), d = parseDay(day), near = o => Math.abs(parseDay(o.due) - d) <= 21 * 864e5;
+  const from = periodFor(new Date(d.getFullYear(), d.getMonth() - 1, d.getDate())), to = periodFor(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+  const all = [...occurrences(from), ...occurrences(periodFor(d)), ...occurrences(to)].filter((o, i, xs) => o.bill.id === bill.id && !o.paid && !o.skipped && near(o) && xs.findIndex(x => x.bill.id === o.bill.id && x.due === o.due) === i);
+  return all.sort((a, b) => Math.abs(a.amount - P.amount) - Math.abs(b.amount - P.amount) || Math.abs(parseDay(a.due) - d) - Math.abs(parseDay(b.due) - d))[0] || null;
+}
+
+/* Saves the payments ticked from a screenshot. Returns what was saved, for Undo. */
+export function savePayments(list) {
+  return list.map(p => store.put("transactions", { id: newId("tx"), date: p.date || todayISO(), amount: p.amount, kind: p.kind === "income" ? "income" : "expense",
+    categoryId: p.kind === "income" ? null : p.categoryId || null, payee: p.payee || null, note: p.note || null, source: "receipt" }));
+}
+
+/* Several payments on one screenshot: each one to tick, with its category; ones already in Koti start unticked. */
+function paymentsReview(S) {
+  const r = S.r;
+  if (!S.pay) S.pay = r.payments.map(p => { const date = p.date || todayISO(), twin = twinOf({ ...p, date }); return { ...p, date, twin, on: !twin && date <= todayISO() }; });
+  openSheet({ title: "Payments", left: "Cancel", right: "Save", body: B => {
+    const paint = () => {
+      const on = S.pay.filter(p => p.on), out = on.filter(p => p.kind !== "income").reduce((a, p) => a + p.amount, 0), inn = on.filter(p => p.kind === "income").reduce((a, p) => a + p.amount, 0);
+      B.innerHTML = `${kotiSays(r.reply)}
+        <div class="rv-top"><div class="rv-big num">${eur(out)}</div>${S.file ? `<span class="scan-thumb">${thumb(S)}</span>` : ""}</div>
+        <p class="rv-s">${on.length} of ${S.pay.length} payment${S.pay.length === 1 ? "" : "s"} ticked${inn ? ` · ${esc(eur(inn))} in` : ""}.</p>
+        <div class="grp pays">${S.pay.map((p, k) => `<div class="row pay-row">
+            <input type="checkbox" class="pay-on" data-k="${k}" ${p.on ? "checked" : ""} aria-label="${esc(`${p.payee || "Payment"}, ${eur(p.amount)}`)}">
+            <span class="rt"><b>${esc(p.payee || (p.kind === "income" ? "Money in" : "Payment"))}</b><small>${esc(fmtDay(parseDay(p.date)))}${p.note ? ` · ${esc(p.note)}` : ""}${p.twin ? " · already in Koti" : ""}${p.date > todayISO() ? " · not yet" : ""}</small>
+              ${p.kind === "income" ? "" : `<select class="inl pay-cat" data-k="${k}" aria-label="Category">${cats().map(c => `<option value="${esc(c.id)}"${c.id === p.categoryId ? " selected" : ""}>${esc(c.name)}</option>`).join("")}<option value=""${p.categoryId ? "" : " selected"}>No category</option></select>`}</span>
+            <b class="num">${p.kind === "income" ? "+" : ""}${eur(p.amount)}</b></div>`).join("")}</div>
+        <p class="note ai-note">Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}. Untick what isn't yours to count, or is already in Koti.</p>
+        <p class="msg" id="pyMsg" aria-live="polite"></p>`;
+    };
+    B.addEventListener("change", e => { const k = Number(e.target.dataset.k); if (Number.isNaN(k)) return;
+      if (e.target.classList.contains("pay-on")) S.pay[k].on = e.target.checked; else if (e.target.classList.contains("pay-cat")) S.pay[k].categoryId = e.target.value || null; paint(); });
+    paint();
+  }, onRight: B => {
+    const on = S.pay.filter(p => p.on);
+    if (!on.length) { const m = $("#pyMsg", B); m.textContent = "Tick at least one payment."; m.dataset.state = "error"; return; }
+    if (on.some(p => p.date > todayISO())) { const m = $("#pyMsg", B); m.textContent = "A payment dated after today can't be saved yet. Untick it."; m.dataset.state = "error"; return; }
+    const saved = savePayments(on); closeSheet();
+    toast(`Saved ${saved.length} payment${saved.length === 1 ? "" : "s"}`, { label: "Undo", run: () => saved.forEach(t => store.remove("transactions", t.id)) });
+  } });
 }

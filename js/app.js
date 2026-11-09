@@ -107,6 +107,17 @@ function syncLook() {
 function saveTimeZone() {
   try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (tz && store.model.settings.tz !== tz) store.updateSettings({ tz }); } catch { /* the reminders keep Helsinki */ }
 }
+/* A screenshot or photo shared to Koti from another app: the service worker kept it; read it like a scan. */
+async function openShared() {
+  history.replaceState(null, "", location.pathname + "#now");
+  try {
+    const c = await caches.open("koti-shared"), r = await c.match("shared-file");
+    if (!r) { toast("Nothing came through. Try sharing it again."); return; }
+    const blob = await r.blob(), name = decodeURIComponent(r.headers.get("X-Name") || "screenshot");
+    await c.delete("shared-file");
+    openScan({ file: new File([blob], name, { type: blob.type || "image/png" }) });
+  } catch { toast("Couldn't open what was shared."); }
+}
 function init() {
   initSheets();
   mountNow($("#view-now")); mountMonth($("#view-month")); mountPlace($("#view-home")); mountReminders($("#view-reminders")); mountMoney($("#view-budgets")); mountIncome($("#view-income")); mountSpending($("#view-spending"));
@@ -128,11 +139,13 @@ function init() {
     if (e.target.closest("[data-scan]")) { e.preventDefault(); openScan(); return; }
     if (e.target.closest("[data-suggest-budgets]")) { e.preventDefault(); closeSheet(); setTimeout(() => import("./budgetai.js").then(m => m.openBudgetHelp()), 60); return; }
     if (e.target.closest("[data-install]")) { e.preventDefault(); openInstall(); return; }
+    if (e.target.closest("[data-ask-koti]")) { e.preventDefault(); import("./koti.js").then(m => m.openKoti()); return; }
     if (e.target.closest("[data-install-later]")) { e.preventDefault(); snoozeStrip(); renderCurrent(); return; }
   });
   // A reminder was answered from its notification: fetch the change so Now and Month show it.
   if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "koti-refresh") refresh(); });
   document.addEventListener("koti-install-ready", () => { if (current === "now") renderCurrent(); });
+  document.addEventListener("koti:brief", () => { if (current === "now") renderCurrent(); });
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "project") { renderPlans(); renderCharts(); } else renderCurrent(); }, 120); });
   initComposer(() => current);
@@ -146,6 +159,8 @@ function init() {
   if (q.get("add") === "item") openAddToList();
   if (q.get("add") === "expense") { if (q.get("mode") === "scan") openScan(); else openExpense(); }
   if (q.get("add") === "scan") openScan();
+  if (q.get("add") === "shared") openShared();
+  if (q.get("ask") != null) { history.replaceState(null, "", location.pathname + "#now"); import("./koti.js").then(m => m.openKoti({ message: q.get("ask") || "" })); }
   if (q.get("payments")) { const sel = q.get("payments"); history.replaceState(null, "", location.pathname + "#now"); import("./receipt.js").then(m => m.openPayments(["today", "yesterday", "week", "lastweek", "month", "lastmonth"].includes(sel) ? sel : "today")); }
 
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {

@@ -1,6 +1,6 @@
 // Receipts: shrink the photo, read it on the device (Tesseract, English + Finnish), keep it on the device
 // until it's uploaded to the private "receipts" bucket, and show it again later.
-import { store, topLists, roomsOf, itemsOf, validDay } from "./data.js";
+import { store, topLists, roomsOf, itemsOf, validDay, todayISO } from "./data.js";
 import { sync, onSync } from "./sync.js";
 import { KNOWN_PLACES, parseExpense } from "./voice.js";
 
@@ -81,7 +81,7 @@ async function readWithAI(prepared, hint) {
   const cats = store.model.categories, open = openItems(), filed = filedBefore(), P = places();
   const placeName = id => (P.find(x => x.id === id) || {}).name;
   const examples = [...filed.values()].slice(0, 80).map(x => ({ name: x.name, category: x.placeId ? placeName(x.placeId) : (cats.find(c => c.id === x.categoryId) || {}).name })).filter(x => x.category);
-  const { data, error } = await sync.client.functions.invoke("read-receipt", { body: { image, hint, categories: cats.map(c => c.name), places: P.map(x => x.name), listItems: [...new Set(open.map(i => i.name))], bills: store.model.bills.map(b => b.name), examples } });
+  const { data, error } = await sync.client.functions.invoke("read-receipt", { body: { image, hint, today: todayISO(), categories: cats.map(c => c.name), places: P.map(x => x.name), listItems: [...new Set(open.map(i => i.name))], bills: store.model.bills.map(b => b.name), examples } });
   if (error) {
     let info = {}; try { info = error.context && error.context.json ? await error.context.json() : {}; } catch {}
     const e = new Error(info.error || (/Failed to fetch|network/i.test(error.message) ? "Couldn't reach the receipt reader." : error.message)); e.code = info.code || "network"; throw e;
@@ -100,7 +100,10 @@ async function readWithAI(prepared, hint) {
   let main = Object.entries(sums).sort((a, b) => b[1] - a[1])[0];
   const fromShop = R.shop ? parseExpense(R.shop, { categories: cats, history: store.model.transactions }).categoryId : null;
   if (data.limit) { try { localStorage.setItem("koti.aiLimit", String(data.limit)); } catch {} }
-  return { text: "", ai: true, reply: data.reply || null, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, parsed: { amount: R.total, date: validDay(R.date), payee: R.shop, categoryId: main ? main[0] : fromShop, lines, currency: String(R.currency || "EUR").toUpperCase() } };
+  // A screenshot listing several payments: each one on its own, with its category.
+  const payments = data.doc_type === "payments" ? (data.payments || []).map(p => ({ payee: p.payee || null, amount: p.amount, date: validDay(p.date), kind: p.direction === "in" ? "income" : "expense", categoryId: p.direction === "in" ? null : catId(p.category), note: p.note || null })) : null;
+  return { text: "", ai: true, reply: data.reply || null, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, payments,
+    parsed: { amount: R.total, date: validDay(R.date), payee: R.shop, categoryId: main ? main[0] : fromShop, lines, currency: String(R.currency || "EUR").toUpperCase(), moneyIn: data.direction === "in" } };
 }
 
 /* hint: "receipt" or "bill" when you already chose where it goes. PDFs are read by AI only. */

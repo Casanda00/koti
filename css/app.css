@@ -930,3 +930,66 @@ body[data-mood] .swdots i.on{background:var(--ink)}
 .talk[data-locked="1"] .talk-mic{background:var(--spruce);color:var(--on-accent);box-shadow:0 0 0 14px color-mix(in srgb,var(--spruce) 16%,transparent);animation:none}
 @keyframes talkbreath{50%{box-shadow:0 0 0 18px color-mix(in srgb,var(--crit) 14%,transparent),0 0 0 38px color-mix(in srgb,var(--crit) 5%,transparent)}}
 @media (prefers-reduced-motion: reduce){.talk-sheet,.talk-dim{transition:none}.talk-mic{animation:none}}
+
+/* ---------- Koti's brain: the spark at the top, the conversation, Koti noticed (Today) ---------- */
+.tright{display:flex;align-items:center;gap:10px}
+.askk{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--spruce-soft);color:var(--spruce);flex:none}
+.askk .ic{width:21px;height:21px}
+body[data-mood] .askk{background:color-mix(in srgb,var(--on-mood) 18%,transparent);color:var(--on-mood)}
+.kchat{position:fixed;inset:0;z-index:48}
+.kchat-dim{position:absolute;inset:0;background:rgba(12,16,40,.45);opacity:0;transition:opacity .2s ease}
+.kchat-sheet{position:absolute;left:50%;bottom:0;width:min(100%,600px);height:min(92dvh,820px);box-sizing:border-box;background:var(--bg);color:var(--ink);border-radius:28px 28px 0 0;
+  display:flex;flex-direction:column;transform:translate(-50%,100%);transition:transform .22s cubic-bezier(.2,.8,.2,1);padding-bottom:var(--safe-bottom)}
+.kchat.on .kchat-dim{opacity:1}.kchat.on .kchat-sheet{transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){.kchat-sheet,.kchat-dim{transition:none}}
+.kchat-open{overflow:hidden}
+.kchat-h{display:flex;align-items:center;gap:10px;padding:16px 16px 10px 20px;font-size:17px;border-bottom:1px solid var(--soft-line)}
+.kchat-h .ai-mark{margin:0}
+.kchat-new{margin-left:auto;font-size:14px;font-weight:600;color:var(--spruce);padding:8px 10px;border-radius:99px}
+.kchat-x{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--soft-line);color:var(--ink)}
+.kchat-log{flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:14px;overscroll-behavior:contain}
+.kchat-hello{margin:auto 4px 8px}
+.kchat-hi{margin:0 0 6px;font:700 30px/1.1 var(--display);font-stretch:75%}
+.kchat-sub{margin:0;color:var(--ink-2);font-size:15px;max-width:40ch}
+.kmsg{display:grid;gap:8px}
+.kmsg.mine{justify-items:end}
+.kmsg.mine p{margin:0;max-width:82%;background:var(--spruce);color:var(--on-accent);border-radius:16px 16px 4px 16px;padding:9px 14px;font-size:16px;overflow-wrap:anywhere}
+.kmsg.err p{margin:0;background:var(--crit-soft);color:var(--ink);border-radius:12px;padding:9px 14px;font-size:14px}
+.kmsg .ai-says{margin:0}
+.kmsg .ai-says p{font-size:16px;white-space:pre-line}
+.kmem{margin:0 0 0 38px;font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.kcard{display:flex;align-items:center;gap:12px;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:10px 10px 10px 12px;margin-left:38px}
+.kbrief .kcard{margin-left:0}
+.kcard .rt{font-size:15px;font-weight:600}
+.kcard .rt small{font-weight:400}
+.kcard .pill{min-height:38px;font-size:14px;padding:0 14px}
+.kcard-done{font-size:13px;color:var(--good);font-weight:600;display:flex;gap:4px;align-items:center;white-space:nowrap}
+.kdots{display:flex;gap:5px;align-items:center;min-height:22px}
+.kdots i{width:7px;height:7px;border-radius:50%;background:var(--spruce);opacity:.35;animation:kdot 1s infinite ease-in-out}
+.kdots i:nth-child(2){animation-delay:.15s}.kdots i:nth-child(3){animation-delay:.3s}
+@keyframes kdot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.kdots i{animation:none;opacity:.7}}
+.kchat-ups{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding:4px 16px 8px}
+.kchat-ups::-webkit-scrollbar{display:none}
+.kchat-ups:empty{display:none}
+.kchat-in{display:flex;gap:8px;align-items:center;margin:4px 12px 12px;background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:6px 6px 6px 16px}
+.kchat-in:focus-within{border-color:var(--spruce);box-shadow:0 0 0 3px var(--spruce-soft)}
+.kchat-in input{flex:1;min-width:0;border:0;background:transparent;font:500 16px var(--body);color:var(--ink);padding:9px 0}
+.kchat-in input::placeholder{color:var(--muted)}
+.kchat-in .go:disabled{opacity:.5}
+.kbrief{background:var(--paper);border-radius:20px;padding:14px 16px;display:grid;gap:10px;border:1px solid var(--soft-line)}
+.kbrief-h{display:flex;align-items:center;gap:10px;font-size:15px}
+.kbrief-h .ai-mark{margin:0}
+.kbrief ul{margin:0;padding:0 0 0 20px;display:grid;gap:6px;font-size:16px;line-height:1.35}
+.kbrief-ups{display:flex;gap:7px;flex-wrap:wrap}
+.kbrief-ups .fchip{white-space:normal;text-align:left}
+.fchip.ask{display:inline-flex;gap:6px;align-items:center;color:var(--spruce);border-color:var(--spruce-soft);font-weight:600}
+.kchat-in input:focus-visible{outline:none}
+/* Payments read from a screenshot */
+.pay-row{align-items:flex-start}
+.pay-row .pay-on{width:22px;height:22px;margin-top:2px;accent-color:var(--spruce);flex:none}
+.pay-row .rt b{font-weight:600}
+.pay-row .pay-cat{margin-top:6px;justify-self:start;max-width:100%;border:1px solid var(--line);border-radius:10px;padding:5px 10px;background:var(--paper);text-align:left}
+.pay-row .num{white-space:nowrap}
+#rvDir{margin:2px 0}
+label#kcPicL{cursor:pointer}

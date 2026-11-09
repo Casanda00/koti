@@ -6,16 +6,18 @@
 //   remind   a reminder ("remind me to pay water on the 15th"); the app reads the details itself
 //   list     things to put on a list ("milk, eggs and two tomatoes")
 // Nothing is saved here: the app shows what was heard, and the person checks it first. The recording isn't kept.
-// Secrets: OPENAI_API_KEY. Optional: OPENAI_MODEL, OPENAI_TRANSCRIBE_MODEL, AI_DAILY_LIMIT (shared with receipts).
+// Anything else (a question about their money, "can I afford…", a request) is "ask": the app hands it to Koti's
+// brain (the "koti" function), which can look things up.
+// Secrets: OPENAI_API_KEY. Optional: OPENAI_MODEL, OPENAI_REASONING, OPENAI_TRANSCRIBE_MODEL, AI_DAILY_LIMIT (shared
+// with receipts). The model and how it's asked are in ../_shared/openai.js.
+// @ts-ignore: plain JavaScript module, shared with the tests
+import { chatBody, openaiError, transcribe, audioOf, OPENAI_BASE, MODEL } from "../_shared/openai.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const OPENAI_BASE = Deno.env.get("OPENAI_BASE_URL") || "https://api.openai.com/v1";
-const MODEL = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
-const STT = Deno.env.get("OPENAI_TRANSCRIBE_MODEL") || "gpt-4o-mini-transcribe";
 const LIMIT = Math.max(1, Number(Deno.env.get("AI_DAILY_LIMIT") || 30));
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -34,7 +36,8 @@ const SYSTEM = `You understand short things people say or type into a household 
   from_next_pay: true when they say it comes out of their salary or pay, whether or not they say upcoming or next: "from my salary", "from my upcoming salary", "from my next pay", "until payday", "I'll pay it back when I get paid", "palkasta", "seuraavasta palkasta", "ensi palkasta". It leaves on their next payday (given below), not today.
   from_savings: true when they say it comes out of their savings ("from my savings", "from the holiday fund", "säästöistä"). goal: the savings goal it comes out of, one of theirs (listed below), when they name it or there is only one; otherwise null.
   lines: when they name parts with their own prices ("86 at Prisma, the lamp was 35 of it"), one line per named part with its price, plus one line for the rest ("Other groceries") so the lines add up to the total. When there's only one thing, one line with the whole total. Each line: name in English, price, category (one of the user's categories, by what it is), and place (one of the user's places when it is something for setting up the home that stays there — furniture, lamps, curtains, rugs, bedding, kitchenware, tools, decor — otherwise null).
-- intent "question": they ask how much they spent or what went where. range: today, yesterday, week (this week), lastweek, month (this month) or lastmonth.
+- intent "question": they ask only how much they spent in one of these periods, nothing more. range: today, yesterday, week (this week), lastweek, month (this month) or lastmonth.
+- intent "ask": any other question or request to Koti: about a category, a shop or a thing ("how much on coffee in October?"), bills, savings, budgets, whether they can afford something, advice, or several things at once. reply: an empty string (Koti's brain answers it).
 - intent "remind": they ask to be reminded of something ("remind me…", "muistuta…").
 - intent "list": they name things to buy or to put on a list, without prices ("milk, eggs and two tomatoes"). items: each thing with qty when said.
 - intent "unclear": anything else.
@@ -49,7 +52,7 @@ function schema(categories: string[], places: string[], goals: string[]) {
     properties: {
       transcript: { type: "string" },
       reply: { type: "string" },
-      intent: { type: "string", enum: ["spend", "question", "remind", "list", "unclear"] },
+      intent: { type: "string", enum: ["spend", "question", "ask", "remind", "list", "unclear"] },
       spend: { anyOf: [{ type: "null" }, {
         type: "object", additionalProperties: false, required: ["total", "payee", "date", "note", "from_next_pay", "from_savings", "goal", "lines"],
         properties: {
@@ -99,6 +102,7 @@ Deno.serve(async (req) => {
   if (audio.length > 4_000_000) return json(400, { error: "That recording is too long. Keep it under a minute.", code: "input" });
   const lang = String(body.lang || "en").toLowerCase().startsWith("fi") ? "fi" : "en";
   const categories = uniq(strList(body.categories, 40, 60)), places = uniq(strList(body.places, 60, 120)), goals = uniq(strList(body.goals, 30, 80));
+  const payees = uniq(strList(body.payees, 30, 60)), memory = strList(body.memory, 20, 200);
   const today = typeof body.today === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.today) ? body.today : new Date().toISOString().slice(0, 10);
   const nextPay = typeof body.nextPay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.nextPay) && body.nextPay > today ? body.nextPay : null;
 
@@ -109,21 +113,14 @@ Deno.serve(async (req) => {
   const fail = async (res: Response, e: { error?: { message?: string } }) => {
     if (me.id) await giveBack(url, me.id);
     const msg = e.error?.message || res.statusText;
-    return json(502, { error: res.status === 401 ? "OpenAI didn't accept the key." : res.status === 429 ? "OpenAI is out of credit or busy. Try again in a minute." : `OpenAI couldn't do it: ${msg}`, code: "openai" });
+    return json(502, { error: openaiError(res.status, msg), code: "openai" });
   };
 
-  // 1. Speech to text
+  // 1. Speech to text, with the names this person uses so they're spelt their way
   if (!text && m) {
-    const type = m[1].toLowerCase(), ext = type.includes("mp4") || type.includes("m4a") || type.includes("aac") ? "m4a" : type.includes("ogg") ? "ogg" : type.includes("wav") ? "wav" : type.includes("mpeg") ? "mp3" : "webm";
-    const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
-    const form = new FormData();
-    form.append("file", new Blob([bytes], { type }), `said.${ext}`);
-    form.append("model", STT);
-    form.append("language", lang);
-    form.append("prompt", lang === "fi" ? "Ostos ja hinta euroina, esim. Lidl 23,40 tai Prisma 86 euroa." : "A purchase and its price in euros, like Lidl 23,40 or Prisma 86 euros.");
-    const res = await fetch(`${OPENAI_BASE}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${openaiKey}` }, body: form });
-    if (!res.ok) return await fail(res, await res.json().catch(() => ({})));
-    text = String((await res.json()).text || "").trim().slice(0, 500);
+    const a = audioOf(audio);
+    try { text = a ? (await transcribe({ key: openaiKey, bytes: a.bytes, type: a.type, lang, words: [...payees, ...categories, ...goals] })).slice(0, 500) : ""; }
+    catch (e) { if (me.id) await giveBack(url, me.id); return json(502, { error: (e as Error).message, code: "openai" }); }
     if (!text) return json(200, { transcript: "", reply: lang === "fi" ? "En kuullut mitään. Kokeile uudelleen tai kirjoita se." : "I didn't hear anything. Try again, or type it.", intent: "unclear", spend: null, range: null, items: [], used, limit: LIMIT });
   }
 
@@ -132,19 +129,21 @@ Deno.serve(async (req) => {
 The user's categories: ${categories.length ? categories.join(" | ") : "(none)"}
 Places in the user's home projects: ${places.length ? places.join(" | ") : "(none)"}
 Their savings goals: ${goals.length ? goals.join(" | ") : "(none)"}
+Shops they use most: ${payees.length ? payees.join(" | ") : "(not known yet)"}
+What Koti remembers about them: ${memory.length ? memory.join(" | ") : "(nothing yet)"}
 Their next payday: ${nextPay ? `${nextPay} (${new Date(nextPay + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })})` : "not known"}
 They said: ${JSON.stringify(text)}`;
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST", headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, temperature: 0, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }],
-      response_format: { type: "json_schema", json_schema: { name: "heard", strict: true, schema: schema(categories, places, goals) } } }),
+    body: JSON.stringify(chatBody({ model: MODEL, temperature: 0, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }],
+      response_format: { type: "json_schema", json_schema: { name: "heard", strict: true, schema: schema(categories, places, goals) } } }, { effort: "minimal" })),
   });
   if (!res.ok) return await fail(res, await res.json().catch(() => ({})));
   let r: Record<string, unknown>;
   try { r = JSON.parse((await res.json()).choices?.[0]?.message?.content || "{}"); } catch { if (me.id) await giveBack(url, me.id); return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
 
   const catSet = new Map(categories.map((c) => [c.toLowerCase(), c])), placeSet = new Map(places.map((c) => [c.toLowerCase(), c]));
-  const intent = ["spend", "question", "remind", "list"].includes(String(r.intent)) ? String(r.intent) : "unclear";
+  const intent = ["spend", "question", "ask", "remind", "list"].includes(String(r.intent)) ? String(r.intent) : "unclear";
   let spend = null;
   if (intent === "spend" && r.spend && typeof r.spend === "object") {
     const s = r.spend as Record<string, unknown>, str = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);

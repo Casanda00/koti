@@ -26,9 +26,17 @@ export async function record({ maxMs = 20000, onStop } = {}) {
   return { stop: () => { if (rec.state === "recording") rec.stop(); return finished; }, cancel: () => { parts.length = 0; if (rec.state === "recording") rec.stop(); } };
 }
 
+/* The shops this person uses most over the last 90 days, most used first: they help the AI hear and spell them. */
+export function frequentPayees(model = store.model, today = todayISO(), n = 30) {
+  const from = new Date(new Date(today + "T12:00:00").getTime() - 90 * 864e5).toISOString().slice(0, 10), count = new Map();
+  model.transactions.forEach(t => { if (t.payee && t.kind !== "income" && t.date >= from) { const k = t.payee.trim(); count.set(k, (count.get(k) || 0) + 1); } });
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, n).map(([k]) => k);
+}
+
 /* What was meant, from a recording or from text. */
 export async function understand({ audio = null, text = "" } = {}) {
-  const body = { lang: store.model.settings.voiceLang || "en-GB", today: todayISO(), categories: store.model.categories.map(c => c.name), goals: store.model.goals.map(g => g.name), nextPay: (nextPay(store.model, todayISO()) || {}).date || null, places: places().map(p => p.name) };
+  const body = { lang: store.model.settings.voiceLang || "en-GB", today: todayISO(), categories: store.model.categories.map(c => c.name), goals: store.model.goals.map(g => g.name), nextPay: (nextPay(store.model, todayISO()) || {}).date || null, places: places().map(p => p.name),
+    payees: frequentPayees(), memory: (Array.isArray(store.model.settings.memory) ? store.model.settings.memory : []).map(m => m && m.text).filter(Boolean).slice(-20) };
   if (audio) { if (audio.size < 1200) throw Object.assign(new Error("Didn't hear anything. Hold the button a moment longer."), { code: "short" }); body.audio = await blobToDataURL(audio); }
   else body.text = text;
   const { data, error } = await sync.client.functions.invoke("hear", { body });
