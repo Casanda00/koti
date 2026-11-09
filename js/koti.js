@@ -9,6 +9,7 @@ import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
 import { ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
+import { learned, forgetLearned } from "./learn.js";
 import { aiVoice } from "./hear.js";
 import { aiOffReason } from "./receipts.js";
 import { speechSupported } from "./voice.js";
@@ -233,10 +234,22 @@ export function openMemory() {
       const m = memory();
       B.innerHTML = `<p class="note" style="margin-top:0">Koti uses these to make answers yours.</p>
         <div class="grp">${m.length ? m.map(x => `<div class="row"><span class="rt">${esc(x.text)}${x.at ? `<small>${esc(x.at)}</small>` : ""}</span><button type="button" class="pill ghost" data-forget="${esc(x.id)}" aria-label="Forget ${esc(x.text)}">Forget</button></div>`).join("") : `<div class="row"><span class="rt">Nothing yet<small>Try “I'm saving for a sofa”.</small></span></div>`}</div>
+        ${learnedHTML()}
         <form class="field" id="memAdd" style="margin-top:14px"><label for="memIn">Tell Koti something about you</label><input class="inp" id="memIn" maxlength="200" placeholder="e.g. My partner pays the rent" autocomplete="off"></form>`;
       $("#memAdd", B).onsubmit = e => { e.preventDefault(); const t = $("#memIn", B).value.trim(); if (t && remember(t)) { toast("Koti will remember that"); paintM(); } };
     };
+    B.addEventListener("click", e => { const l = e.target.closest("[data-unlearn]"); if (l) { forgetLearned(l.dataset.unlearn); paintM(); toast("Koti forgot that fix"); return; } });
     B.addEventListener("click", e => { const f = e.target.closest("[data-forget]"); if (!f) return; const gone = forget(f.dataset.forget); paintM(); if (gone) toast("Forgotten", { label: "Undo", run: () => { remember(gone.text); paintM(); } }); });
     paintM();
   } });
+}
+
+/* Fixes Koti learned from your corrections: shop names and categories it now uses. Dates and totals it misread are
+   kept as notes for improving the reader, counted here, not listed. */
+function learnedHTML() {
+  const all = learned(), used = all.filter(x => x.kind === "shop" || x.kind === "category").reverse(), noted = all.length - used.length;
+  if (!all.length) return "";
+  return `<h3 class="pv-h">Learned from your fixes</h3>
+    <div class="grp">${used.map(x => `<div class="row"><span class="rt">${esc(x.kind === "shop" ? `“${x.from}” is ${x.to}` : `${x.from} goes to ${x.to}`)}<small>${esc(x.at || "")}</small></span><button type="button" class="pill ghost" data-unlearn="${esc(x.id)}" aria-label="Forget this fix">Forget</button></div>`).join("")}</div>
+    ${noted ? `<p class="note">Also ${noted} misread date${noted === 1 ? "" : "s"} or total${noted === 1 ? "" : "s"}, noted to improve reading.</p>` : ""}`;
 }

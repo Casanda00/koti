@@ -13,6 +13,7 @@ import { aiPossible } from "./receipts.js";
 import { initTalk } from "./talk.js";
 import { goalFor, savedOf, spendFromGoal } from "./plan.js";
 import { looksLikeQuestion } from "./brain.js";
+import { applyLearned, learnFromSave } from "./learn.js";
 const toKoti = message => import("./koti.js").then(m => m.openKoti({ message }));
 
 let getView = () => "now", form, input, stop = null;
@@ -92,7 +93,7 @@ async function ask({ audio = null, text = "", fallback = null }) {
     input.value = ""; toast(d.reply || `Added ${d.items.length === 1 ? d.items[0].name : d.items.length + " things"} to ${l.name}`); return;
   }
   if (d.intent === "spend" && d.spend && d.spend.total) {
-    const P = toParsed(d.spend); input.value = "";
+    const P = applyLearned(toParsed(d.spend)); input.value = "";
     if (P.lines.length > 1 || P.lines.some(l => l.placeId)) { import("./scan.js").then(m => m.openParsed({ ...P, reply: d.reply })); return; }
     showHeard({ amount: P.amount, payee: P.payee, date: P.date, note: P.note, categoryId: P.categoryId, fromNextPay: P.fromNextPay, fromSavings: P.fromSavings, goal: P.goal }, d.reply); return;
   }
@@ -148,8 +149,8 @@ export function localReply(h, categories = store.model.categories) {
   return `${eur(h.amount)}${h.payee ? ` at ${h.payee}` : ""}${what}, ${day}${from}.${why}${h.categoryId ? "" : " What was it for?"}`;
 }
 /* The same check-before-saving sheet, for a purchase Koti proposed in a conversation. */
-export const confirmSpend = (h, reply = null) => showHeard(h, reply);
-function showHeard(h, reply = null) {
+export const confirmSpend = (h, reply = null) => showHeard(h, reply, { ai: true });
+function showHeard(h, reply = null, { ai = !!reply } = {}) {
   // Said where the money came from: pay (the first payday after the day it was bought), or a savings goal.
   if (h.fromNextPay && !h.fromPay) { const pay = payAfter(h.date); if (pay) h = { ...h, fromPay: pay.date }; }
   if (h.fromSavings && !h.fromPay && !h.goalId) { const g = goalFor(h.goal); if (g) h = { ...h, goalId: g.id, goalName: g.name }; }
@@ -187,6 +188,7 @@ function showHeard(h, reply = null) {
     $("#hdMore", B).onclick = () => { closeSheet(); setTimeout(() => openExpense({ draft: { amount: h.amount, categoryId: catId, payee: h.payee || "", date: h.date, note: h.note || "", fromPay, goalId, kind: "expense", source: stop === null ? "manual" : "voice" } }), 260); input.value = ""; goIcon(); };
   }, onRight: () => {
     const tx = store.put("transactions", { id: newId("tx"), date: h.date, amount: h.amount, kind: "expense", categoryId: catId || null, payee: h.payee || null, note: h.note || null, fromPay, source: "manual" });
+    if (ai) learnFromSave({ read: { payee: h.payee, categoryId: h.categoryId }, saved: { payee: h.payee, categoryId: catId } });   // Koti suggested it: learn a changed category
     const g = !fromPay && goal(), out = g ? spendFromGoal(g, tx) : null;
     closeSheet(); input.value = ""; goIcon();
     toast(`Saved ${eur(tx.amount)}${tx.payee ? ` at ${tx.payee}` : ""}${tx.fromPay ? `, from your pay on ${payWords({ date: tx.fromPay })}` : g ? `, from ${g.name}` : ""}`,

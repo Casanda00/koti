@@ -4,6 +4,7 @@ import { store, topLists, roomsOf, itemsOf, validDay, todayISO } from "./data.js
 import { sync, onSync } from "./sync.js";
 import { aiAllowed } from "./privacy.js";
 import { printedDate } from "./printeddate.js";
+import { applyLearned, shopFor, categoryFor } from "./learn.js";
 import { KNOWN_PLACES, parseExpense } from "./voice.js";
 
 const BUCKET = "receipts", TESS = "js/vendor/tesseract-7.0.0/";
@@ -106,9 +107,11 @@ async function readWithAI(prepared, hint) {
   const fromShop = R.shop ? parseExpense(R.shop, { categories: cats, history: store.model.transactions }).categoryId : null;
   if (data.limit) { try { localStorage.setItem("koti.aiLimit", String(data.limit)); } catch {} }
   // A screenshot listing several payments: each one on its own, with its category.
-  const payments = data.doc_type === "payments" ? (data.payments || []).map(p => ({ payee: p.payee || null, amount: p.amount, date: validDay(p.date), kind: p.direction === "in" ? "income" : "expense", categoryId: p.direction === "in" ? null : catId(p.category), note: p.note || null })) : null;
+  // What you corrected before wins over the AI: your name for a shop, and the category you put it in (js/learn.js).
+  const payments = data.doc_type === "payments" ? (data.payments || []).map(p => { const payee = shopFor(p.payee) || p.payee || null, cat = p.direction === "in" ? null : categoryFor(payee) || catId(p.category);
+    return { payee, amount: p.amount, date: validDay(p.date), kind: p.direction === "in" ? "income" : "expense", categoryId: cat, readCategoryId: cat, note: p.note || null }; }) : null;
   return { text: "", ai: true, reply: data.reply || null, used: data.used, limit: data.limit, docType: data.doc_type || "receipt", bill: data.bill || null, payments,
-    parsed: { amount: R.total, date: validDay(R.date), payee: R.shop, categoryId: main ? main[0] : fromShop, lines, currency: String(R.currency || "EUR").toUpperCase(), moneyIn: data.direction === "in" } };
+    parsed: applyLearned({ amount: R.total, date: validDay(R.date), payee: R.shop, categoryId: main ? main[0] : fromShop, lines, currency: String(R.currency || "EUR").toUpperCase(), moneyIn: data.direction === "in" }) };
 }
 
 /* hint: "receipt" or "bill" when you already chose where it goes. PDFs are read by AI only. */
