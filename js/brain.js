@@ -98,13 +98,14 @@ async function invoke(body) {
 }
 
 /* One turn: what you said (text or a recording) and the conversation before it. */
-export async function ask({ message = "", audio = null, history = [] }) {
-  const body = { mode: "chat", history: historyOf(history) };
+export async function ask({ message = "", audio = null, history = [], spoken = false }) {
+  // spoken: the phone heard these words. With a recording it's spoken too. Only then does the answer come with a voice.
+  const body = { mode: "chat", history: historyOf(history), ...(spoken && !audio ? { spoken: true } : {}) };
   if (audio) { if (audio.size < 1200) throw Object.assign(new Error("Didn't hear anything. Hold the button a moment longer."), { code: "short" }); body.audio = await blobToDataURL(audio); }
   else body.message = String(message).trim();
   const d = await invoke(body);
   autoApply(d.actions || []);
-  return { heard: d.heard || null, reply: d.reply || "", followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
+  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
 }
 
 /* Remembering and forgetting happen as soon as Koti says so: the chat shows it, with Undo. */

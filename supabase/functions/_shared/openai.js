@@ -60,3 +60,25 @@ export function audioOf(dataUrl) {
   if (!m) return null;
   return { type: m[1].toLowerCase(), bytes: Uint8Array.from(atob(m[2]), c => c.charCodeAt(0)) };
 }
+
+/* ---------- Koti's voice ---------- */
+// Koti speaks only when it was spoken to (the owner's rule, 9 November 2026): a recording, or words the phone heard.
+// Never when typed, and never when the person switched it off (settings.kotiSpeaks === false).
+export const TTS_MODEL = env("OPENAI_TTS_MODEL") || "gpt-4o-mini-tts";
+export const TTS_VOICE = env("OPENAI_TTS_VOICE") || "coral";
+export const shouldSpeak = ({ audio = false, spoken = false, settings = {} } = {}) => !!(audio || spoken) && settings.kotiSpeaks !== false;
+
+/* A reply as speech: base64 MP3, or null if it can't be made (the phone's own voice reads it then). */
+export async function speech({ fetch: f = fetch, key, text, lang = "en" }) {
+  const t = String(text || "").trim().slice(0, 800);
+  if (!t) return null;
+  const res = await f(`${OPENAI_BASE}/audio/speech`, {
+    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: TTS_MODEL, voice: TTS_VOICE, input: t, response_format: "mp3",
+      instructions: `Warm, calm and natural, like a helpful friend. ${lang === "fi" ? "Speak Finnish with natural Finnish pronunciation." : "Speak English."} Read amounts as people say them.` }),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}

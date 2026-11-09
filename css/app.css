@@ -1034,3 +1034,14 @@ label#kcPicL{cursor:pointer}
 .when-q{margin:0;font-weight:700;font-size:17px}
 .when .chips{margin:0;padding:0;flex-wrap:wrap}
 .pay-day{margin-top:4px}
+/* Talking with Koti, hands free */
+.kconv{display:grid;justify-items:center;gap:10px;padding:14px 16px calc(14px + var(--safe-bottom))}
+.kconv-orb{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;background:var(--spruce);color:var(--on-accent);box-shadow:0 0 0 12px color-mix(in srgb,var(--spruce) 16%,transparent);transition:transform .2s}
+.kconv-orb .ic{width:34px;height:34px}
+.kconv[data-state=listening] .kconv-orb{animation:kbreath 1.6s ease-in-out infinite}
+@keyframes kbreath{50%{box-shadow:0 0 0 20px color-mix(in srgb,var(--spruce) 12%,transparent)}}
+.kconv[data-state=thinking] .kconv-orb{background:var(--muted);box-shadow:none}
+.kconv[data-state=speaking] .kconv-orb{background:var(--good);box-shadow:0 0 0 12px color-mix(in srgb,var(--good) 18%,transparent)}
+.kconv-s{margin:0;font-size:16px;font-weight:600;color:var(--ink-2)}
+@media (prefers-reduced-motion:reduce){.kconv-orb{animation:none!important}}
+.kconv .pill{justify-self:center}

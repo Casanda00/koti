@@ -12,6 +12,8 @@ import { initTalk } from "./talk.js";
 import { aiVoice } from "./hear.js";
 import { aiOffReason } from "./receipts.js";
 import { speechSupported } from "./voice.js";
+import { playReply, stopVoice, unlockAudio, speaks } from "./voiceout.js";
+import { createConversation } from "./converse.js";
 
 let ui = null, msgs = [], busy = false, past = false;
 const STARTERS = ["How am I doing this month?", "Can I afford a €60 dinner out?", "What bills are coming before payday?", "Where did my money go last week?"];
@@ -31,16 +33,23 @@ function sheet() {
         <button type="button" class="kchat-x" data-kclose aria-label="Close">${icon("x")}</button></header>
       <div class="kchat-log" id="kcLog" aria-live="polite"></div>
       <div class="kchat-ups" id="kcUps"></div>
+      <div class="kconv" id="kcConv" hidden>
+        <button type="button" class="kconv-orb" id="kcOrb" aria-label="Koti is listening">${icon("mic")}</button>
+        <p class="kconv-s" id="kcConvS" aria-live="polite">Listening</p>
+        <button type="button" class="pill ghost" id="kcEnd">End</button>
+      </div>
       <form class="kchat-in" id="kcForm" autocomplete="off">
         <label class="sr" for="kcIn">Ask Koti</label>
         <input id="kcIn" type="text" enterkeyhint="send" placeholder="Ask Koti anything" maxlength="1000">
         <label class="dk" for="kcPic" id="kcPicL" aria-label="Give Koti a screenshot or a photo" title="Screenshot or photo">${icon("cam")}</label><input type="file" id="kcPic" accept="image/*,application/pdf" class="sr">
         <button type="button" class="dk" id="kcMic" aria-label="Hold to talk" hidden>${icon("mic")}</button>
+        <button type="button" class="dk kc-talk" id="kcTalk" aria-label="Talk with Koti, hands free" hidden>${icon("wave")}</button>
         <button type="submit" class="dk go send" id="kcGo" aria-label="Send">${icon("send")}</button>
       </form>
     </section>`;
   document.body.appendChild(el);
-  ui = { el, log: $("#kcLog", el), ups: $("#kcUps", el), form: $("#kcForm", el), input: $("#kcIn", el), mic: $("#kcMic", el), go: $("#kcGo", el) };
+  ui = { el, log: $("#kcLog", el), ups: $("#kcUps", el), form: $("#kcForm", el), input: $("#kcIn", el), mic: $("#kcMic", el), go: $("#kcGo", el), talk: $("#kcTalk", el),
+    conv: $("#kcConv", el), orb: $("#kcOrb", el), convS: $("#kcConvS", el) };
   el.addEventListener("click", e => {
     if (e.target.closest("[data-kclose]")) { closeKoti(); return; }
     if (e.target.closest("#kcNew")) { if (msgs.length) persist(); newConversation(); msgs = []; past = false; paint(); ui.input.focus(); return; }
@@ -58,6 +67,14 @@ function sheet() {
   if (aiVoice() || speechSupported()) {
     ui.mic.hidden = false;
     initTalk(ui.mic, { send: async ({ audio, text }) => { if (audio) await send({ audio }); else if (text) await send({ message: text, spoken: true }); } });
+    // The tap that starts talking also lets Koti's spoken answer play later (phones block sound a page starts itself).
+    ["touchstart", "pointerdown", "keydown"].forEach(ev => ui.mic.addEventListener(ev, unlockAudio, { passive: true }));
+  }
+  if (aiVoice()) {
+    ui.talk.hidden = false;
+    ui.talk.onclick = () => { unlockAudio(); startConversation(); };
+    $("#kcEnd", el).onclick = () => conv && conv.end("stopped");
+    ui.orb.onclick = () => conv && conv.interrupt();
   }
   return ui;
 }
@@ -120,26 +137,51 @@ async function runCard(btn) {
   persist(); paint();
 }
 
-/* Reads a reply out loud (for something said out loud), in the app's language. */
-function speak(text) {
-  if (store.model.settings.kotiSpeaks === false || !window.speechSynthesis || !text) return;
-  try { const u = new SpeechSynthesisUtterance(text); u.lang = store.model.settings.voiceLang || "en-GB"; u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}
+/* ---------- Talking with Koti, hands free ---------- */
+let conv = null;
+const CONV_WORDS = { starting: "Starting…", listening: "Listening", thinking: "Thinking…", speaking: "Koti is speaking · tap to talk" };
+function startConversation() {
+  if (conv || busy) return;
+  if (!canAsk()) { toast(aiOffReason("Koti")); return; }
+  ui.conv.hidden = false; ui.form.hidden = true; ui.ups.hidden = true;
+  conv = createConversation({
+    onTurn: async blob => { const r = await send({ audio: blob, quiet: true }); return r ? { speech: r.speech, text: r.reply } : null; },
+    play: reply => playReply(reply), stop: stopVoice,
+    onState: (s, why) => {
+      ui.conv.dataset.state = s;
+      if (s === "ended") {
+        conv = null; ui.conv.hidden = true; ui.form.hidden = false; ui.ups.hidden = false;
+        if (why === "mic") toast("Koti can't use the microphone. Allow it in your browser's settings.");
+        else if (why === "quiet") toast("Conversation ended");
+        return;
+      }
+      ui.convS.textContent = CONV_WORDS[s] || "";
+      ui.orb.setAttribute("aria-label", s === "speaking" ? "Stop Koti and talk" : CONV_WORDS[s] || "Koti");
+      ui.orb.innerHTML = icon(s === "speaking" ? "wave" : "mic");
+    },
+  });
+  conv.start();
 }
 
-async function send({ message = "", audio = null, spoken = false }) {
-  if (busy) return;
+/* One turn. Koti speaks only when spoken to: a recording or words the phone heard, never typing.
+   quiet: the hands-free conversation plays the answer itself. Returns the answer. */
+async function send({ message = "", audio = null, spoken = false, quiet = false }) {
+  if (busy) return null;
   if (!canAsk()) { toast(aiOffReason("Koti")); return; }
   const history = msgs.filter(m => m.role !== "error");
   if (message) msgs.push({ role: "user", content: message });
   ui.input.value = ""; busy = true; paint();
   try {
-    const r = await ask({ message, audio, history });
+    const r = await ask({ message, audio, history, spoken: spoken && !audio && speaks() });
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
     msgs.push({ role: "assistant", content: r.reply, actions: r.actions, followUps: r.followUps, remembered: r.remembered });
-    if (audio || spoken) speak(r.reply);
+    if ((audio || spoken) && !quiet) playReply({ speech: r.speech, text: r.reply });
+    return r;
   } catch (e) {
     msgs.push({ role: "error", content: String(e.message || e) });
     if (message && e.code !== "limit") ui.input.value = message;
+    if (quiet) throw e;
+    return null;
   } finally { busy = false; persist(); paint(); }
 }
 
@@ -154,7 +196,8 @@ export function openKoti({ message = "" } = {}) {
 }
 export function closeKoti() {
   if (!ui) return;
-  try { window.speechSynthesis && speechSynthesis.cancel(); } catch {}
+  if (conv) conv.end("stopped");
+  stopVoice();
   ui.el.classList.remove("on"); ui.el.hidden = true;
   document.body.classList.remove("kchat-open");
 }
