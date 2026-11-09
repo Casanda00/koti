@@ -45,7 +45,7 @@ export function showConsentBanner() {
   el.id = "consent"; el.className = "consent"; el.setAttribute("role", "dialog"); el.setAttribute("aria-labelledby", "csT"); el.setAttribute("aria-describedby", "csP");
   el.innerHTML = `<div class="consent-in">
       <h2 id="csT">Your privacy</h2>
-      <p id="csP">Koti keeps only what it needs to work, on this device and in your account. No cookies, ads or tracking. Koti's AI sends what you scan, say or ask to OpenAI to read it. Allow that?</p>
+      <p id="csP">No cookies or tracking. Koti's AI sends what you share to OpenAI.</p>
       <div class="consent-btns"><button type="button" class="btn" data-cs="no">Only necessary</button><button type="button" class="btn" data-cs="yes">Allow AI</button></div>
       <button type="button" class="tlink" data-cs="more">What Koti keeps and sends</button>
     </div>`;
@@ -65,11 +65,11 @@ export function openPrivacy() {
   openSheet({ title: "Privacy", left: "Done", body: B => {
     const paint = () => {
       const c = read();
-      B.innerHTML = `<div class="grp"><label class="row"><span class="rt">Koti's AI<small>Reads receipts and screenshots, the microphone, talking to Koti and today's note. Sends what you scan, say or ask to OpenAI.</small></span><input type="checkbox" class="switch" id="pvAi" ${c && c.ai ? "checked" : ""}></label></div>
-        <p class="note" style="margin:0">${c ? `Chosen ${esc(new Date(c.at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }))} on this device.` : "Not chosen yet: the AI is off until you allow it."} Off, Koti still works: the phone reads totals from receipts and hears you itself.</p>
+      B.innerHTML = `<div class="grp"><label class="row"><span class="rt">Koti's AI<small>Sends what you scan, say or ask to OpenAI.</small></span><input type="checkbox" class="switch" id="pvAi" ${c && c.ai ? "checked" : ""}></label></div>
+        <p class="note" style="margin:0">${c ? `Chosen ${esc(new Date(c.at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }))}.` : "Off until you allow it."} Koti still works without it.</p>
         <h3 class="pv-h">Kept on this device</h3>
         <div class="grp">${STORED.map(([t, d]) => `<div class="row"><span class="rt">${esc(t)}<small>${esc(d)}</small></span></div>`).join("")}</div>
-        <p class="note" style="margin:0">All of it is needed for Koti to work, so it isn't asked for. Koti sets no cookies and has no ads, analytics or tracking. The font is Koti's own, so nothing goes to Google.</p>
+        <p class="note" style="margin:0">All needed for Koti to work. No cookies, ads or tracking.</p>
         <h3 class="pv-h">Sent to</h3>
         <div class="grp">${SENT.map(([t, d]) => `<div class="row"><span class="rt">${esc(t)}<small>${esc(d)}</small></span></div>`).join("")}</div>
         <button type="button" class="btn" id="pvChats">Delete my conversations with Koti</button>`;

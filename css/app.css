@@ -1029,3 +1029,8 @@ label#kcPicL{cursor:pointer}
 .pv-h{font-size:15px;margin:6px 0 -4px;color:var(--ink-2)}
 .consent .btn{background:var(--soft-line);color:var(--ink)}
 .consent h2:focus{outline:none}
+/* "When was this?" when a receipt's day couldn't be read */
+.when{display:grid;gap:8px;background:var(--amber-soft);border-radius:16px;padding:12px 14px}
+.when-q{margin:0;font-weight:700;font-size:17px}
+.when .chips{margin:0;padding:0;flex-wrap:wrap}
+.pay-day{margin-top:4px}

@@ -22,7 +22,7 @@ export function mountSetup(el) {
       <div>
         <div class="mplan" id="miniPlan" role="group" aria-label="Rooms"></div>
         <section class="card plan-full" aria-labelledby="planTitle">
-          <div class="card-head"><div><h2 id="planTitle">Rooms</h2><div class="hint">Fill level shows how much of each room's list is bought. Click a room to show its lists.</div></div></div>
+          <div class="card-head"><div><h2 id="planTitle">Rooms</h2><div class="hint">How much of each room is bought. Tap a room to open it.</div></div></div>
           <div class="chart" id="planWrap"><svg id="plan" viewBox="50 5 640 945" role="group" aria-label="Floor plan with progress per room"></svg><div class="tip" id="planTip"></div></div>
         </section>
       </div>
@@ -43,7 +43,7 @@ export function mountSetup(el) {
       <label class="search">${icon("search", "ic sm")}<span class="sr">Search items</span><input id="suSearch" type="search" placeholder="Search items…" autocomplete="off" enterkeyhint="search"></label>
     </div>
     <div class="lists" id="suLists"></div>
-    <p class="legend"><span class="pdot Essential"></span>Essential <span class="pdot Soon"></span>Soon <span class="pdot Later"></span>Later</p><p class="note">Tap an item to edit it. On a phone, swipe left for price or delete.</p>
+    <p class="legend"><span class="pdot Essential"></span>Essential <span class="pdot Soon"></span>Soon <span class="pdot Later"></span>Later</p><p class="note">Tap to edit. Swipe left for price or delete.</p>
 
     <div class="phone-insights">
       <div class="gh"><h2>Spending</h2></div>
@@ -234,7 +234,7 @@ export function openAdd() {
         <div class="field"><label for="adList">List</label><select class="inp" id="adList">${listOptions(def, pid)}</select></div>
         <div class="field"><span class="flabel">Priority</span>${prioSeg("Soon")}</div>
         <p class="msg" id="adMsg" aria-live="polite"></p>
-        <p class="note">Bought it already? Tick it in the list and add the price: it counts in Money as Home setup.</p>`;
+        <p class="note">Bought it? Tick it and add the price.</p>`;
       bindPrio(B);
       $("[data-switch=expense]", B).onclick = () => { closeSheet(); setTimeout(() => import("./money.js").then(m => m.openExpense()), 260); };
       $("#adName", B).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#sheet .sh-head .r").click(); } });

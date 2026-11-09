@@ -73,7 +73,7 @@ function paintPast(u) {
     ${list.length ? list.map(c => `<div class="kpast-row"><button type="button" class="kpast-o" data-open-chat="${esc(c.id)}"><span>${esc(c.title)}</span><small>${esc(new Date(c.at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }))}</small></button>
       <button type="button" class="kpast-x" data-del-chat="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">${icon("trash", "ic sm")}</button></div>`).join("")
       : `<p class="kchat-sub">No earlier chats on this device yet.</p>`}
-    <p class="note">Kept on this device for 30 days, then deleted. What Koti remembers about you is in You → What Koti remembers.</p></div>`;
+    <p class="note">Kept on this phone for 30 days.</p></div>`;
 }
 function paint() {
   const u = ui; if (!u) return;
@@ -82,7 +82,7 @@ function paint() {
   const name = String(store.model.settings.name || "").split(" ")[0];
   if (!msgs.length) {
     u.log.innerHTML = `<div class="kchat-hello"><p class="kchat-hi">${esc(fi() ? `Hei${name ? " " + name : ""}! Mitä haluat tietää?` : `Hi${name ? " " + name : ""}. What would you like to know?`)}</p>
-      <p class="kchat-sub">${esc(fi() ? "Kysy rahoistasi, laskuista tai säästöistä. Voit myös pyytää lisäämään ostoksen, muistutuksen tai listan, tai antaa kuvakaappauksen maksusta." : "Ask about your money, bills or savings, or tell me what to add: a purchase, a reminder, things for a list. Give me a screenshot of a payment and I'll read it.")}</p></div>`;
+      <p class="kchat-sub">${esc(fi() ? "Kysy rahoistasi tai kerro, mitä lisätään." : "Ask about your money, or tell me what to add.")}</p></div>`;
     u.ups.innerHTML = (fi() ? STARTERS_FI : STARTERS).map(s => `<button type="button" class="fchip" data-up="${esc(s)}">${esc(s)}</button>`).join("");
     return;
   }
@@ -188,8 +188,8 @@ export function openMemory() {
   openSheet({ title: "What Koti remembers", left: "Done", body: B => {
     const paintM = () => {
       const m = memory();
-      B.innerHTML = `<p class="note" style="margin-top:0">Koti uses these to make its answers yours. It adds to them when you tell it about yourself, and you can tell it to forget, or remove one here.</p>
-        <div class="grp">${m.length ? m.map(x => `<div class="row"><span class="rt">${esc(x.text)}${x.at ? `<small>${esc(x.at)}</small>` : ""}</span><button type="button" class="pill ghost" data-forget="${esc(x.id)}" aria-label="Forget ${esc(x.text)}">Forget</button></div>`).join("") : `<div class="row"><span class="rt">Nothing yet<small>Try telling Koti “I get paid on the last working day” or “I'm saving for a sofa”.</small></span></div>`}</div>
+      B.innerHTML = `<p class="note" style="margin-top:0">Koti uses these to make answers yours.</p>
+        <div class="grp">${m.length ? m.map(x => `<div class="row"><span class="rt">${esc(x.text)}${x.at ? `<small>${esc(x.at)}</small>` : ""}</span><button type="button" class="pill ghost" data-forget="${esc(x.id)}" aria-label="Forget ${esc(x.text)}">Forget</button></div>`).join("") : `<div class="row"><span class="rt">Nothing yet<small>Try “I'm saving for a sofa”.</small></span></div>`}</div>
         <form class="field" id="memAdd" style="margin-top:14px"><label for="memIn">Tell Koti something about you</label><input class="inp" id="memIn" maxlength="200" placeholder="e.g. My partner pays the rent" autocomplete="off"></form>`;
       $("#memAdd", B).onsubmit = e => { e.preventDefault(); const t = $("#memIn", B).value.trim(); if (t && remember(t)) { toast("Koti will remember that"); paintM(); } };
     };

@@ -7,7 +7,9 @@
 // @ts-ignore: plain JavaScript module, shared with the tests
 import { chatBody, openaiError, OPENAI_BASE, MODEL } from "../_shared/openai.js";
 // @ts-ignore: plain JavaScript module, shared with the tests (screenshots of payments)
-import { PAYMENT_RULES, paymentSchema, cleanPayments, realDay as dayUpTo } from "./payments.js";
+import { PAYMENT_RULES, paymentSchema, cleanPayments } from "./payments.js";
+// @ts-ignore: plain JavaScript module, a copy of js/printeddate.js (the tests check they're the same)
+import { bestDate } from "./printeddate.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -45,16 +47,16 @@ Receipt fields:
 - list_item: if the line is something on the user's shopping list, that list item's exact text; otherwise null.
 - place: the user may have projects for setting up a home, listed as places ("Project" or "Project › Room"). If the product is something for that home that stays there (furniture, lamps, curtains, rugs, bedding, towels, kitchenware, small appliances, storage, tools, decor, plants), the best place for it: the room it belongs in if there is one, otherwise the project. Food, drink, toiletries and cleaning products that get used up are never a place: use null. When unsure, null. Fill category as well either way.
 - If the user filed the same or a similar product to a place before (listed below), use that place.
-- date as YYYY-MM-DD (two-digit years are 20xx). total: the amount paid (for a bill: the amount to pay). shop: for a bill, the company.
+- date as YYYY-MM-DD (two-digit years are 20xx): the day it was bought or paid, never the day it is scanned. A date printed without a year ("8.11.", "SU 8.11.") or only as a weekday is the most recent such day that isn't after today (given below). null when there's no date at all. date_text: the date exactly as printed (e.g. "SU 08.11.26 14:02"), or null. total: the amount paid (for a bill: the amount to pay). shop: for a bill, the company.
 - is_receipt: true for a receipt, a bill or a payment, false for anything else.
-- reply: Koti telling the person what it found, in English: one or two short, warm sentences in plain words, never a label. For a receipt: the shop, the day, the total, and where most of it went (for example "A K-Market receipt from Tuesday: €23.40, mostly groceries, and the lamp goes to your Living room."). For a bill: who it's from, the amount and when it's due. If something needs checking (a date or total you couldn't read, another currency, a blurry line), say so in a short sentence.
+- reply: Koti telling the person what it found, in English: one short, warm sentence of at most 20 words, never a label. For a receipt: the shop, the day, the total, and where most of it went (for example "A K-Market receipt from Tuesday: €23.40, mostly groceries, and the lamp goes to your Living room."). For a bill: who it's from, the amount and when it's due. If something needs checking (a date or total you couldn't read, another currency), say only that, briefly.
 ${PAYMENT_RULES}`;
 
 function buildSchema(categories: string[], listItems: string[], bills: string[], places: string[]) {
 const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
 const schema = {
   type: "object", additionalProperties: false,
-  required: ["is_receipt", "doc_type", "reply", "shop", "date", "total", "currency", "items", "bill", "direction", "payments"],
+  required: ["is_receipt", "doc_type", "reply", "shop", "date", "date_text", "total", "currency", "items", "bill", "direction", "payments"],
   properties: {
     is_receipt: { type: "boolean" },
     reply: { type: "string" },
@@ -71,6 +73,7 @@ const schema = {
     }] },
     shop: { type: ["string", "null"], description: "Shop name and branch as printed, e.g. K-Market Kamppi" },
     date: { type: ["string", "null"], description: "YYYY-MM-DD" },
+    date_text: { type: ["string", "null"], description: "The date exactly as printed" },
     total: { type: ["number", "null"] },
     currency: { type: ["string", "null"] },
     items: {
@@ -208,7 +211,9 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   // Rail: English names must be English (the Finnish name is kept separately in name_fi). Anything that still looks Finnish or Swedish gets one more, translation-only pass.
   const left = items.map((it, k) => [k, it.name] as [number, string]).filter(([, n]) => NON_ENGLISH.test(n));
   if (left.length) { const t = await translateLeftovers(openaiKey, left.map(([, n]) => n)); if (t) left.forEach(([k], j) => { if (t[j] && t[j].trim()) items[k].name = t[j].trim().slice(0, 120); }); }
-  const date = dayUpTo(r.date, today);
+  // The day it happened: what the AI read, checked against the date as printed (a missing year, a misread year or
+  // nothing at all is worked out here from the printed text). Never the day it was scanned by default.
+  const date = bestDate(r.date, r.date_text, today);
   const total = money(r.total) ?? Math.round(items.reduce((a, i) => a + i.price, 0) * 100) / 100;
   const docType = r.doc_type === "bill" ? "bill" : r.doc_type === "payment" ? "payment" : "receipt";
   let bill = null;
