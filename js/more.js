@@ -1,6 +1,7 @@
 // Settings: profile, money, scanning, reminders, appearance, data and app. Home setup things live in the project's menu.
 import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO, roomsOf, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
+import { aiAllowed, openPrivacy } from "./privacy.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount, failedChanges, retryFailed, dropFailed } from "./sync.js";
 import { openCategories, openReceiptsList, openStartBalance } from "./money.js";
 import { startPoint } from "./ledger.js";
@@ -47,15 +48,16 @@ export function renderMore() {
 
   <div class="gh"><h2>Koti's AI</h2></div>
   <div class="grp">
-    <button type="button" class="row" data-ask-koti><span class="ico g">${icon("spark")}</span><span class="rt">Talk to Koti<small>Ask about your money, or tell it what to add</small></span>${chev}</button>
-    <button type="button" class="row" data-open="memory"><span class="ico w">${icon("note")}</span><span class="rt">What Koti remembers<small>${(S.memory || []).length ? `${(S.memory || []).length} thing${(S.memory || []).length === 1 ? "" : "s"} about you` : "Nothing yet: tell Koti about yourself"}</small></span>${chev}</button>
-    <label class="row"><span class="rt">Koti answers out loud<small>When you talk to it with the microphone</small></span><input type="checkbox" class="switch" data-set="kotiSpeaks" ${S.kotiSpeaks !== false ? "checked" : ""}></label>
+    <button type="button" class="row" data-ask-koti><span class="ico g">${icon("spark")}</span><span class="rt">Talk to Koti<small>Ask or tell it what to add</small></span>${chev}</button>
+    <button type="button" class="row" data-open="memory"><span class="ico w">${icon("note")}</span><span class="rt">What Koti remembers<small>${(S.memory || []).length ? `${(S.memory || []).length} thing${(S.memory || []).length === 1 ? "" : "s"}` : "Nothing yet"}</small></span>${chev}</button>
+    <label class="row"><span class="rt">Koti answers out loud<small>When you speak to it</small></span><input type="checkbox" class="switch" data-set="kotiSpeaks" ${S.kotiSpeaks !== false ? "checked" : ""}></label>
+    <button type="button" class="row" data-open="privacy"><span class="ico w">${icon("lock")}</span><span class="rt">Privacy<small>${aiAllowed() ? "AI on" : "AI off"} · no cookies</small></span>${chev}</button>
     <label class="row"><span class="rt">First choice when scanning</span><select class="inl" data-set="scanDefault">${scanOpts.map(([v, t]) => `<option value="${v}"${(S.scanDefault || "auto") === v ? " selected" : ""}>${t}</option>`).join("")}</select>${chev}</label>
     <label class="row"><span class="rt">Keep receipt photos<small>Off: receipts are read, the photo isn't stored</small></span><input type="checkbox" class="switch" data-set="keepReceipts" ${S.keepReceipts ? "checked" : ""}></label>
     <label class="row"><span class="rt">Keep bill documents<small>Off: bills are read, the document isn't stored</small></span><input type="checkbox" class="switch" data-set="keepBills" ${S.keepBills ? "checked" : ""}></label>
     <div class="row"><span class="rt">AI uses today<small>Scans, the microphone, talking to Koti and today's note together</small></span><span class="rv num" id="moAiUse">–</span></div>
   </div>
-  <p class="note">When you're signed in and online, receipts, what you say to the microphone and what you ask Koti are sent to OpenAI to be read and answered. To answer, Koti reads your own records in Koti (only yours) and what it remembers about you. Nothing is kept at OpenAI or in Koti beyond your records, unless you switch on keeping photos; conversations stay on this phone for a few hours. Offline, the phone does what it can itself.</p>
+  <p class="note">With the AI on, what you share goes to OpenAI.</p>
 
   <div class="gh"><h2>Reminders</h2></div>
   <div class="grp"><a class="row" href="#reminders"><span class="ico g">${icon("bell")}</span><span class="rt">Reminders<small>${remSummary()}</small></span>${chev}</a></div>
@@ -119,7 +121,7 @@ function openProfile() {
         ${sync.user ? `<div class="row"><span class="rt">Email</span><span class="rv">${esc(sync.user.email)}</span></div>
         <button type="button" class="row" id="prPw"><span class="rt">Change password</span>${chev}</button>` : ""}
       </div>
-      <p class="note">Your name is used for the greeting on Budgets and on lists you send. Tap your initial on Budgets to come back here.</p>`;
+      <p class="note">Shown in greetings and on lists you send.</p>`;
     $("#prName", B).addEventListener("input", paint);
     $(".avcols", B).onclick = e => { const x = e.target.closest("[data-col]"); if (x) { colour = x.dataset.col; paint(); } };
     const pw = $("#prPw", B); if (pw) pw.onclick = () => { closeSheet(); setTimeout(openNewPassword, 260); };
@@ -139,7 +141,7 @@ function keptAsideHTML() {
 }
 export function bindMore() {
   document.addEventListener("click", e => {
-    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList, profile: openProfile, start: openStartBalance, memory: () => import("./koti.js").then(m => m.openMemory()) }[o.dataset.open]; if (f) f(); return; }
+    const o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); const f = { auth: openAuth, lists: openLists, notes: openNotes, sheets: openSheetsImport, install: openInstall, categories: openCategories, receipts: openReceiptsList, profile: openProfile, start: openStartBalance, memory: () => import("./koti.js").then(m => m.openMemory()), privacy: openPrivacy }[o.dataset.open]; if (f) f(); return; }
     const rt = e.target.closest("[data-retry]"); if (rt && root && root.contains(rt)) { const [k, id] = rt.dataset.retry.split("|"); retryFailed(k, id); toast("Trying again"); renderMore(); return; }
     const df = e.target.closest("[data-dropf]"); if (df && root && root.contains(df)) { const [k, id] = df.dataset.dropf.split("|"); dropFailed(k, id); toast("Kept on this device only"); renderMore(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
@@ -210,7 +212,7 @@ const roomOptions = sel => ZONE_ORDER.map(k => `<option value="${k}"${k === sel 
 export function openLists() {
   openSheet({ title: "Home setup rooms", left: "Done", body: B => {
     const draw = () => {
-      B.innerHTML = `<p class="note" style="margin-top:0">Choose where each list sits on your floor plan. Tap a name to rename it.</p>
+      B.innerHTML = `<p class="note" style="margin-top:0">Choose each list's room. Tap a name to rename it.</p>
         <div class="grp">${roomsOf(HOME_PROJECT).map(l => `<div class="row" data-l="${esc(l.id)}"><input class="inl" style="text-align:left;flex:1;max-width:none;color:var(--ink)" value="${esc(l.name)}" aria-label="List name" data-f="name" maxlength="120"><select class="inl" data-f="room" aria-label="Room for ${esc(l.name)}">${roomOptions(l.room)}</select><button type="button" class="x" data-f="del" aria-label="Delete ${esc(l.name)}" style="color:var(--muted);width:32px;height:32px">${icon("trash", "ic sm")}</button></div>`).join("")}</div>
         <div class="field" style="margin-top:6px"><label for="nlName">New list</label><input class="inp" id="nlName" placeholder="e.g. Balcony…" maxlength="120" autocomplete="off"></div>
         <div class="field"><label for="nlRoom">Room</label><select class="inp" id="nlRoom">${roomOptions("PARVEKE")}</select></div>
@@ -241,7 +243,7 @@ export function openNotes() {
 function openSheetsImport() {
   let cfg = {}; try { cfg = JSON.parse(localStorage.getItem("kotiSheetsConfig") || "{}"); } catch {}
   openSheet({ title: "Import from Google Sheets", right: "Import", body: `
-    <p class="note" style="margin-top:0">Brings in the list, prices, budget and notes from your Google Sheet. It replaces what's in Koti now, so do this once.</p>
+    <p class="note" style="margin-top:0">Replaces what's in Koti with your Google Sheet. Do it once.</p>
     <div class="field"><label for="gsUrl">Apps Script web app URL</label><input class="inp" id="gsUrl" type="url" spellcheck="false" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(cfg.url || "")}"></div>
     <div class="field"><label for="gsTok">Shared secret</label><input class="inp" id="gsTok" type="password" spellcheck="false" autocomplete="off" value="${esc(cfg.token || "")}"></div>
     <p class="msg" id="gsMsg" aria-live="polite"></p>`,

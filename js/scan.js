@@ -53,8 +53,8 @@ export function openScan({ dest = null, file = null } = {}) {
   const d = S.dest, where = d.kind === "bill" ? "a bill" : d.kind === "list" || d.kind === "project" ? esc(destName(d)) : null;
   openSheet({ title: "Scan", left: "Close", body: B => {
     B.innerHTML = `<h2 class="sc-h">${d.kind === "bill" ? "Take a photo of the bill" : "A receipt, a bill or a screenshot"}</h2>
-      <p class="sc-p">${d.kind === "bill" ? "Koti reads the amount, the due date, the reference and the account. You check it before it's saved." : where ? `Koti reads every line for ${where}: what's on it gets ticked off. You check it before anything is saved.` : "Koti reads every line and sorts it for you: the milk to groceries, the lamp to your home project, a bill to Bills. A screenshot of a payment from your bank, MobilePay or an online order works too. You check it before anything is saved."}</p>
-      <div id="scState"><div class="sc-frame" aria-hidden="true">${icon("cam", "ic")}<span>Flat, in good light, the whole ${d.kind === "bill" ? "page" : "receipt"}</span></div></div>
+      <p class="sc-p">${d.kind === "bill" ? "Koti reads the amount, due date and reference." : where ? `Koti ticks off what's on ${where}.` : "Koti reads it and sorts it. You check before saving."}</p>
+      <div id="scState"><div class="sc-frame" aria-hidden="true">${icon("cam", "ic")}<span>${d.kind === "bill" ? "The whole page, in good light" : "Flat and in good light"}</span></div></div>
       <div class="scan-btns">
         <label class="btn primary sc-go" for="scCam">${icon("cam", "ic sm")} Take photo</label><input type="file" id="scCam" accept="image/*" capture="environment" class="sr">
         <label class="btn sc-up" for="scFile">${icon("up", "ic sm")} Upload a screenshot, photo or PDF</label><input type="file" id="scFile" accept="image/*,application/pdf" class="sr">
@@ -214,15 +214,16 @@ function receiptReview(S) {
     B.innerHTML = `
       ${kotiSays(r.reply || P.reply)}
       ${r.docType === "bill" ? `<div class="suggest warn">${icon("bill", "ic")}<div><b>This looks like a bill</b><small>Bills go to Bills with their due date and reference.</small></div><button type="button" class="btn sm" id="rvToBill">Add as a bill</button></div>` : ""}
-      ${S.billPay && !S.moneyIn ? `<div class="suggest">${icon("bill", "ic")}<div><b>Your ${esc(S.billPay.bill.name)} payment?</b><small>Due ${esc(fmtDay(parseDay(S.billPay.due)))}, ${esc(eur(S.billPay.amount))}. Mark it paid instead of adding it as spending.</small></div><button type="button" class="btn sm" id="rvBillPaid">Mark paid</button></div>` : ""}
+      ${S.billPay && !S.moneyIn ? `<div class="suggest">${icon("bill", "ic")}<div><b>Your ${esc(S.billPay.bill.name)} payment?</b><small>Due ${esc(fmtDay(parseDay(S.billPay.due)))}, ${esc(eur(S.billPay.amount))}.</small></div><button type="button" class="btn sm" id="rvBillPaid">Mark paid</button></div>` : ""}
       ${r.docType === "payment" ? `<div class="seg" id="rvDir" role="group" aria-label="Money out or in"><button type="button" data-in="0" aria-pressed="${!S.moneyIn}">I paid</button><button type="button" data-in="1" aria-pressed="${!!S.moneyIn}">I received</button></div>` : ""}
       ${P.currency && P.currency !== "EUR" ? `<div class="suggest warn">${icon("alert", "ic")}<div><b>This receipt is in ${esc(P.currency)}</b><small>Koti counts in euros. Change the total to what your bank charged.</small></div></div>` : ""}
+      ${E.date || P.date ? "" : whenHTML()}
       <div class="rv-top"><div class="rv-big num" id="rvBig"></div>${S.file ? `<span class="scan-thumb">${thumb(S)}</span>` : ""}</div>
       <p class="rv-s" id="rvS"></p>
       <details class="rv-more"${total ? "" : " open"}><summary>Shop, date and total</summary>
       <div class="grp">
         <label class="row"><span class="rt">${S.moneyIn ? "From" : r.docType === "payment" ? "Paid to" : "Shop"}</span><input class="inl" id="rvShop" value="${esc(E.shop ?? P.payee ?? "")}" placeholder="${S.moneyIn ? "Who" : "Where"}" maxlength="120" autocomplete="off" style="max-width:60%"></label>
-        <label class="row"><span class="rt">Date</span><input class="inl" id="rvDate" type="date" value="${esc(E.date ?? P.date ?? todayISO())}"></label>
+        <label class="row"><span class="rt">Date</span><input class="inl" id="rvDate" type="date" max="${todayISO()}" value="${esc(E.date ?? P.date ?? "")}"></label>
         <label class="row"><span class="rt">Total</span><input class="inl num" id="rvTotal" inputmode="decimal" value="${esc(total)}" placeholder="0,00" autocomplete="off" style="max-width:40%"></label>
         <label class="row"${S.file ? "" : " hidden"}><span class="rt" id="rvKeepLbl">Keep the photo<small id="rvKeepSub"></small></span><input type="checkbox" class="switch" id="rvKeep" aria-labelledby="rvKeepLbl" ${S.keep ? "checked" : ""}></label>
       </div></details>
@@ -233,6 +234,9 @@ function receiptReview(S) {
     keepSub(); $("#rvKeep", B).onchange = keepSub;
     ["#rvShop", "#rvDate", "#rvTotal"].forEach(id => $(id, B).addEventListener("input", () => { saveEdits(S); paintHead(S, B); }));
     const tb = $("#rvToBill", B); if (tb) tb.onclick = () => { saveEdits(S); S.dest = { kind: "bill" }; if (!S.keepTouched) S.keep = true; billReview(S); };
+    const wh = $(".when", B); if (wh) wh.onclick = e => { const b = e.target.closest("[data-day]"); if (!b) return;
+      if (b.dataset.day === "pick") { $(".rv-more", B).open = true; $("#rvDate", B).focus(); try { $("#rvDate", B).showPicker(); } catch {} return; }
+      $("#rvDate", B).value = b.dataset.day; saveEdits(S); receiptReview(S); };
     const dir = $("#rvDir", B); if (dir) dir.onclick = e => { const x = e.target.closest("[data-in]"); if (!x) return; saveEdits(S); S.moneyIn = x.dataset.in === "1"; receiptReview(S); };
     const bp = $("#rvBillPaid", B); if (bp) bp.onclick = () => { saveEdits(S); const o = S.billPay, date = $("#rvDate", B).value || todayISO(), tx = markPaid(o, date > todayISO() ? todayISO() : date, true);
       closeSheet(); toast(`${o.bill.name} marked paid`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); };
@@ -248,22 +252,22 @@ function groupsOf(S) {
 function paintHead(S, B) {
   const t = $("#rvTotal", B).value, shop = $("#rvShop", B).value.trim(), date = $("#rvDate", B).value;
   const tv = parseMoney(t); $("#rvBig", B).textContent = eur(tv && !Number.isNaN(tv) ? tv : 0);
-  const day = !date || date === todayISO() ? "today" : parseDay(date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  const day = !date ? "day not known yet" : date === todayISO() ? "today" : parseDay(date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const n = S.lines.length, g = groupsOf(S).length;
-  const noDate = S.r && S.r.parsed && !S.r.parsed.date && !S.edits.date;
+  const noDate = false;   // a date that couldn't be read is asked for (whenHTML), not shown as today
   $("#rvS", B).innerHTML = `${shop ? `at <b>${esc(shop)}</b>, ` : ""}${esc(day)}${noDate ? " (the date couldn't be read)" : ""}.${n ? ` ${n} line${n === 1 ? "" : "s"}${g > 1 ? `, sorted ${g === 2 ? "two" : g === 3 ? "three" : g} ways` : ""}.` : ""}`;
 }
 function paintLines(S, B) {
   const d = S.dest, L = $("#rvLines", B), lines = S.lines, r = S.r || {};
   const how = r.heard ? "Heard by AI. Check it, then Save." : r.ai ? `Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}` : r.aiError ? `Read on this device, total only. AI: ${r.aiError.message}` : "Read on this device, total only.";
-  if (S.moneyIn) { L.innerHTML = `<p class="note ai-note">${esc(how)}</p><p class="note">Money you received is saved as money in. It adds to what's yours to spend.</p>`; paintHead(S, B); return; }
-  if (!lines.length) { L.innerHTML = `<p class="note ai-note">${esc(how)}</p><p class="note">No lines were read, so the total goes to ${d.kind === "project" ? esc(listOf(d.id).name) : "one category"}. Tap the title to choose where.</p>`; paintHead(S, B); return; }
+  if (S.moneyIn) { L.innerHTML = `<p class="note ai-note">${esc(how)}</p><p class="note">Saved as money in.</p>`; paintHead(S, B); return; }
+  if (!lines.length) { L.innerHTML = `<p class="note ai-note">${esc(how)}</p><p class="note">No lines read: the total goes to ${d.kind === "project" ? esc(listOf(d.id).name) : "one category"}.</p>`; paintHead(S, B); return; }
   const G = groupsOf(S), sum = lines.reduce((a, l) => a + l.price, 0);
   L.innerHTML = `${G.length > 1 ? `<div class="rv-bar" role="img" aria-label="${esc(G.map(g => `${g.k === "none" ? "No category" : catName(g.k)} ${eur(g.total)}`).join(", "))}">${G.map(g => `<i style="flex:${Math.max(0.01, g.total)};background:${groupColor(g.k)}"></i>`).join("")}</div>` : ""}
     ${G.map(g => `<section class="rv-g"><div class="rv-gh"><i style="background:${groupColor(g.k)}" aria-hidden="true"></i><b>${esc(g.k === "none" ? "No category" : catName(g.k))}</b><small>${esc(groupExtra(g.k, g.total))}</small><b class="num">${eur(g.total)}</b></div>
       ${g.lines.map(k => { const l = lines[k]; return `<button type="button" class="rv-line" data-line="${k}" aria-label="${esc(l.name)}, ${esc(eur(l.price))}, ${esc(lineSub(d, l))}. Move it"><span class="rt"><b>${esc(l.name)}</b><small>${esc(lineSub(d, l))}</small></span><span class="num">${eur(l.price)}</span>${icon("chev", "ic xs")}</button>`; }).join("")}</section>`).join("")}
     <p class="note ai-note">${esc(how)}${Math.abs(sum - (parseMoney($("#rvTotal", B).value) || 0)) >= 0.01 && parseMoney($("#rvTotal", B).value) ? ` · Lines add up to ${eur(sum)}` : ""}</p>
-    <p class="note">Tap a line to move it. Koti remembers, so it goes there next time too.</p>`;
+    <p class="note">Tap a line to move it. Koti remembers.</p>`;
   $$("[data-line]", L).forEach(b => b.onclick = () => { saveEdits(S); movePicker(S, Number(b.dataset.line)); });
   paintHead(S, B);
 }
@@ -284,8 +288,9 @@ function movePicker(S, k) {
 async function saveReceipt(S, B) {
   const d = S.dest, msg = t => { const m = $("#rvMsg", B); m.textContent = t; m.dataset.state = "error"; };
   if (S.busy) return;
-  const total = parseMoney($("#rvTotal", B).value), date = $("#rvDate", B).value || todayISO(), shop = $("#rvShop", B).value.trim(), keep = $("#rvKeep", B).checked;
+  const total = parseMoney($("#rvTotal", B).value), date = $("#rvDate", B).value, shop = $("#rvShop", B).value.trim(), keep = $("#rvKeep", B).checked;
   if (total == null || Number.isNaN(total) || total <= 0) return msg("Type the total, like 24,90.");
+  if (!date) return msg("When was this? Pick the day.");
   if (["list", "project"].includes(d.kind) && !listOf(d.id)) return msg("That list was deleted. Tap the title to choose another place.");
   if (date > todayISO()) return msg("That date is in the future. Check the date.");
   // The same receipt twice: same day, same total, same shop (or no shop)
@@ -440,7 +445,8 @@ export function savePayments(list) {
 /* Several payments on one screenshot: each one to tick, with its category; ones already in Koti start unticked. */
 function paymentsReview(S) {
   const r = S.r;
-  if (!S.pay) S.pay = r.payments.map(p => { const date = p.date || todayISO(), twin = twinOf({ ...p, date }); return { ...p, date, twin, on: !twin && date <= todayISO() }; });
+  // A payment whose day couldn't be read gets a day to pick on its row; it isn't saved as today.
+  if (!S.pay) S.pay = r.payments.map(p => { const twin = p.date ? twinOf(p) : null; return { ...p, twin, on: !twin && (!p.date || p.date <= todayISO()) }; });
   openSheet({ title: "Payments", left: "Cancel", right: "Save", body: B => {
     const paint = () => {
       const on = S.pay.filter(p => p.on), out = on.filter(p => p.kind !== "income").reduce((a, p) => a + p.amount, 0), inn = on.filter(p => p.kind === "income").reduce((a, p) => a + p.amount, 0);
@@ -449,20 +455,30 @@ function paymentsReview(S) {
         <p class="rv-s">${on.length} of ${S.pay.length} payment${S.pay.length === 1 ? "" : "s"} ticked${inn ? ` · ${esc(eur(inn))} in` : ""}.</p>
         <div class="grp pays">${S.pay.map((p, k) => `<div class="row pay-row">
             <input type="checkbox" class="pay-on" data-k="${k}" ${p.on ? "checked" : ""} aria-label="${esc(`${p.payee || "Payment"}, ${eur(p.amount)}`)}">
-            <span class="rt"><b>${esc(p.payee || (p.kind === "income" ? "Money in" : "Payment"))}</b><small>${esc(fmtDay(parseDay(p.date)))}${p.note ? ` · ${esc(p.note)}` : ""}${p.twin ? " · already in Koti" : ""}${p.date > todayISO() ? " · not yet" : ""}</small>
+            <span class="rt"><b>${esc(p.payee || (p.kind === "income" ? "Money in" : "Payment"))}</b><small>${p.date ? esc(fmtDay(parseDay(p.date))) : `<input type="date" class="inl pay-day" data-k="${k}" max="${todayISO()}" aria-label="When was this?">`}${p.note ? ` · ${esc(p.note)}` : ""}${p.twin ? " · already in Koti" : ""}${p.date > todayISO() ? " · not yet" : ""}</small>
               ${p.kind === "income" ? "" : `<select class="inl pay-cat" data-k="${k}" aria-label="Category">${cats().map(c => `<option value="${esc(c.id)}"${c.id === p.categoryId ? " selected" : ""}>${esc(c.name)}</option>`).join("")}<option value=""${p.categoryId ? "" : " selected"}>No category</option></select>`}</span>
             <b class="num">${p.kind === "income" ? "+" : ""}${eur(p.amount)}</b></div>`).join("")}</div>
-        <p class="note ai-note">Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}. Untick what isn't yours to count, or is already in Koti.</p>
+        <p class="note ai-note">Read by AI${r.limit ? ` · ${r.used} of ${r.limit} scans today` : ""}. Untick any you don't want.</p>
         <p class="msg" id="pyMsg" aria-live="polite"></p>`;
     };
     B.addEventListener("change", e => { const k = Number(e.target.dataset.k); if (Number.isNaN(k)) return;
-      if (e.target.classList.contains("pay-on")) S.pay[k].on = e.target.checked; else if (e.target.classList.contains("pay-cat")) S.pay[k].categoryId = e.target.value || null; paint(); });
+      if (e.target.classList.contains("pay-day")) { S.pay[k].date = e.target.value || null; if (S.pay[k].date) S.pay[k].twin = twinOf(S.pay[k]); }
+      else if (e.target.classList.contains("pay-on")) S.pay[k].on = e.target.checked; else if (e.target.classList.contains("pay-cat")) S.pay[k].categoryId = e.target.value || null; paint(); });
     paint();
   }, onRight: B => {
     const on = S.pay.filter(p => p.on);
     if (!on.length) { const m = $("#pyMsg", B); m.textContent = "Tick at least one payment."; m.dataset.state = "error"; return; }
+    if (on.some(p => !p.date)) { const m = $("#pyMsg", B); m.textContent = "Pick the day for each ticked payment."; m.dataset.state = "error"; return; }
     if (on.some(p => p.date > todayISO())) { const m = $("#pyMsg", B); m.textContent = "A payment dated after today can't be saved yet. Untick it."; m.dataset.state = "error"; return; }
     const saved = savePayments(on); closeSheet();
     toast(`Saved ${saved.length} payment${saved.length === 1 ? "" : "s"}`, { label: "Undo", run: () => saved.forEach(t => store.remove("transactions", t.id)) });
   } });
+}
+
+/* "When was this?": the last week as days to tap, and a calendar. Shown when the day couldn't be read. */
+function whenHTML(now = todayISO()) {
+  const days = Array.from({ length: 7 }, (_, k) => { const d = new Date(parseDay(now)); d.setDate(d.getDate() - k); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
+  const label = (d, k) => k === 0 ? "Today" : k === 1 ? "Yesterday" : parseDay(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" });
+  return `<div class="when" role="group" aria-labelledby="whenQ"><p class="when-q" id="whenQ">When was this?</p>
+    <div class="chips">${days.map((d, k) => `<button type="button" class="fchip" data-day="${d}">${esc(label(d, k))}</button>`).join("")}<button type="button" class="fchip" data-day="pick">Other day</button></div></div>`;
 }

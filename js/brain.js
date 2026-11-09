@@ -34,14 +34,52 @@ export function forget(id) {
 }
 const restoreMemory = list => store.updateSettings({ memory: list });
 
-/* ---------- The conversation, kept on this phone for a few hours ---------- */
-export function conversation() {
-  const c = read(CHAT_KEY, null);
-  if (!c || c.owner !== owner() || Date.now() - (c.at || 0) > FRESH_HOURS * 3600e3) return [];
-  return Array.isArray(c.messages) ? c.messages : [];
+/* ---------- Conversations, kept on this phone for 30 days ---------- */
+// The one you're in carries on while you keep talking; after six hours away a new one starts and the old one moves to
+// Earlier chats. Up to 30 are kept, each for 30 days after it was last used, then deleted. They stay on this device
+// (they aren't synced): Koti's memory of you (settings.memory) is what carries between conversations and devices.
+// Before 9 November 2026 there was only one, and it was dropped silently after six hours.
+const CHATS_KEY = "koti.chats", KEEP_DAYS = 30, KEEP_MAX = 30;
+const titleOf = messages => { const m = messages.find(x => x.role === "user" && x.content); return m ? m.content.slice(0, 80) : "Conversation"; };
+function chats() {
+  let c = read(CHATS_KEY, null);
+  if (!c || !Array.isArray(c.list)) c = { list: [], current: null };
+  const old = read(CHAT_KEY, null);   // the single conversation kept before
+  if (old && Array.isArray(old.messages) && old.messages.length) {
+    c.list.push({ id: newId("chat"), owner: old.owner || "local", at: old.at || Date.now(), title: titleOf(old.messages), messages: old.messages });
+    try { localStorage.removeItem(CHAT_KEY); } catch {}
+    write(CHATS_KEY, c);
+  }
+  const cutoff = Date.now() - KEEP_DAYS * 864e5;
+  c.list = c.list.filter(x => x && x.at >= cutoff && Array.isArray(x.messages) && x.messages.length).sort((a, b) => b.at - a.at).slice(0, KEEP_MAX);
+  return c;
 }
-export const saveConversation = messages => write(CHAT_KEY, { owner: owner(), at: Date.now(), messages: messages.slice(-30) });
-export const newConversation = () => write(CHAT_KEY, { owner: owner(), at: Date.now(), messages: [] });
+const saveChats = c => write(CHATS_KEY, c);
+const mineOnly = c => c.list.filter(x => x.owner === owner());
+/* The conversation you're in: the current one if used in the last six hours, otherwise a new one. */
+export function conversation() {
+  const c = chats(), cur = c.list.find(x => x.id === c.current && x.owner === owner());
+  if (cur && Date.now() - cur.at <= FRESH_HOURS * 3600e3) return cur.messages;
+  c.current = null; saveChats(c); return [];
+}
+export function saveConversation(messages) {
+  const c = chats(), msgs = messages.slice(-40);
+  if (!msgs.length) return;
+  let cur = c.list.find(x => x.id === c.current && x.owner === owner());
+  if (!cur) { cur = { id: newId("chat"), owner: owner() }; c.list.unshift(cur); c.current = cur.id; }
+  Object.assign(cur, { at: Date.now(), title: titleOf(msgs), messages: msgs });
+  saveChats(c);
+}
+export const newConversation = () => { const c = chats(); c.current = null; saveChats(c); };
+/* Earlier chats: yours on this device, newest first, not the one you're in. */
+export const pastConversations = () => { const c = chats(); return mineOnly(c).filter(x => x.id !== c.current).map(({ id, at, title, messages }) => ({ id, at, title, count: messages.length })); };
+/* Opens an earlier chat to carry on with it. Returns its messages. */
+export function openConversation(id) {
+  const c = chats(), x = mineOnly(c).find(y => y.id === id); if (!x) return [];
+  c.current = x.id; x.at = Date.now(); saveChats(c); return x.messages;
+}
+export const deleteConversation = id => { const c = chats(); c.list = c.list.filter(x => !(x.id === id && x.owner === owner())); if (c.current === id) c.current = null; saveChats(c); };
+export const deleteAllConversations = () => { const c = chats(); c.list = c.list.filter(x => x.owner !== owner()); c.current = null; saveChats(c); };
 /* What the server is sent of it: the words only, the last twelve turns. */
 export const historyOf = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content).slice(-12).map(m => ({ role: m.role, content: m.content }));
 
@@ -60,13 +98,14 @@ async function invoke(body) {
 }
 
 /* One turn: what you said (text or a recording) and the conversation before it. */
-export async function ask({ message = "", audio = null, history = [] }) {
-  const body = { mode: "chat", history: historyOf(history) };
+export async function ask({ message = "", audio = null, history = [], spoken = false }) {
+  // spoken: the phone heard these words. With a recording it's spoken too. Only then does the answer come with a voice.
+  const body = { mode: "chat", history: historyOf(history), ...(spoken && !audio ? { spoken: true } : {}) };
   if (audio) { if (audio.size < 1200) throw Object.assign(new Error("Didn't hear anything. Hold the button a moment longer."), { code: "short" }); body.audio = await blobToDataURL(audio); }
   else body.message = String(message).trim();
   const d = await invoke(body);
   autoApply(d.actions || []);
-  return { heard: d.heard || null, reply: d.reply || "", followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
+  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
 }
 
 /* Remembering and forgetting happen as soon as Koti says so: the chat shows it, with Undo. */

@@ -130,7 +130,7 @@ export function renderPlanView() {
     <div class="meter" style="margin:12px 0 8px" role="img" aria-label="${T.paidCount} of ${T.count} bills paid"><i style="width:${T.total ? T.paid / T.total * 100 : 0}%"></i></div>
     <div class="hint" style="font-size:13px">${T.paidCount} of ${T.count} paid${T.due ? ` · ${eur(T.due)} to go` : ""}</div>
     ${next ? `<div class="next-due"><span class="date"><b>${parseDay(next.due).getDate()}</b>${parseDay(next.due).toLocaleDateString("en-GB", { month: "short" })}</span><span class="rt">Next: ${esc(next.bill.name)}<small>${eur(next.amount)} · due ${rel(next.due)}${next.bill.autopay ? " · paid automatically" : ""}</small></span></div>` : ""}`
-    : `<h2>No bills ${isCur ? "this month" : "in this month"}</h2><p class="hint" style="font-size:13px;margin-top:6px">Add rent, electricity, phone and subscriptions. They show up here on their due dates and count in Money's "Left until payday".</p>`;
+    : `<h2>No bills ${isCur ? "this month" : "in this month"}</h2><p class="hint" style="font-size:13px;margin-top:6px">Add rent, electricity, phone and subscriptions.</p>`;
 
   // calendar
   const lead = (view.start.getDay() + 6) % 7, days = Math.round((view.end - view.start) / 864e5) + 1;

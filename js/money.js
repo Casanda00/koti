@@ -195,7 +195,7 @@ export function openStartBalance() {
   const st = startPoint(), today = todayISO();
   openSheet({ title: "Your money today", right: "Save", body: `
     <h3 class="lead">How much do you have right now?</h3>
-    <p class="note" style="margin-top:0">Add up your accounts (leave out savings you don't spend from). Koti counts from here and carries the result into each new month.</p>
+    <p class="note" style="margin-top:0">Your accounts added up, without savings you don't spend.</p>
     <label class="amount-in"><span class="sr">Amount in euros</span><span aria-hidden="true">€</span><input id="sbAmt" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus value="${st.set ? String(Math.round((st.amount + (st.date <= today ? 0 : 0)) * 100) / 100).replace(".", ",") : ""}"></label>
     <p class="note">Spending you've already added for today is taken into account.</p>
     <p class="msg" id="sbMsg" aria-live="polite"></p>`,

@@ -29,9 +29,14 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 - **Paydays:** one that falls on a weekend or a Finnish public holiday moves to the working day before.
 - **Money figures:** every one is worked out in `js/engine.js`, in whole cents. The reminders server runs a copy, `supabase/functions/send-reminders/engine.js`; after changing the engine, copy it there too (a test fails until the two are the same).
 - **Reminders:** they follow each person's phone time zone, which the app saves in settings. They're worked out from the person's own records, not from figures the phone saved.
-- **Budgets and savings:** Koti doesn't make them up. "Suggest budgets" asks a few questions (one always about saving), then the AI shares what the engine says is left after bills between savings goals and budgets; the server keeps the total within it, shrinking budgets before savings.
+- **Budgets and savings:** Koti doesn't make them up. "Plan my month" asks everything that decides the plan, one question to a screen with Next and Back and a box on each for your own words: this month's pay and bills, whether to learn from past spending (offered only when there is some), saving, who lives with you, food, getting around and anything big coming. Household, food and transport are offered first next time. Then the AI shares what's left after bills between savings goals and budgets; the server keeps the total within it, shrinking budgets before savings.
+- **Privacy (EU):** Koti sets no cookies and has no ads, analytics or tracking. What it keeps on the device (sign-in, records, settings, receipts waiting to upload, the offline app, the choice below) is needed for it to work and is listed in You → Privacy. Koti's AI is a choice made once per device (`js/privacy.js`): until it's allowed, nothing goes to OpenAI and the phone reads and hears for itself; "Only necessary" and "Allow AI" look alike, and it can be changed any time. The font is served from Koti (`fonts/`, SIL OFL), not Google Fonts.
+- **Conversations with Koti:** kept on the device for 30 days in Earlier chats (up to 30), then deleted; not synced. A new one starts after six hours away. What Koti remembers about you is what carries between conversations and devices.
 - **Koti's AI never makes up a figure:** every amount it says comes from the engine's snapshot or a look-up over the person's records, and what it proposes is checked against those records (their own categories, real dates, amounts above zero) before it becomes a card. Purchases and bills open the usual sheet to check; small things (a list, a reminder, a goal, a budget) happen on a tap, with Undo.
 - **What Koti remembers:** short facts about the person (`settings.memory`, at most 40), added when they tell Koti about themselves and listed in You, where any can be removed. They go with every question to Koti and the microphone. Card numbers and passwords are refused.
+- **Koti's voice:** Koti speaks only when spoken to, never when written to (the owner's rule, 9 November 2026). A spoken question gets its answer as speech made on the server in the same request (OpenAI `gpt-4o-mini-tts`, voice `OPENAI_TTS_VOICE`, default coral); if that fails, the phone's own voice reads it. Switch it off in You → Koti answers out loud. **Talk** in a conversation is hands free: Koti listens, notices when you've finished (`js/converse.js`, from the sound level against the room's noise), answers out loud and listens again; tap the circle to cut in, End to stop, and it ends by itself after about eight seconds of quiet.
+- **Words:** a hint, note or subtitle is one short sentence, 14 words at most (the owner's rule, 9 November 2026). `tests/words.test.mjs` reads every one in the app's screens and fails on a longer one. Koti's AI follows it too: one or two short sentences in a conversation, one about a scan.
+- **Dates:** a receipt, bill or payment is saved on the day it happened, never on the day it was scanned by default. The reader returns the date as printed, and `js/printeddate.js` (copied to the server) works it out when the AI's date is missing, impossible or ahead: a date with no year or only a weekday is the most recent such day. If the day still isn't known, Koti asks "When was this?" and won't save until you pick.
 - **Tests:** `npm test` (Node 22) runs the app's own modules against a pretend server that applies the database's rules. CI runs it on every pull request.
 
 ## Files
@@ -39,6 +44,7 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 | Path | What it is |
 |---|---|
 | `index.html` | App shell: Now, Month and Home at the top, the add box at the bottom, sheet layer |
+| `css/fonts.css`, `fonts/` | Archivo, served from Koti (SIL Open Font License, `fonts/OFL.txt`) |
 | `css/app.css` | Design tokens, light and dark themes, phone and desktop layouts |
 | `js/data.js` | Data model, migrations from earlier versions, local store and change queue |
 | `js/sync.js` | Sign-in and sync with Supabase: offline queue, pulls by (server time, id), live updates, settings merged one by one, refused changes set aside and shown in You, each account's data kept apart on a device |
@@ -49,6 +55,7 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 | `js/onboarding.js` | The three first-time questions |
 | `js/spent.js` | Spent: today, yesterday, this week, last week, this month and last month, compared with what's usual, by category, a bar a day, the purchases; the Today / Yesterday / This week row on Now |
 | `js/brain.js` | Koti's brain on the phone: sends a turn to `koti`, applies what Koti remembers, carries out the actions you tap, fetches today's note once a day |
+| `js/privacy.js` | The privacy banner (first open on a device), You → Privacy, and whether Koti's AI may be used |
 | `js/koti.js` | The conversation sheet (type or hold to talk, follow-up questions, action cards, answers read out loud after a spoken question), "Koti noticed" on Today, and What Koti remembers |
 | `js/hear.js` | The microphone with AI: records, sends to `hear`, turns the answer into a purchase, a question, a reminder or list items |
 | `js/period.js` | The period picker: a title with a down arrow, Today to last month, and custom dates |

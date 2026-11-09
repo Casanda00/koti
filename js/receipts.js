@@ -2,6 +2,8 @@
 // until it's uploaded to the private "receipts" bucket, and show it again later.
 import { store, topLists, roomsOf, itemsOf, validDay, todayISO } from "./data.js";
 import { sync, onSync } from "./sync.js";
+import { aiAllowed } from "./privacy.js";
+import { printedDate } from "./printeddate.js";
 import { KNOWN_PLACES, parseExpense } from "./voice.js";
 
 const BUCKET = "receipts", TESS = "js/vendor/tesseract-7.0.0/";
@@ -75,7 +77,10 @@ export function filedBefore() {
   }));
   return seen;
 }
-export const aiPossible = () => !!(sync.client && sync.user && navigator.onLine && sync.client.functions);
+/* Koti's AI can be used: signed in, online, and allowed on this device (js/privacy.js). */
+export const aiPossible = () => !!(sync.client && sync.user && navigator.onLine && sync.client.functions) && aiAllowed();
+/* Why it can't, in words: the choice comes first, because signing in won't help if the AI is off. */
+export const aiOffReason = (what = "Koti's AI") => !aiAllowed() ? `Koti's AI is off. Switch it on in You → Privacy to use ${what}.` : `Sign in and go online to use ${what}.`;
 async function readWithAI(prepared, hint) {
   const image = await blobToDataURL(prepared.blob);
   const cats = store.model.categories, open = openItems(), filed = filedBefore(), P = places();
@@ -144,6 +149,8 @@ export function parseReceipt(text, { categories = store.model.categories, histor
     else if ((m = l.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
     if (m && mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && y >= 2000 && y <= now.getFullYear() + 1) { out.date = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`; break; }
   }
+  // 8.11. with no year: the most recent 8 November (js/printeddate.js), never the day it was scanned.
+  if (!out.date) for (const l of lines) { if (/\b\d{1,2}\.\d{1,2}\.(?!\d)/.test(l)) { const d = printedDate(l, todayISO()); if (d) { out.date = d; break; } } }
   // shop: a known chain anywhere, else the first line that looks like a name
   const k = KNOWN_PLACES.find(([, , re]) => re.test(text));
   const head = lines.slice(0, 6).find(l => /\p{L}{3,}/u.test(l) && (l.match(/\d/g) || []).length < 4 && !/kuitti|receipt|y-tunnus|puh|tel|www|http/i.test(l));

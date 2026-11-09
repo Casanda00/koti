@@ -169,7 +169,7 @@ async function shareList(id) {
       if (!sync.user) { box.innerHTML = `<b>Live link</b><p class="note" style="margin:4px 0 10px">Sign in to share a link others can tick off as they shop.</p><button type="button" class="btn" data-open="auth">Sign in</button>`; return; }
       let token = null; try { token = await liveShare(id); } catch (e) { box.innerHTML = `<p class="msg" data-state="error">${esc(e.message)}</p>`; return; }
       if (!token) {
-        box.innerHTML = `<b>Live link</b><p class="note" style="margin:4px 0 10px">Anyone with the link can see this list, tick items off and add items, without an account. Your list updates as they shop.</p><button type="button" class="btn primary" id="shMake">Create a live link</button>`;
+        box.innerHTML = `<b>Live link</b><p class="note" style="margin:4px 0 10px">Anyone with the link can see, tick and add. No account needed.</p><button type="button" class="btn primary" id="shMake">Create a live link</button>`;
         $("#shMake", B).onclick = async () => { const t = newToken(); const { error } = await sync.client.from("list_shares").insert({ token: t, user_id: sync.user.id, list_id: id, revoked: false }); if (error) { toast("Couldn't create the link: " + error.message); return; } paint(); };
         return;
       }
@@ -212,7 +212,7 @@ export function openListSettings(l) {
     B.innerHTML = `<div class="field"><label for="lsName">Name</label><input class="inp" id="lsName" value="${esc(l.name)}" maxlength="120" autocomplete="off"></div>
       ${isProj ? `<div class="field"><label for="lsBudget">Budget</label><input class="inp" id="lsBudget" inputmode="decimal" placeholder="€0 (optional)" value="${moneyField(l.budget)}" autocomplete="off"></div>
       <div class="field"><label for="lsExtra">Other spending<span class="sr"> for this project</span></label><input class="inp" id="lsExtra" inputmode="decimal" placeholder="€0" value="${moneyField(l.extraSpend || "")}" autocomplete="off"><p class="note">Costs that aren't items, like delivery fees.</p></div>` : ""}
-      ${!isProj ? `<div class="field"><label for="lsCat">Spending category</label><select class="inp" id="lsCat"><option value="">None</option>${store.model.categories.map(c => `<option value="${esc(c.id)}"${l.categoryId === c.id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select><p class="note">Optional. If you choose one, items ticked off by a scanned receipt count in that category, and the list card shows what you spent there. You can still change any line when you scan.</p></div>` : ""}
+      ${!isProj ? `<div class="field"><label for="lsCat">Spending category</label><select class="inp" id="lsCat"><option value="">None</option>${store.model.categories.map(c => `<option value="${esc(c.id)}"${l.categoryId === c.id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select><p class="note">Receipt items ticked off this list count in this category.</p></div>` : ""}
       ${isHome ? `<div class="grp">
         <label class="row"><span class="rt">Moved in</span><input class="inl" id="lsMoved" type="date" value="${esc(store.model.settings.movedIn || "")}"></label>
         <button type="button" class="row" id="lsRooms"><span class="rt">Rooms<small>${roomsOf(l.id).length} rooms on your floor plan</small></span>${icon("chev", "ic sm chev")}</button>

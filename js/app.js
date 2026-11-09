@@ -23,6 +23,7 @@ import { initComposer, paintComposer } from "./composer.js";
 import { shouldOnboard, openOnboarding, dismissIfAnswered } from "./onboarding.js";
 import { startInstall, openInstall, snoozeStrip } from "./install.js";
 import { monthName } from "./period.js";
+import { showConsentBanner } from "./privacy.js";
 
 const OLD = { setup: "list/" + HOME_PROJECT, money: "budgets", plan: "bills", more: "settings", expenses: "projects", home: "projects", today: "now" };   // links from earlier versions
 const TAB = { now: "now", month: "month", budgets: "month", income: "month", spending: "month", bills: "month", projects: "month", list: "month", project: "month", settings: "settings", reminders: "settings" };
@@ -146,12 +147,14 @@ function init() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "koti-refresh") refresh(); });
   document.addEventListener("koti-install-ready", () => { if (current === "now") renderCurrent(); });
   document.addEventListener("koti:brief", () => { if (current === "now") renderCurrent(); });
+  document.addEventListener("koti:consent", () => { renderCurrent(); paintComposer(); });
   window.addEventListener("hashchange", route);
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (current === "project") { renderPlans(); renderCharts(); } else renderCurrent(); }, 120); });
   initComposer(() => current);
   initSwipe();
   route();
   if (shouldOnboard() && !new URLSearchParams(location.search).get("add")) openOnboarding();
+  showConsentBanner();   // the first time on this device: what Koti keeps, and the AI choice (js/privacy.js)
   startInstall({ ready: () => !document.body.classList.contains("onb-open") });   // the Home Screen sheet waits for the first-time questions
   initPullToRefresh({ beforeRefresh: () => checkForUpdate(), onRefreshed: () => { uploadPending(); renderCurrent(); } });
   initUpdates();

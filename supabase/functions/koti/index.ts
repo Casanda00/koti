@@ -1,5 +1,6 @@
 // Koti: talk to Koti about your money and home, and get today's note for the Today screen.
-//   {mode:"chat", message | audio, history, today, lang}   an answer, follow-up questions, and actions to confirm
+//   {mode:"chat", message | audio, spoken?, history, today, lang}   an answer, follow-up questions, actions to confirm,
+//                                                        and, when it was spoken to, the answer as speech (MP3)
 //   {mode:"brief", today, lang}                            one to three notes for Today, and actions to confirm
 // The thinking is in agent.js. This file checks who is asking, counts the daily AI limit, reads that person's own
 // records with their own sign-in (row level security: nobody else's rows can be read), and writes down a recording.
@@ -9,7 +10,7 @@
 // @ts-ignore: plain JavaScript modules, shared with the tests
 import { runAgent, modelFromRows } from "./agent.js";
 // @ts-ignore: plain JavaScript modules, shared with the tests
-import { transcribe, audioOf, MODEL } from "../_shared/openai.js";
+import { transcribe, audioOf, speech, shouldSpeak, MODEL } from "../_shared/openai.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -95,7 +96,9 @@ Deno.serve(async (req) => {
     }
     const history = [...(Array.isArray(body.history) ? body.history : []), ...(mode === "chat" ? [{ role: "user", content: message }] : [])];
     const out = await runAgent({ key: openaiKey, M, today, lang, mode, history });
-    return json(200, { ...out, heard: audio ? message : undefined, model: MODEL, used, limit: LIMIT });
+    // Koti speaks only when spoken to: a recording, or words the phone heard (spoken). Never to typing.
+    const voice = mode === "chat" && shouldSpeak({ audio: !!audio, spoken: body.spoken === true, settings: M.settings }) ? await speech({ key: openaiKey, text: out.reply, lang }) : null;
+    return json(200, { ...out, heard: audio ? message : undefined, speech: voice ? `data:audio/mpeg;base64,${voice}` : null, model: MODEL, used, limit: LIMIT });
   } catch (e) {
     if (me.id) await giveBack(url, me.id);
     return json(502, { error: (e as Error).message || "Koti couldn't think that through. Try again.", code: "openai" });
