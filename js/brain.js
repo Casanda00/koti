@@ -10,6 +10,7 @@
 import { store, todayISO, newId, topLists, listOf } from "./data.js";
 import { sync, flush } from "./sync.js";
 import { aiPossible } from "./receipts.js";
+import { shopFor, categoryFor } from "./learn.js";
 
 export const MEMORY_MAX = 40;
 const CHAT_KEY = "koti.chat", BRIEF_KEY = "koti.brief", FRESH_HOURS = 6;
@@ -165,7 +166,8 @@ export async function doAction(a) {
   }
   if (a.type === "expense") {
     const m = await import("./composer.js");
-    m.confirmSpend({ amount: a.amount, payee: a.payee, date: a.date || todayISO(), note: a.note, categoryId: catId(a.category), fromNextPay: a.fromNextPay, fromSavings: a.fromSavings, goal: a.goal });
+    const payee = shopFor(a.payee) || a.payee;
+    m.confirmSpend({ amount: a.amount, payee, date: a.date || todayISO(), note: a.note, categoryId: categoryFor(payee) || catId(a.category), fromNextPay: a.fromNextPay, fromSavings: a.fromSavings, goal: a.goal });
     return { opened: true };
   }
   if (a.type === "bill") {

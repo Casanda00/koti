@@ -32,6 +32,7 @@ export const STORED = [
   ["Receipts and bills waiting", "Photos you chose to keep, until they're uploaded to your private storage (IndexedDB, koti-files)."],
   ["The app itself", "Koti's own files, so it opens without a connection (the offline cache)."],
   ["Small preferences", "What you've dismissed, today's note, your conversations with Koti for 30 days, and this choice (local storage, koti.*)."],
+  ["Your fixes", "Shop names, categories, dates and totals you corrected, so Koti reads better for you (with your settings)."],
 ];
 export const SENT = [
   ["Supabase", "Stores your account and records, so your phone and computer stay in step. Only you can read them."],

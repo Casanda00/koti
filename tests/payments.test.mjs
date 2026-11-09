@@ -57,8 +57,8 @@ test("a screenshot of several payments comes back as payments, each with the per
   assert.equal(r.docType, "payments");
   const gro = store.model.categories.find(c => c.name === "Groceries").id;
   assert.deepEqual(r.payments, [
-    { payee: "Lidl", amount: 23.4, date: "2027-03-09", kind: "expense", categoryId: gro, note: null },
-    { payee: "Matti", amount: 15, date: "2027-03-08", kind: "income", categoryId: null, note: null },
+    { payee: "Lidl", amount: 23.4, date: "2027-03-09", kind: "expense", categoryId: gro, readCategoryId: gro, note: null },
+    { payee: "Matti", amount: 15, date: "2027-03-08", kind: "income", categoryId: null, readCategoryId: null, note: null },
   ]);
 });
 

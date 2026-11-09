@@ -15,6 +15,7 @@ import { prepareFile, readReceipt, attach } from "./receipts.js";
 import { catName, periodFor, totals, payAfter } from "./money.js";
 import { effectiveBudgets } from "./ledger.js";
 import { alignDue, occurrenceOf, markPaid, bindCopy, FREQ_LABEL, goalFor, spendFromGoal, occurrences } from "./plan.js";
+import { learnFromSave } from "./learn.js";
 
 const cats = () => store.model.categories.filter(c => c.id !== BILLS_CAT).sort((a, b) => a.position - b.position);
 const keepDefault = kind => (kind === "bill" ? !!store.model.settings.keepBills : !!store.model.settings.keepReceipts);   // off unless switched on: storage costs
@@ -301,6 +302,7 @@ async function saveReceipt(S, B) {
     let receiptPath = null; const id = newId("tx");
     if (keep && S.file) { try { receiptPath = await attach(id, S.file); } catch (e) { S.busy = false; return msg("Couldn't keep the picture on this device: " + (e.message || e)); } }
     const tx = store.put("transactions", { id, date, amount: total, kind: "income", categoryId: null, payee: shop || null, note: null, source: "receipt", receiptPath });
+    if (S.r && S.r.ai) learnFromSave({ read: { payee: S.r.parsed.payee, date: S.r.parsed.date, amount: S.r.parsed.amount }, saved: { payee: shop, date, amount: total } });
     closeSheet(); S.busy = false;
     toast(`Saved ${eur(tx.amount)} in${shop ? ` from ${shop}` : ""}`, { label: "Undo", run: () => store.remove("transactions", tx.id) });
     return;
@@ -323,6 +325,8 @@ async function saveReceipt(S, B) {
   if (keep && S.file) { try { receiptPath = await attach(id, S.file); } catch (e) { S.busy = false; return msg("Couldn't keep the photo on this device: " + (e.message || e)); } }
   const fromPay = S.r && S.r.parsed && S.r.parsed.fromNextPay ? (payAfter(date) || {}).date || null : null;   // "from my next pay", said with several things
   const tx = store.put("transactions", { id, date, amount: total, kind: "expense", fromPay, categoryId: main, payee: shop || null, note: null, source: "receipt", receiptPath, lines: txLines.length ? txLines : null });
+  // What you corrected of what Koti read: the shop's name, its category, a misread date or total (js/learn.js).
+  if (S.r && (S.r.ai || S.r.heard)) { const R0 = S.r.parsed || {}; learnFromSave({ read: { payee: R0.payee, categoryId: txLines.length > 1 ? null : R0.categoryId, date: R0.date, amount: R0.amount }, saved: { payee: shop, categoryId: main, date, amount: total } }); }
   const P0 = (S.r && S.r.parsed) || {}, goal = !fromPay && P0.fromSavings ? goalFor(P0.goal) : null, out = goal ? spendFromGoal(goal, tx) : null;   // "from my savings"
   closeSheet(); S.busy = false;
   const ticks = before.length, news = created.length;
@@ -471,6 +475,7 @@ function paymentsReview(S) {
     if (on.some(p => !p.date)) { const m = $("#pyMsg", B); m.textContent = "Pick the day for each ticked payment."; m.dataset.state = "error"; return; }
     if (on.some(p => p.date > todayISO())) { const m = $("#pyMsg", B); m.textContent = "A payment dated after today can't be saved yet. Untick it."; m.dataset.state = "error"; return; }
     const saved = savePayments(on); closeSheet();
+    on.forEach(p => { if (p.kind !== "income") learnFromSave({ read: { payee: p.payee, categoryId: p.readCategoryId }, saved: { payee: p.payee, categoryId: p.categoryId } }); });
     toast(`Saved ${saved.length} payment${saved.length === 1 ? "" : "s"}`, { label: "Undo", run: () => saved.forEach(t => store.remove("transactions", t.id)) });
   } });
 }
