@@ -10,6 +10,8 @@ import { chatBody, openaiError, OPENAI_BASE, MODEL } from "../_shared/openai.js"
 import { PAYMENT_RULES, paymentSchema, cleanPayments } from "./payments.js";
 // @ts-ignore: plain JavaScript module, a copy of js/printeddate.js (the tests check they're the same)
 import { bestDate } from "./printeddate.js";
+// @ts-ignore: plain JavaScript module, shared with the tests (what the person paid, and checking it adds up)
+import { SHARE_RULES, shareSchema, applyShares } from "./shares.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -47,21 +49,23 @@ Receipt fields:
 - list_item: if the line is something on the user's shopping list, that list item's exact text; otherwise null.
 - place: the user may have projects for setting up a home, listed as places ("Project" or "Project › Room"). If the product is something for that home that stays there (furniture, lamps, curtains, rugs, bedding, towels, kitchenware, small appliances, storage, tools, decor, plants), the best place for it: the room it belongs in if there is one, otherwise the project. Food, drink, toiletries and cleaning products that get used up are never a place: use null. When unsure, null. Fill category as well either way.
 - If the user filed the same or a similar product to a place before (listed below), use that place.
-- date as YYYY-MM-DD (two-digit years are 20xx): the day it was bought or paid, never the day it is scanned. A date printed without a year ("8.11.", "SU 8.11.") or only as a weekday is the most recent such day that isn't after today (given below). null when there's no date at all. date_text: the date exactly as printed (e.g. "SU 08.11.26 14:02"), or null. total: the amount paid (for a bill: the amount to pay). shop: for a bill, the company.
+- date as YYYY-MM-DD (two-digit years are 20xx): the day it was bought or paid, never the day it is scanned. A date printed without a year ("8.11.", "SU 8.11.") or only as a weekday is the most recent such day that isn't after today (given below). null when there's no date at all. date_text: the date exactly as printed (e.g. "SU 08.11.26 14:02"), or null. total: what the person paid (see below; for a bill: the amount to pay). shop: for a bill, the company.
 - is_receipt: true for a receipt, a bill or a payment, false for anything else.
 - reply: Koti telling the person what it found, in English: one short, warm sentence of at most 20 words, never a label. For a receipt: the shop, the day, the total, and where most of it went (for example "A K-Market receipt from Tuesday: €23.40, mostly groceries, and the lamp goes to your Living room."). For a bill: who it's from, the amount and when it's due. If something needs checking (a date or total you couldn't read, another currency), say only that, briefly.
-${PAYMENT_RULES}`;
+${PAYMENT_RULES}
+${SHARE_RULES}`;
 
 function buildSchema(categories: string[], listItems: string[], bills: string[], places: string[]) {
 const oneOf = (vals: string[]) => vals.length ? { type: ["string", "null"], enum: [...vals, null] } : { type: "null" };
 const schema = {
   type: "object", additionalProperties: false,
-  required: ["is_receipt", "doc_type", "reply", "shop", "date", "date_text", "total", "currency", "items", "bill", "direction", "payments"],
+  required: ["is_receipt", "doc_type", "reply", "shop", "date", "date_text", "total", "printed_total", "covered_by_others", "currency", "items", "bill", "direction", "payments"],
   properties: {
     is_receipt: { type: "boolean" },
     reply: { type: "string" },
     doc_type: { type: "string", enum: ["receipt", "bill", "payment", "payments", "other"] },
     ...paymentSchema(categories),
+    ...shareSchema(),
     bill: { anyOf: [{ type: "null" }, {
       type: "object", additionalProperties: false,
       required: ["company", "amount", "due_date", "reference", "iban", "invoice_number", "period", "match"],
@@ -168,28 +172,37 @@ How the user filed products before (follow these): ${examples.length ? examples.
 Today is ${today} (${new Date(today + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" })}).
 ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The user says this is a receipt, or a payment." : "It may be a receipt, a bill, or a screenshot of a payment."} Read it.`;
   const doc = isPdf ? { type: "file", file: { filename: "document.pdf", file_data: image } } : { type: "image_url", image_url: { url: image, detail: "high" } };
-  const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(chatBody({
-      model: MODEL, temperature: 0,
-      messages: [{ role: "system", content: SYSTEM }, { role: "user", content: [{ type: "text", text: prompt }, doc] }],
-      response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema: buildSchema(categories, listItems, bills, places) } },
-    }, { effort: "low" })),
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({})) as { error?: { message?: string; code?: string } };
-    const m = e.error?.message || res.statusText;
-    const error = res.status === 401 ? "OpenAI didn't accept the key. Check OPENAI_API_KEY in Supabase."
-      : res.status === 429 ? "OpenAI is out of credit or busy. Check your OpenAI billing, or try again in a minute."
-      : /model/i.test(m) ? `The model "${MODEL}" isn't available on your OpenAI account. Set OPENAI_MODEL in Supabase to one that is.`
-      : `OpenAI couldn't read it: ${m}`;
-    if (me.id) await giveBack(url, me.id);
-    return json(502, { error, code: "openai" });
+  const schema = buildSchema(categories, listItems, bills, places);
+  const first = [{ role: "system", content: SYSTEM }, { role: "user", content: [{ type: "text", text: prompt }, doc] }];
+  /* One reading. Returns the parsed answer and its text, or an error to send back. */
+  async function readIt(messages: unknown[]): Promise<{ r?: Record<string, unknown>; text?: string; error?: string }> {
+    const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(chatBody({ model: MODEL, temperature: 0, messages, response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema } } }, { effort: "low" })),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({})) as { error?: { message?: string; code?: string } };
+      const m = e.error?.message || res.statusText;
+      return { error: res.status === 401 ? "OpenAI didn't accept the key. Check OPENAI_API_KEY in Supabase."
+        : res.status === 429 ? "OpenAI is out of credit or busy. Check your OpenAI billing, or try again in a minute."
+        : /model/i.test(m) ? `The model "${MODEL}" isn't available on your OpenAI account. Set OPENAI_MODEL in Supabase to one that is.`
+        : `OpenAI couldn't read it: ${m}` };
+    }
+    const text = (await res.json()).choices?.[0]?.message?.content || "{}";
+    try { return { r: JSON.parse(text), text }; } catch { return { error: "The answer from OpenAI wasn't readable. Try again." }; }
   }
-  const data = await res.json();
-  let r: Record<string, unknown>;
-  try { r = JSON.parse(data.choices?.[0]?.message?.content || "{}"); } catch { if (me.id) await giveBack(url, me.id); return json(502, { error: "The answer from OpenAI wasn't readable. Try again.", code: "openai" }); }
+  const got = await readIt(first);
+  if (got.error || !got.r) { if (me.id) await giveBack(url, me.id); return json(502, { error: got.error, code: "openai" }); }
+  let r = got.r;
+  // Check the reading adds up (the lines against what the person paid, after anyone else's part). When it doesn't,
+  // the reader looks again, told exactly what doesn't add up, and the better of the two readings is kept.
+  const sharesFor = (x: Record<string, unknown>) => applyShares({ items: Array.isArray(x.items) ? x.items as Record<string, unknown>[] : [], total: money(x.total), printedTotal: money(x.printed_total), others: x.covered_by_others as unknown[] });
+  let checked = sharesFor(r);
+  if (!checked.ok && ["receipt", "payment"].includes(String(r.doc_type))) {
+    const again = await readIt([...first, { role: "assistant", content: got.text }, { role: "user", content: `That doesn't add up: ${checked.problem}. Look at the image again: each line's price, the printed total, and the payment lines at the bottom (who paid how much). Correct what was misread and give the whole reading again.` }]);
+    if (again.r) { r = again.r; checked = sharesFor(again.r); }
+  }
   if (r.is_receipt === false || r.doc_type === "other") return json(422, { error: "Koti couldn't find a payment, a receipt or a bill in that. Try a clearer picture, with the amount showing.", code: "not_receipt" });
   // Several payments, as a bank app lists them: each one on its own, for the person to tick.
   if (r.doc_type === "payments") {
@@ -199,7 +212,7 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   }
 
   const catSet = new Set(categories.map((c) => c.toLowerCase())), listSet = new Map(listItems.map((x) => [x.toLowerCase(), x])), placeSet = new Map(places.map((x) => [x.toLowerCase(), x]));
-  const items = (Array.isArray(r.items) ? r.items : []).slice(0, 150).map((x: Record<string, unknown>) => ({
+  const items = checked.items.slice(0, 150).map((x: Record<string, unknown>) => ({
     name_fi: String(x.name_fi || "").trim().slice(0, 120) || null,
     name: String(x.name || "").trim().slice(0, 120) || "Item",
     qty: money(x.qty),
@@ -214,7 +227,7 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
   // The day it happened: what the AI read, checked against the date as printed (a missing year, a misread year or
   // nothing at all is worked out here from the printed text). Never the day it was scanned by default.
   const date = bestDate(r.date, r.date_text, today);
-  const total = money(r.total) ?? Math.round(items.reduce((a, i) => a + i.price, 0) * 100) / 100;
+  const total = checked.total ?? Math.round(items.reduce((a, i) => a + i.price, 0) * 100) / 100;
   const docType = r.doc_type === "bill" ? "bill" : r.doc_type === "payment" ? "payment" : "receipt";
   let bill = null;
   if (docType === "payment" && r.bill && typeof r.bill === "object") {   // a payment of one of their bills
@@ -229,5 +242,6 @@ ${hint === "bill" ? "The user says this is a bill." : hint === "receipt" ? "The 
       iban: str(b.iban, 40), invoice_number: str(b.invoice_number, 60), period: str(b.period, 120), match: match ? billSet.get(match.toLowerCase()) || null : null };
   }
   const direction = docType === "payment" && r.direction === "in" ? "in" : docType === "payment" ? "out" : null;
-  return json(200, { doc_type: docType, direction, reply: String(r.reply || "").trim().slice(0, 300), receipt: { shop: typeof r.shop === "string" ? r.shop.slice(0, 120) : null, date, total, currency: r.currency || "EUR", items: docType === "bill" ? [] : items }, bill, model: MODEL, used, limit: LIMIT });
+  return json(200, { doc_type: docType, direction, reply: String(r.reply || "").trim().slice(0, 300), receipt: { shop: typeof r.shop === "string" ? r.shop.slice(0, 120) : null, date, total, currency: r.currency || "EUR", items: docType === "bill" ? [] : items,
+    ...(checked.shares.length ? { printedTotal: checked.printedTotal, paidByOthers: checked.shares } : {}), ...(checked.ok ? {} : { check: checked.problem }) }, bill, model: MODEL, used, limit: LIMIT });
 });
