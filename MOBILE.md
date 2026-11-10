@@ -19,6 +19,9 @@ App Store; the website keeps working as it is. Android comes after the iPhone.
   server function existed but nothing called it; it's now in the repository too (`supabase/functions/delete-account`).
 - A public privacy policy page, `privacy.html` (https://casanda00.github.io/koti/privacy.html), which App Store
   Connect asks for. **Its contact address is a placeholder to fill in.**
+- **Koti's logo** (chosen 10 November 2026): the word "koti", heavy and narrow, with the dot of the i as a light left
+  on at home. White on lake blue for the app icon (1024 px, sharp), ink on birch white for the splash. Every icon is
+  drawn by `tools/make-icons.mjs`; change the logo there and run it again.
 - `tests/mobile.test.mjs` holds all of this in place.
 
 ## What's needed from you
@@ -28,7 +31,6 @@ App Store; the website keeps working as it is. Android comes after the iPhone.
 | A Mac with Xcode 16 or later | To build, sign and upload the app. Everything up to here was done without one. |
 | The app's name on the App Store | "Koti" may already be taken; a subtitle can carry the rest (e.g. "Koti: money and home"). |
 | The bundle ID | Set to `io.github.casanda00.koti`. It can't change after the first upload, so change it now if you'd like your own domain in it. |
-| A sharp 1024 × 1024 app icon | The app has Koti's icon enlarged from 512 px as a stand-in (no Capacitor logo), a little soft. Replace `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`. |
 | A contact address for `privacy.html` | Apple and the EU both expect one. |
 | App Store Connect: the app record, screenshots, description, category (Finance), age rating and the privacy answers | Done in your account. The privacy answers follow `privacy.html`: email address and financial information linked to you; photos and audio only when you use those features; nothing used for tracking. |
 

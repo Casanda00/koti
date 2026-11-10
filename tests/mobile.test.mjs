@@ -50,3 +50,12 @@ test("an account can be deleted in the app, and the server function for it is in
   assert.match(read("supabase/config.toml"), /\[functions\.delete-account\]/);
   assert.match(read("privacy.html"), /Delete account/);
 });
+
+test("the icons are Koti's wordmark at the sizes each place asks for", () => {
+  const size = f => { const b = readFileSync(new URL(`../${f}`, import.meta.url)); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
+  assert.deepEqual(size("ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"), [1024, 1024]);
+  assert.deepEqual(size("icons/icon-512.png"), [512, 512]);
+  assert.deepEqual(size("icons/icon-maskable-512.png"), [512, 512]);
+  assert.deepEqual(size("icons/icon-192.png"), [192, 192]);
+  assert.deepEqual(size("icons/apple-touch-icon.png"), [180, 180]);
+});
