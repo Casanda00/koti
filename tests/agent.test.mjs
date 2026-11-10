@@ -119,12 +119,47 @@ test("a refused action goes back to the model to fix, and never reaches the app"
   assert.match(sent[1].messages.at(-1).content, /No category called/);
 });
 
-test("it stops looking things up after the last round and answers", async () => {
+test("it stops looking things up after the last round and answers from what it found", async () => {
   const loop = { content: null, tool_calls: [call("c", "bills", {})] };
-  const { f, sent } = openai([loop, loop, { content: JSON.stringify({ reply: "Done.", follow_ups: [] }) }]);
+  const { f, sent } = openai([loop, loop, loop, { content: JSON.stringify({ reply: "Done.", follow_ups: [] }) }]);
   const r = await A.runAgent({ fetch: f, key: "k", M, today: TODAY, history: [{ role: "user", content: "bills?" }], maxRounds: 3 });
   assert.equal(r.reply, "Done.");
-  assert.equal(sent[2].tool_choice, "none");
+  // The last ask has no tools at all, and tells it to answer from what it found.
+  assert.equal(sent[3].tools, undefined);
+  assert.match(sent[3].messages.at(-1).content, /Answer now from what you found/);
+});
+
+test("an empty answer is never shown: Koti is asked once more and answers (the 'Yes' that got 'I couldn't work that out')", async () => {
+  const { f, sent } = openai([
+    { content: null, tool_calls: [call("c1", "missing", {})] },
+    { content: "" },
+    { content: JSON.stringify({ reply: "Lidl usually shows up by now and hasn't. Did you shop there?", follow_ups: [] }) },
+  ]);
+  const r = await A.runAgent({ fetch: f, key: "k", M, today: TODAY, history: [
+    { role: "user", content: "I think some spending is unaccounted for" },
+    { role: "assistant", content: "Want me to look for what might not be recorded?" },
+    { role: "user", content: "Yes" }] });
+  assert.equal(r.reply, "Lidl usually shows up by now and hasn't. Did you shop there?");
+  assert.equal(sent.length, 3);
+  assert.equal(sent[2].tools, undefined);
+  // The earlier turns went with it, so "Yes" means what Koti offered.
+  assert.equal(sent[0].messages.filter(m => m.role !== "system").length, 3);
+});
+
+test("what may be missing comes from their own patterns, not a guess", () => {
+  const tx = [];
+  // Lidl and the gym, early in each of the four months before; this month, only Lidl so far.
+  for (const m of ["2026-11", "2026-12", "2027-01", "2027-02"]) {
+    tx.push({ id: `l${m}`, date: `${m}-03`, amount: 20, kind: "expense", category_id: "cat-groceries", payee: "Lidl", note: null });
+    tx.push({ id: `g${m}`, date: `${m}-05`, amount: 35, kind: "expense", category_id: "cat-groceries", payee: "Gym", note: null });
+  }
+  tx.push({ id: "now", date: "2027-03-02", amount: 18, kind: "expense", category_id: "cat-groceries", payee: "Lidl", note: null });
+  const M2 = A.modelFromRows(rows({ tx, settings: { startBalance: 1000, startDate: "2026-11-01", monthStart: 1 } }));
+  const r = A.missing(M2, TODAY);
+  assert.deepEqual(r.usualPlacesNotYetThisMonth.map(x => [x.shop, x.typicalAmount]), [["Gym", 35]]);
+  assert.match(r.note, /can't see their bank/);
+  assert.ok(A.LOOK.some(t => t.function.name === "missing"));
+  assert.match(A.systemPrompt(M2, TODAY), /Only offer what your tools can do/);
 });
 
 test("today's note: one to three notes", async () => {

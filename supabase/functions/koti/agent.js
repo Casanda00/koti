@@ -16,7 +16,7 @@ import * as E from "../send-reminders/engine.js";
 import { modelOf } from "../send-reminders/reminders.js";
 import { chatBody, openaiError, OPENAI_BASE, MODEL } from "../_shared/openai.js";
 
-export const MAX_MEMORY = 40, MEMORY_LEN = 200, MAX_ROUNDS = 6;
+export const MAX_MEMORY = 40, MEMORY_LEN = 200, MAX_ROUNDS = 8;
 const eu = c => Math.round(Number(c) || 0) / 100;
 const str = (v, n) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
 const amountOf = v => (typeof v === "number" && isFinite(v) && v > 0 && v < 1e7 ? Math.round(v * 100) / 100 : null);
@@ -90,6 +90,7 @@ export const LOOK = [
   fn("bills", "Every bill: amount, how often, next due date, autopay (direct debit), and whether this budget month's are paid."),
   fn("lists", "Their lists (shopping lists and home projects with rooms) and what is still to get on each, with prices where known."),
   fn("reminders", "The reminders they have set in Koti."),
+  fn("missing", "What may not be recorded yet, worked out from their own records (Koti can't see bank accounts): places they pay most months that haven't appeared yet this budget month by the day they usually would, recent days with nothing recorded when they usually record most days, bills past due and not marked paid, and pay that was expected and not recorded. Use it when they think something is missing or the figures look off."),
   fn("afford", "What happens if they spend an amount today: what's left today and until payday before and after, the amount a day from tomorrow, and the category's budget. Use for 'can I afford…'.", {
     amount: Nm("Euros"), category: S("One of their category names, or null", true), from_next_pay: Bo("True if it would come out of their next pay instead of today's money") }),
 ];
@@ -178,7 +179,42 @@ export function look(M, today, name, a = {}) {
       perDayFromTomorrowAfter: D1 && D1.tomorrow != null ? eu(D1.tomorrow) : null, budget: cat && b != null ? { category: cat.name, leftNow: eu(b - spentCat), leftAfter: eu(b - spentCat - E.cents(amount)) } : null,
       ...(pay ? { comesOutOfPayOn: pay.date } : {}), wouldBeOverUntilPayday: L1.left < 0 };
   }
+  if (name === "missing") return missing(M, today);
   return { error: `No tool called ${name}.` };
+}
+
+/* What may not be recorded yet. Guesses from their own patterns, each with what it's based on; nothing is assumed. */
+export function missing(M, today) {
+  const sd = E.monthStart(M), p = E.periodOf(today, sd), st = E.startPoint(M, today), into = E.daysBetween(p.from, today);
+  const key = t => lower(t.payee);
+  // Places paid in at least 3 of the last 4 budget months, by this many days in, and not yet this month.
+  const seen = new Map();
+  for (let k = 1; k <= 4; k++) {
+    const q = E.shiftPeriod(p, -k, sd); if (q.to < st.date) break;
+    E.spending(M, q.from, q.to).entries.forEach(t => {
+      if (!t.payee || t.kind !== "expense" || t.billId) return;
+      const r = seen.get(key(t)) || { shop: t.payee, months: new Set(), early: new Set(), amounts: [], last: null };
+      r.months.add(k); r.amounts.push(E.cents(t.amount)); if (!r.last || t.date > r.last) r.last = t.date;
+      if (E.daysBetween(q.from, t.date) <= into) r.early.add(k);
+      seen.set(key(t), r);
+    });
+  }
+  const now = new Set(E.spending(M, p.from, today).entries.map(key));
+  const usualPlaces = [...seen.values()].filter(r => r.early.size >= 3 && !now.has(lower(r.shop)))
+    .map(r => { const a = [...r.amounts].sort((x, y) => x - y); return { shop: r.shop, monthsSeen: r.months.size, typicalAmount: eu(a[Math.floor(a.length / 2)]), lastSeen: r.last }; })
+    .sort((a, b) => b.monthsSeen - a.monthsSeen).slice(0, 8);
+  // Quiet days: the last 14 days with nothing recorded, when the 8 weeks before had something on most days.
+  const days = (from, to) => { const out = []; for (let d = from; d <= to; d = E.addDays(d, 1)) out.push(d); return out; };
+  const spentOn = new Set(M.transactions.filter(t => t.kind === "expense" && !t.billId).map(t => t.date));
+  const recent = days(E.addDays(today, -13) < st.date ? st.date : E.addDays(today, -13), today);
+  const before = days(E.addDays(today, -69) < st.date ? st.date : E.addDays(today, -69), E.addDays(today, -14));
+  const rate = before.length >= 14 ? before.filter(d => spentOn.has(d)).length / before.length : null;
+  const quietDays = rate != null && rate >= 0.5 ? recent.filter(d => !spentOn.has(d)).map(d => `${d} (${weekday(d)})`).slice(-10) : [];
+  const L = E.state(M, today);
+  const unpaidBills = L.kind === "current" ? L.overdue.map(o => ({ bill: o.bill.name, due: o.due, amount: eu(o.amount) })) : [];
+  const payNotRecorded = E.incomeOccurrences(M, p).filter(o => o.due <= today && !o.got && !o.missed).map(o => ({ from: o.src.name, due: o.due, amount: eu(o.amount) }));
+  return { budgetMonth: p, usualPlacesNotYetThisMonth: usualPlaces, quietDays, recordsSomethingMostDays: rate == null ? null : rate >= 0.5,
+    unpaidBills, payNotRecorded, note: "Guesses from what they've recorded. Koti can't see their bank, so ask them; offer add_expense once they say what and how much." };
 }
 
 /* ---------- Actions: checked against their records, then returned to the app as cards ---------- */
@@ -256,6 +292,9 @@ Rules:
 - When they say they bought something with a price, call add_expense. "Remind me…" → add_reminder. Things to buy → add_to_list. A new regular bill → add_bill. Saving for something → offer add_goal. Then say in one sentence what you've put on the card.
 - When they tell you something about themselves that would help later (how they get paid, who pays what, what they're saving for, preferences, a correction), call remember. Use what you remember to make answers personal. Don't repeat remembered facts back unprompted.
 - Be proactive but not pushy: when you see a real risk (a bill before payday that money doesn't cover, a budget about to run out, a late bill) or a good move (a goal nearly reached, spare money before payday), mention it once, with the figure.
+- Only offer what your tools can do. You can't see their bank or card. To look for what might not be recorded, call missing, then ask about what it found.
+- When they answer a question you asked ("yes", "do it", "the second one"), do what you offered, using the conversation above.
+- Think it through: look things up as many times as you need, check one result against another, and if a tool says no, fix the call and try again. Never end without an answer: if you couldn't find something, say what you did find.
 - Give at most three follow_ups: questions of a few words the person might tap next, in their language, each answerable with the tools.
 - Never give investment, tax or legal advice beyond general common sense; never ask for card numbers or passwords.
 ${name ? `\nTheir name: ${name}.` : ""}
@@ -282,21 +321,29 @@ export function cleanHistory(h) {
     .slice(-12).map(m => ({ role: m.role, content: m.content.trim().slice(0, m.role === "user" ? 1000 : 1500) }));
 }
 
-/* The conversation: the model may look things up and propose actions for a few rounds, then answers. */
+/* The conversation: the model looks things up and proposes actions for as many rounds as it needs (up to maxRounds),
+   then answers. It never ends on nothing: if the answer comes back empty or unreadable, or it still wants to look
+   things up after the last round, it is asked once more, without tools, to answer from what it found. */
 export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", mode = "chat", history = [], model = MODEL, maxRounds = MAX_ROUNDS }) {
   const messages = [{ role: "system", content: systemPrompt(M, today, { lang, mode }) }, ...cleanHistory(history)];
   if (mode === "brief") messages.push({ role: "user", content: lang === "fi" ? "Mitä minun pitäisi tietää tänään?" : "What should I know today?" });
   const actions = [], looked = [];
-  for (let round = 0; round < maxRounds; round++) {
-    const last = round === maxRounds - 1;
+  const ask = async (withTools) => {
     const res = await f(`${OPENAI_BASE}/chat/completions`, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(chatBody({ model, messages, tools: TOOLS, tool_choice: last ? "none" : "auto", response_format: { type: "json_schema", json_schema: FINAL[mode] || FINAL.chat } }, { effort: "low", model })),
+      body: JSON.stringify(chatBody({ model, messages, ...(withTools ? { tools: TOOLS, tool_choice: "auto" } : {}), response_format: { type: "json_schema", json_schema: FINAL[mode] || FINAL.chat } }, { effort: "low", model })),
     });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw Object.assign(new Error(openaiError(res.status, e.error && e.error.message, model)), { status: res.status }); }
-    const msg = ((await res.json()).choices || [])[0]?.message || {};
+    const choice = ((await res.json()).choices || [])[0] || {};
+    return { msg: choice.message || {}, finish: choice.finish_reason || null };
+  };
+  const read = msg => { try { return JSON.parse(msg.content || "{}"); } catch { return msg.content ? { reply: String(msg.content) } : {}; } };
+  const answered = r => (mode === "brief" ? Array.isArray(r.notes) : !!str(r.reply, 1500));
+  let r = null;
+  for (let round = 0; round < maxRounds; round++) {
+    const { msg, finish } = await ask(true);
     const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter(c => c && c.type === "function") : [];
-    if (calls.length && !last) {
+    if (calls.length) {
       messages.push({ role: "assistant", content: msg.content || null, tool_calls: calls });
       for (const c of calls) {
         let args = {}; try { args = JSON.parse(c.function.arguments || "{}"); } catch { /* empty */ }
@@ -311,10 +358,18 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
       }
       continue;
     }
-    let r = {}; try { r = JSON.parse(msg.content || "{}"); } catch { r = { reply: String(msg.content || "") }; }
-    const ups = (Array.isArray(r.follow_ups) ? r.follow_ups : []).map(x => str(x, 90)).filter(Boolean).slice(0, 3);
-    if (mode === "brief") return { notes: (Array.isArray(r.notes) ? r.notes : []).map(x => str(x, 220)).filter(Boolean).slice(0, 3), followUps: ups, actions, looked };
-    return { reply: str(r.reply, 1500) || (lang === "fi" ? "En osannut vastata. Kokeile kysyä toisin." : "I couldn't work that out. Try asking another way."), followUps: ups, actions, looked };
+    r = read(msg);
+    if (answered(r)) break;
+    console.error("koti: no answer", { round, finish, refusal: msg.refusal || null, content: String(msg.content || "").slice(0, 200) });
+    break;
   }
-  return mode === "brief" ? { notes: [], followUps: [], actions, looked } : { reply: lang === "fi" ? "Tämä vei liian monta vaihetta. Kokeile kysyä tarkemmin." : "That took too many steps. Try asking something narrower.", followUps: [], actions, looked };
+  if (!r || !answered(r)) {
+    messages.push({ role: "user", content: lang === "fi" ? "Vastaa nyt sen perusteella, mitä löysit. Jos jotain jäi löytymättä, kerro mitä löysit ja kysy yksi tarkentava kysymys." : "Answer now from what you found. If something couldn't be found, say what you did find and ask one question to narrow it down." });
+    const { msg, finish } = await ask(false);
+    r = read(msg);
+    if (!answered(r)) console.error("koti: no answer after asking again", { finish, refusal: msg.refusal || null });
+  }
+  const ups = (Array.isArray(r.follow_ups) ? r.follow_ups : []).map(x => str(x, 90)).filter(Boolean).slice(0, 3);
+  if (mode === "brief") return { notes: (Array.isArray(r.notes) ? r.notes : []).map(x => str(x, 220)).filter(Boolean).slice(0, 3), followUps: ups, actions, looked };
+  return { reply: str(r.reply, 1500) || (lang === "fi" ? "En osannut vastata. Kokeile kysyä toisin." : "I couldn't work that out. Try asking another way."), followUps: ups, actions, looked };
 }
