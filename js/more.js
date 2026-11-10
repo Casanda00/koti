@@ -80,7 +80,7 @@ export function renderMore() {
     <button type="button" class="row" data-act="update"><span class="rt">Version ${APP_VERSION}<small>Tap to check for updates</small></span><span class="rv lnk">Check</span></button>
     <button type="button" class="row" data-open="install"><span class="rt">Add Koti to your home screen</span>${chev}</button>
   </div>
-  ${sync.user ? `<div class="grp" style="margin-top:14px"><button type="button" class="row" data-act="signout"><span class="rt danger">Sign out</span></button></div>` : ""}
+  ${sync.user ? `<div class="grp" style="margin-top:14px"><button type="button" class="row" data-act="signout"><span class="rt danger">Sign out</span></button><button type="button" class="row" data-act="deleteAccount"><span class="rt danger">Delete account</span></button></div>` : ""}
   <p class="note">Koti · your data lives in your own Supabase project.</p>`;
 
   $$("[data-set]", root).forEach(inp => inp.addEventListener("change", () => {
@@ -145,7 +145,7 @@ export function bindMore() {
     const rt = e.target.closest("[data-retry]"); if (rt && root && root.contains(rt)) { const [k, id] = rt.dataset.retry.split("|"); retryFailed(k, id); toast("Trying again"); renderMore(); return; }
     const df = e.target.closest("[data-dropf]"); if (df && root && root.contains(df)) { const [k, id] = df.dataset.dropf.split("|"); dropFailed(k, id); toast("Kept on this device only"); renderMore(); return; }
     const a = e.target.closest("[data-act]"); if (!a || !root || !root.contains(a)) return;
-    ({ update: () => import("./update.js").then(m => m.checkForUpdate({ manual: true })), refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, export: doExport,
+    ({ update: () => import("./update.js").then(m => m.checkForUpdate({ manual: true })), refresh: () => { toast("Checking for changes…"); refresh(); }, signout: doSignOut, deleteAccount: openDeleteAccount, export: doExport,
       addBefore: () => { const n = store.addBeforeSignIn(); toast(n ? `Added ${n} record${n === 1 ? "" : "s"} to this account` : "Nothing new to add"); renderMore(); },
       dropBefore: () => { if (!confirm("Remove what was on this device before you signed in? It isn't in this account.")) return; store.dropBeforeSignIn(); renderMore(); }, import: () => $("#moFile", root).click(), reset: doReset })[a.dataset.act]?.();
   });
@@ -205,6 +205,34 @@ async function doSignOut() {
   const n = pendingCount();
   if (!confirm(n ? `${n} change${n === 1 ? " hasn't" : "s haven't"} reached your account yet. Sign out anyway? They stay on this device and upload when you sign back in.` : "Sign out on this device? Your data stays here, and syncs again when you sign back in.")) return;
   await signOut(); toast("Signed out");
+}
+
+/* Delete your account: everything in it, on the server and on this device. The App Store requires it in the app. */
+export function openDeleteAccount() {
+  openSheet({ title: "Delete account", left: "Cancel", body: B => {
+    B.innerHTML = `<p class="note" style="margin-top:0">Your money, lists and receipts are deleted for good. This can't be undone.</p>
+      <div class="field"><label for="daIn">Type DELETE to confirm</label><input class="inp" id="daIn" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+      <button type="button" class="btn danger" id="daGo" disabled>Delete my account</button>
+      <p class="msg" id="daMsg" aria-live="polite"></p>`;
+    const inp = $("#daIn", B), go = $("#daGo", B), msg = $("#daMsg", B);
+    inp.oninput = () => { go.disabled = inp.value.trim() !== "DELETE"; };
+    go.onclick = async () => {
+      go.disabled = true; msg.dataset.state = ""; msg.textContent = "Deleting…";
+      const { data, error } = await sync.client.functions.invoke("delete-account", { body: { confirm: "DELETE" } });
+      if (error || !data || !data.deleted) {
+        let info = {}; try { info = error && error.context && error.context.json ? await error.context.json() : {}; } catch {}
+        msg.dataset.state = "error"; msg.textContent = info.error || "Couldn't delete the account. Try again."; go.disabled = false; return;
+      }
+      await forgetThisDevice();
+      closeSheet(); toast("Your account is deleted"); setTimeout(() => location.reload(), 900);
+    };
+  } });
+}
+/* After the account is gone: nothing of it stays on this device either. */
+export async function forgetThisDevice() {
+  try { await sync.client.auth.signOut({ scope: "local" }); } catch {}
+  try { Object.keys(localStorage).filter(k => k.startsWith("koti.") || k.startsWith("koti")).forEach(k => localStorage.removeItem(k)); } catch {}
+  try { indexedDB.deleteDatabase("koti-files"); } catch {}
 }
 
 /* ---------- Lists and rooms ---------- */

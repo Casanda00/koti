@@ -11,6 +11,7 @@
 // Without it, Koti still works: the phone reads receipts (total only) and hears you itself.
 // The font is served by Koti itself, so opening the app sends nothing to Google.
 import { $, esc, openSheet, toast } from "./ui.js";
+import { WEB_URL } from "./platform.js";
 
 export const CONSENT_KEY = "koti.consent", CONSENT_VERSION = 1;
 const read = () => { try { const c = JSON.parse(localStorage.getItem(CONSENT_KEY) || "null"); return c && c.v === CONSENT_VERSION ? c : null; } catch { return null; } };
@@ -73,7 +74,8 @@ export function openPrivacy() {
         <p class="note" style="margin:0">All needed for Koti to work. No cookies, ads or tracking.</p>
         <h3 class="pv-h">Sent to</h3>
         <div class="grp">${SENT.map(([t, d]) => `<div class="row"><span class="rt">${esc(t)}<small>${esc(d)}</small></span></div>`).join("")}</div>
-        <button type="button" class="btn" id="pvChats">Delete my conversations with Koti</button>`;
+        <button type="button" class="btn" id="pvChats">Delete my conversations with Koti</button>
+        <a class="tlink" href="${esc(WEB_URL)}privacy.html" target="_blank" rel="noopener">The full privacy policy</a>`;
       $("#pvAi", B).onchange = e => { setConsent({ ai: e.target.checked }); const bn = document.getElementById("consent"); if (bn) bn.remove(); paint(); toast(e.target.checked ? "Koti's AI is on" : "Koti's AI is off. Nothing more is sent to OpenAI."); };
       $("#pvChats", B).onclick = () => import("./brain.js").then(m => { m.deleteAllConversations(); toast("Conversations deleted from this device"); });
     };

@@ -1,4 +1,5 @@
 // Keeping Koti up to date: compares the published version with the one running and reloads into the new one.
+import { isNative } from "./platform.js";
 import { APP_VERSION } from "./version.js";
 import { toast } from "./ui.js";
 
@@ -25,6 +26,7 @@ function reloadInto(version) {
 
 /* Returns "updating", "latest", or "offline". manual: the person asked, so say what happened. */
 export async function checkForUpdate({ manual = false, quiet = false } = {}) {
+  if (isNative()) { if (manual) toastApp(); return; }   // the App Store updates the phone app
   if (!navigator.onLine) { if (manual) toast("You're offline. Koti checks for updates when you're back online."); return "offline"; }
   try {
     const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
@@ -40,9 +42,12 @@ export async function checkForUpdate({ manual = false, quiet = false } = {}) {
 }
 
 export function initUpdates() {
+  if (isNative()) return;
   setTimeout(() => checkForUpdate({ quiet: true }), 3000);
   let last = Date.now();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && Date.now() - last > 5 * 60 * 1000) { last = Date.now(); checkForUpdate({ quiet: true }); }
   });
 }
+
+function toastApp() { import("./ui.js").then(m => m.toast("Updates come from the App Store.")); }

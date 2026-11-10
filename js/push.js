@@ -1,5 +1,6 @@
 // Reminders: push notifications for bills, paydays and budgets. Each phone turns them on for itself;
 // which reminders you get is a setting that follows your account.
+import { isNative } from "./platform.js";
 import { store } from "./data.js";
 import { $, $$, esc, icon, toast } from "./ui.js";
 import { sync } from "./sync.js";
@@ -16,7 +17,7 @@ const TYPES = [
   ["lists", "List changes", "When someone adds to a list through its shared link"],
   ["daily", "Today's payments", "Every evening at 20:00: what you paid today"],
 ];
-const supported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const supported = () => !isNative() && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;   // the phone app needs native push (MOBILE.md)
 const standaloneIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia("(display-mode: standalone)").matches || navigator.standalone);
 const b64ToBytes = s => { const p = "=".repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, c => c.charCodeAt(0)); };
 const bytesTo64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

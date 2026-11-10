@@ -61,6 +61,10 @@ Two tabs at the top, and a swipe between them: **Today** (what's left to spend t
 | `js/hear.js` | The microphone with AI: records, sends to `hear`, turns the answer into a purchase, a question, a reminder or list items |
 | `js/period.js` | The period picker: a title with a down arrow, Today to last month, and custom dates |
 | `js/receipt.js` | Today's payments: every payment in a period, as a receipt; and today's share |
+| `MOBILE.md` | Koti as an iPhone app (Capacitor): what's done, what's needed, what comes next |
+| `capacitor.config.json`, `ios/`, `tools/build-app.mjs` | The iPhone app: Capacitor's settings, the Xcode project, and `npm run app:build`, which copies the app into `www/` |
+| `js/platform.js` | Website or phone app: what steps aside in the app, and where links in emails lead |
+| `privacy.html` | The public privacy policy, for the App Store |
 | `tests/` | `npm test`: sync, money, bills, paydays and accounts, each against the defect it guards |
 | `js/install.js` | Getting Koti onto the Home Screen: one tap on Android and desktop, a guide on iPhone, open-in-browser help inside Instagram or WhatsApp, the strip on Now |
 | `js/paydays.js` | Pay dates, including the last working day (weekdays, not Finnish public holidays) |

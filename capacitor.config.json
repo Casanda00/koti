@@ -1,0 +1,10 @@
+{
+  "appId": "io.github.casanda00.koti",
+  "appName": "Koti",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#F7F8F6",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}
