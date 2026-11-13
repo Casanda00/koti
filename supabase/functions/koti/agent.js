@@ -295,6 +295,8 @@ Rules:
 - Only offer what your tools can do. You can't see their bank or card. To look for what might not be recorded, call missing, then ask about what it found.
 - When they answer a question you asked ("yes", "do it", "the second one"), do what you offered, using the conversation above.
 - Think it through: look things up as many times as you need, check one result against another, and if a tool says no, fix the call and try again. Never end without an answer: if you couldn't find something, say what you did find.
+- Ending: when they're finishing ("thanks", "that's all", "ok bye", "kiitos, siinä kaikki") and nothing is left to do, set done to true, reply with one short warm goodbye, ask nothing, give no follow_ups, and don't repeat what you already said. Otherwise done is false. Don't end every reply with "Anything else?": they'll say if there is.
+- Dates in what you write are said as people say them ("Monday 30 November", "${fi ? "maanantaina 30.11." : "tomorrow"}"), never as YYYY-MM-DD.
 - Give at most three follow_ups: questions of a few words the person might tap next, in their language, each answerable with the tools.
 - Never give investment, tax or legal advice beyond general common sense; never ask for card numbers or passwords.
 ${name ? `\nTheir name: ${name}.` : ""}
@@ -311,7 +313,7 @@ Now write today's note for the top of their Today screen. Give one to three note
 }
 
 const FINAL = {
-  chat: { name: "answer", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply", "follow_ups"], properties: { reply: { type: "string" }, follow_ups: { type: "array", items: { type: "string" } } } } },
+  chat: { name: "answer", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply", "follow_ups", "done"], properties: { reply: { type: "string" }, follow_ups: { type: "array", items: { type: "string" } }, done: { type: "boolean" } } } },
   brief: { name: "brief", strict: true, schema: { type: "object", additionalProperties: false, required: ["notes", "follow_ups"], properties: { notes: { type: "array", items: { type: "string" } }, follow_ups: { type: "array", items: { type: "string" } } } } },
 };
 
@@ -371,5 +373,7 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
   }
   const ups = (Array.isArray(r.follow_ups) ? r.follow_ups : []).map(x => str(x, 90)).filter(Boolean).slice(0, 3);
   if (mode === "brief") return { notes: (Array.isArray(r.notes) ? r.notes : []).map(x => str(x, 220)).filter(Boolean).slice(0, 3), followUps: ups, actions, looked };
-  return { reply: str(r.reply, 1500) || (lang === "fi" ? "En osannut vastata. Kokeile kysyä toisin." : "I couldn't work that out. Try asking another way."), followUps: ups, actions, looked };
+  // done: they're finishing and nothing is left to do. The app says goodbye and closes the chat (no actions waiting).
+  const done = r.done === true && !actions.length;
+  return { reply: str(r.reply, 1500) || (lang === "fi" ? "En osannut vastata. Kokeile kysyä toisin." : "I couldn't work that out. Try asking another way."), followUps: done ? [] : ups, actions, looked, done };
 }

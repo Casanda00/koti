@@ -2,7 +2,7 @@
 // then at most two questions Koti needs answered and a few plain sentences about what's next.
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import { $, esc, eur, eur0, icon, parseDay, openSheet, closeSheet, toast } from "./ui.js";
-import { periodFor, totals, catName, openStartBalance, openCheckBank } from "./money.js";
+import { periodFor, totals, catName, openStartBalance, openCheckBank, payWords } from "./money.js";
 import { setSpendingFilter } from "./spent.js";
 import { monthLedger, startPoint, awaitingIncome } from "./ledger.js";
 import * as E from "./engine.js";
@@ -89,7 +89,7 @@ export function renderNow() {
   const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
   const soon = occurrences(p).filter(o => !o.paid && !o.skipped && (o.due === today || o.due === tomorrow));
   const wk = rangeOf("week"), week = spentBetween(wk.from, wk.to).total;
-  const rowTx = t => `<button type="button" class="trow" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span>${esc(t.payee || catName(t.categoryId))}${t.payee ? `<small>${esc(catName(t.categoryId))}</small>` : ""}</span><b class="num">${t.kind === "refund" ? "+" : ""}${eur(t.amount)}</b></button>`;
+  const rowTx = t => `<button type="button" class="trow" ${t.fromProject ? `data-item="${esc(t.itemId)}"` : `data-tx="${esc(t.id)}"`}><span>${esc(t.payee || catName(t.categoryId))}${t.payee || E.fromNextPay(t) ? `<small>${esc([t.payee ? catName(t.categoryId) : null, E.fromNextPay(t) ? `From your pay on ${payWords({ date: t.fromPay })}` : null].filter(Boolean).join(" · "))}</small>` : ""}</span><b class="num">${t.kind === "refund" ? "+" : ""}${eur(t.amount)}</b></button>`;
   const rowBill = o => `<a class="trow" href="#bills"><span>${esc(o.bill.name)}<small>${o.due === today ? "Due today" : "Due tomorrow"}</small></span><b class="num">${eur(o.amount)}</b></a>`;
 
   root.innerHTML = `${wantsStrip() ? stripHTML() : ""}<section class="now-top">

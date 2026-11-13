@@ -812,6 +812,9 @@ body[data-mood="tight"] .inst-strip{background:rgba(21,22,26,.08);border-color:r
 .sp-pick{margin-top:8px}
 .rc-r small{display:block;font-size:13px;color:var(--muted);font-weight:400}
 .rc-r.dbl{border-bottom:3px double var(--ink)}
+.rc-r.later>b{color:var(--muted)}
+.rc-later{border-bottom:0;padding-top:4px;font-size:15px;color:var(--ink-2)}
+.rc-later b{font-weight:600}
 .pay-h .pk-b{font:800 30px/1 var(--display);font-stretch:62%;background:transparent;border:0;padding:0;min-height:44px}
 .pay-h .pk-b .ic{width:22px;height:22px}
 

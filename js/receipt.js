@@ -3,7 +3,7 @@
 import { store, todayISO, BILLS_CAT } from "./data.js";
 import * as E from "./engine.js";
 import { esc, eur, eur0, parseDay, openSheet } from "./ui.js";
-import { periodFor, catName } from "./money.js";
+import { periodFor, catName, payWords } from "./money.js";
 import { monthLedger } from "./ledger.js";
 import { nextPay } from "./income.js";
 import { rangeOf, spentBetween } from "./spent.js";
@@ -26,14 +26,20 @@ const title = sel => sel === "today" ? "Today's payments" : sel === "yesterday" 
 const row = (label, value, sub, cls = "") => `<div class="rc-r ${cls}"><span>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><b>${value}</b></div>`;
 
 /* The payments themselves: every expense and bill paid in the period, newest first, and the total. */
+export function paymentsBody(sel) { return body(sel); }
 function body(sel) {
   const r = rangeOf(sel), S = spentBetween(r.from, r.to), one = r.from === r.to;
   const list = S.entries.slice().sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
   const day = d => parseDay(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-  const rows = list.map(e => row(e.payee || catName(e.categoryId), minus(e.kind === "refund" ? -e.amount : e.amount), [e.payee ? catName(e.categoryId) : null, one ? null : day(e.date)].filter(Boolean).join(" · ") || null));
+  // Spending from the next pay is listed with the day it comes out, and kept out of the total: it isn't this
+  // money (the owner, 13 November 2026: two lunches said to come out of the next pay read as today's spending).
+  const rows = list.map(e => row(e.payee || catName(e.categoryId), minus(e.kind === "refund" ? -e.amount : e.amount),
+    [e.payee ? catName(e.categoryId) : null, one ? null : day(e.date), E.fromNextPay(e) ? `From your pay on ${payWords({ date: e.fromPay })}` : null].filter(Boolean).join(" · ") || null, E.fromNextPay(e) ? "later" : ""));
   if (rows.length) rows[rows.length - 1] = rows[rows.length - 1].replace('class="rc-r ', 'class="rc-r dbl ');
   const range = one ? longDay(r.from) : `${parseDay(r.from).toLocaleDateString("en-GB", { day: "numeric", month: "long" })} to ${parseDay(r.to).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`;
-  return { date: range, rows, total: ["Total", eur(S.total, Number.isInteger(Math.round(S.total * 100) / 100) ? 0 : 2)], foot: rows.length ? "" : "No payments." };
+  const later = Math.round(list.filter(e => E.fromNextPay(e)).reduce((s, e) => s + e.amount, 0) * 100) / 100, paid = Math.round((S.total - later) * 100) / 100;
+  const money = v => eur(v, Number.isInteger(Math.round(v * 100) / 100) ? 0 : 2);
+  return { date: range, rows, total: ["Total", money(paid)], later: later ? ["From your next pay", money(later)] : null, foot: rows.length ? "" : "No payments." };
 }
 
 export function openPayments(sel = "today") {
@@ -44,6 +50,7 @@ export function openPayments(sel = "today") {
         <p class="rc-d">${esc(R.date)}</p>
         ${R.rows.join("")}
         ${R.rows.length ? `<div class="rc-r rc-t"><span>${esc(R.total[0])}</span><b>${R.total[1]}</b></div>` : ""}
+        ${R.later ? `<div class="rc-r rc-later"><span>${esc(R.later[0])}<small>Not counted in the total</small></span><b>${R.later[1]}</b></div>` : ""}
         ${R.foot ? `<p class="rc-f">${esc(R.foot)}</p>` : ""}
       </div>`;
     bindPicker(B, s, pick => paint(B, pick));
