@@ -106,7 +106,7 @@ export async function ask({ message = "", audio = null, history = [], spoken = f
   else body.message = String(message).trim();
   const d = await invoke(body);
   autoApply(d.actions || []);
-  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
+  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, done: d.done === true, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
 }
 
 /* Remembering and forgetting happen as soon as Koti says so: the chat shows it, with Undo. */

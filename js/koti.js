@@ -146,7 +146,7 @@ function startConversation() {
   if (!canAsk()) { toast(aiOffReason("Koti")); return; }
   ui.conv.hidden = false; ui.form.hidden = true; ui.ups.hidden = true;
   conv = createConversation({
-    onTurn: async blob => { const r = await send({ audio: blob, quiet: true }); return r ? { speech: r.speech, text: r.reply } : null; },
+    onTurn: async blob => { const r = await send({ audio: blob, quiet: true }); return r ? { speech: r.speech, text: r.reply, end: r.done } : null; },
     play: reply => playReply(reply), stop: stopVoice,
     onState: (s, why) => {
       ui.conv.dataset.state = s;
@@ -154,6 +154,7 @@ function startConversation() {
         conv = null; ui.conv.hidden = true; ui.form.hidden = false; ui.ups.hidden = false;
         if (why === "mic") toast("Koti can't use the microphone. Allow it in your browser's settings.");
         else if (why === "quiet") toast("Conversation ended");
+        else if (why === "done") setTimeout(finishChat, 600);
         return;
       }
       ui.convS.textContent = CONV_WORDS[s] || "";
@@ -177,6 +178,8 @@ async function send({ message = "", audio = null, spoken = false, quiet = false 
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
     msgs.push({ role: "assistant", content: r.reply, actions: r.actions, followUps: r.followUps, remembered: r.remembered });
     if ((audio || spoken) && !quiet) playReply({ speech: r.speech, text: r.reply });
+    // They said that's all: Koti's goodbye shows, then the chat closes and the next one starts fresh.
+    if (r.done && !quiet) setTimeout(finishChat, 1800);
     return r;
   } catch (e) {
     msgs.push({ role: "error", content: String(e.message || e) });
@@ -184,6 +187,14 @@ async function send({ message = "", audio = null, spoken = false, quiet = false 
     if (quiet) throw e;
     return null;
   } finally { busy = false; persist(); paint(); }
+}
+
+/* The chat is over: kept in Earlier, closed, and a new one next time. */
+function finishChat() {
+  if (!ui || ui.el.hidden || busy || conv || ui.input.value.trim()) return;   // still typing: stay open
+  if (msgs.length) persist();
+  newConversation(); msgs = [];
+  closeKoti();
 }
 
 export function openKoti({ message = "" } = {}) {

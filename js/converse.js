@@ -26,8 +26,8 @@ export function makeVad(o = {}) {
 
 const TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
 
-/* A conversation. onTurn(blob) sends what was said and resolves with { speech, text } to play; onState(state)
-   gets "starting", "listening", "thinking", "speaking", or "ended" with a reason ("quiet", "stopped", "error"). */
+/* A conversation. onTurn(blob) sends what was said and resolves with { speech, text, end } to play (end: the conversation is over after it); onState(state)
+   gets "starting", "listening", "thinking", "speaking", or "ended" with a reason ("quiet", "stopped", "error", "done"). */
 export function createConversation({ onTurn, onState, play, stop }) {
   let stream = null, ctx = null, analyser = null, rec = null, alive = false, cutIn = null;
   const state = (s, x) => { try { onState && onState(s, x); } catch {} };
@@ -68,6 +68,8 @@ export function createConversation({ onTurn, onState, play, stop }) {
         await Promise.race([play(reply), new Promise(r => { cutIn = r; })]);
         cutIn = null;
       }
+      // They said that's all: after the goodbye, the conversation ends.
+      if (reply && reply.end) { end("done"); return; }
     }
   }
 
