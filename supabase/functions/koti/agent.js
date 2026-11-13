@@ -74,6 +74,11 @@ export function snapshot(M, today) {
     // Spending they said comes out of their next pay: purchases, not bills (Koti once called two lunches "bills").
     spendingToComeOutOfNextPay: { total: eu(L.owedSum), purchases: L.owed.map(t => ({ what: t.payee || t.note || name(t.categoryId), amount: Number(t.amount), bought: t.date, comesOutOn: t.fromPay })) },
     paymentsDatedAhead: eu(L.aheadSum),
+    // What the Today screen is asking them right now (the same rule as js/now.js), so Koti and the app say the same.
+    askingOnToday: [
+      ...[...L.overdue, ...L.dueThisMonth.filter(o => o.due < today || (o.bill.autopay && o.due <= today))].map(o => ({ asks: o.bill.autopay && !o.failed ? "Did it go out?" : "Did you pay it?", bill: o.bill.name, due: o.due, amount: eu(o.amount), starts: o.bill.startDate || null })),
+      ...L.late.map(o => ({ asks: "Did your pay arrive?", from: o.src.name, due: o.due, amount: eu(o.amount) })),
+    ],
     budgetMonth: { from: L.p.from, to: L.p.to, income: T.income == null ? null : eu(T.income), spent: eu(T.spend), billsPaid: eu(T.billsPaid), billsStillDue: eu(T.billsDue) },
     budgets: M.categories.filter(c => B.byId[c.id] != null).map(c => ({ category: c.name, budget: eu(B.byId[c.id]), spent: eu(T.byCat[c.id] || 0), left: eu(B.byId[c.id] - (T.byCat[c.id] || 0)) })),
     categoriesWithoutBudget: M.categories.filter(c => c.budget == null && c.id !== E.BILLS_CAT).map(c => c.name),
@@ -115,7 +120,13 @@ export const ACT = [
     weekday: Nm("For weekly: 0 Sunday … 6 Saturday", true), hour: Nm("Hour 0-23 (default 9)", true), note: S("More detail, or null", true) }),
   fn("add_bill", "Propose adding a regular bill they told you about.", {
     name: S("Who or what the bill is for"), amount: Nm("Euros each time"), frequency: { type: "string", enum: ["monthly", "quarterly", "yearly", "once"] },
-    due_day: Nm("Day of the month it's due, 1-31", true), due_date: Day("For a one-off bill, its due date"), autopay: Bo("It's a direct debit (goes out by itself)") }),
+    due_day: Nm("Day of the month it's due, 1-31", true), due_date: Day("For a one-off bill, its due date"), autopay: Bo("It's a direct debit (goes out by itself)"),
+    starts: Day("Its first due date when they say it starts later (e.g. next month), YYYY-MM-DD; null: the next due date from today") }),
+  fn("change_bill", "Propose changing one of their bills: its amount, due day, when it starts, direct debit, or pausing it. Opens the bill filled in, to confirm.", {
+    bill: S("One of their bill names"), amount: Nm("New amount in euros, or null", true), due_day: Nm("New day of the month, or null", true), starts: Day("New first due date, YYYY-MM-DD, or null"),
+    autopay: { type: ["boolean", "null"], description: "Direct debit on or off, or null" }, paused: { type: ["boolean", "null"], description: "Pause or resume it, or null" } }),
+  fn("bill_not_owed", "Propose marking one due date of a bill as not owed (it hadn't started, was cancelled or credited, or paid some other way). It stops being asked about and set aside.", {
+    bill: S("One of their bill names"), due: Day("The due date, YYYY-MM-DD", false) }),
   fn("add_goal", "Propose a savings goal.", { name: S("What they are saving for"), target: Nm("Euros to reach"), monthly: Nm("Euros to put aside a month, or null", true), target_date: Day("When they want it by, or null") }),
   fn("set_budget", "Propose a monthly budget for one of their categories.", { category: S("One of their category names"), amount: Nm("Euros a month") }),
   fn("remember", "Remember something about them that will help later: their situation, preferences, plans, habits, or a correction they gave. One short fact in the third person ('Gets paid on the last working day', 'Is saving for a sofa', 'Prefers short answers'). Never amounts that live in their records, never passwords or card numbers.", { fact: S("The fact, short") }),
@@ -169,7 +180,7 @@ export function look(M, today, name, a = {}) {
   if (name === "bills") {
     const L = E.state(M, today), p = E.periodOf(today, E.monthStart(M)), occ = E.billOccurrences(M, p, { includePaused: true });
     const next = b => { const y = +today.slice(0, 4), m = +today.slice(5, 7) - 1; for (let k = 0; k < 14; k++) { const d = E.billDue(b, y, m + k); if (d && d >= today) return d; } return null; };
-    return { bills: M.bills.map(b => { const o = occ.find(x => x.bill.id === b.id); return { name: b.name, amount: b.amount, frequency: b.frequency, autopay: b.autopay, active: b.active, nextDue: b.active ? next(b) : null,
+    return { bills: M.bills.map(b => { const o = occ.find(x => x.bill.id === b.id); return { name: b.name, amount: b.amount, frequency: b.frequency, dueDay: b.frequency === "once" ? null : b.dueDay, autopay: b.autopay, active: b.active, starts: b.startDate || null, nextDue: b.active ? next(b) : null,
       thisMonth: o ? { due: o.due, paid: !!o.paid, skipped: o.skipped, amount: eu(o.amount) } : null, ...(b.endDate ? { ends: b.endDate } : {}) }; }),
       overdue: L.kind === "current" ? L.overdue.map(o => ({ bill: o.bill.name, due: o.due, amount: eu(o.amount) })) : [] };
   }
@@ -251,6 +262,12 @@ export function missing(M, today) {
     unpaidBills, payNotRecorded, note: "Guesses from what they've recorded. Koti can't see their bank, so ask them; offer add_expense once they say what and how much." };
 }
 
+/* A bill's first due date when nothing else is said: this month's if its day hasn't gone yet, otherwise next month's. */
+export function firstDue(dueDay, today) {
+  const y = +today.slice(0, 4), m = +today.slice(5, 7) - 1, at = k => { const last = new Date(Date.UTC(y, m + k + 1, 0)).getUTCDate(); return E.ymd(y, m + k, Math.min(dueDay, last)); };
+  return at(0) >= today ? at(0) : at(1);
+}
+
 /* ---------- Actions: checked against their records, then returned to the app as cards ---------- */
 export function action(M, today, name, a = {}) {
   const fail = error => ({ error });
@@ -284,7 +301,28 @@ export function action(M, today, name, a = {}) {
     const dueDay = Number.isInteger(a.due_day) && a.due_day >= 1 && a.due_day <= 31 ? a.due_day : dueDate ? +dueDate.slice(8, 10) : null;
     if (!dueDay) return fail("Which day of the month is it due?");
     if (byName(M.bills, nm) && lower(byName(M.bills, nm).name) === lower(nm)) return fail(`They already have a bill called ${nm}.`);
-    return { type: "bill", name: nm, amount, frequency, dueDay, dueDate, autopay: a.autopay === true, anchorMonth: dueDate ? +dueDate.slice(5, 7) : +today.slice(5, 7) };
+    // When it starts: the date they gave, or else the next due date from today. A bill set up today owes nothing for
+    // a due date already gone this month (bills said to start next month were asked about this month: 14 November 2026).
+    const startDate = frequency === "once" ? null : day(a.starts) || firstDue(dueDay, today);
+    return { type: "bill", name: nm, amount, frequency, dueDay, dueDate, autopay: a.autopay === true, startDate, anchorMonth: dueDate ? +dueDate.slice(5, 7) : startDate ? +startDate.slice(5, 7) : +today.slice(5, 7) };
+  }
+  if (name === "change_bill") {
+    const b = byName(M.bills, a.bill); if (!b) return fail(`No bill called "${a.bill}". Their bills: ${M.bills.map(x => x.name).join(", ") || "none"}.`);
+    const ch = {};
+    if (a.amount != null) { const v = amountOf(a.amount); if (!v) return fail("Give the amount in euros."); ch.amount = v; }
+    if (a.due_day != null) { if (!(Number.isInteger(a.due_day) && a.due_day >= 1 && a.due_day <= 31)) return fail("A due day is 1 to 31."); ch.dueDay = a.due_day; }
+    if (a.starts != null) { const d = day(a.starts); if (!d) return fail("Give the first due date as YYYY-MM-DD."); ch.startDate = d; }
+    if (typeof a.autopay === "boolean") ch.autopay = a.autopay;
+    if (typeof a.paused === "boolean") ch.active = !a.paused;
+    if (!Object.keys(ch).length) return fail("Say what to change.");
+    return { type: "change_bill", bill: b.name, billId: b.id, changes: ch };
+  }
+  if (name === "bill_not_owed") {
+    const b = byName(M.bills, a.bill); if (!b) return fail(`No bill called "${a.bill}".`);
+    const due = day(a.due); if (!due) return fail("Give the due date as YYYY-MM-DD.");
+    const p = E.periodOf(due, E.monthStart(M)), o = E.billOccurrences(M, p, { includePaused: true }).find(x => x.bill.id === b.id && x.due === due);
+    if (!o) return fail(`${b.name} isn't due on ${due}. Look at bills or the snapshot for its due dates.`);
+    return { type: "bill_not_owed", bill: b.name, billId: b.id, due, amount: eu(o.amount), wasPaid: !!o.paid };
   }
   if (name === "add_goal") {
     const nm = str(a.name, 80), target = amountOf(a.target); if (!nm || !target) return fail("A goal needs a name and a target.");
@@ -318,11 +356,14 @@ You are their sharp, warm, proactive helper: you notice what matters, say it pla
 How Koti counts (use these words):
 - "Left to spend today" is today's share of what's left until payday, minus what was spent today. "Left until payday" is the balance after setting aside unpaid bills due before payday, overdue bills, payments dated ahead and this month's savings plan not yet moved. Money moved to a savings goal is not spending. Spending they said comes out of their next pay leaves on that payday.
 - A direct debit (autopay) is never assumed paid; Koti asks.
+- Bills are set aside: an unpaid bill due before payday is already taken out of "left until payday" and today's money. So marking a bill paid doesn't change what they have left today; it moves the money from "set aside" to "paid". Bill payments are not everyday spending.
+- A bill starts on its first due date ("starts"). Nothing is owed before it. If they say a bill starts later ("from next month", "from January"), that's its first due date.
+- The Today screen asks them about things: "Did you pay X?" for a bill past its due date and unpaid, "Did it go out?" for a direct debit on its due day, "Did your pay arrive?" for pay that's due. They're in the snapshot (askingOnToday). If one isn't really owed (the bill hadn't started, it was cancelled), the answer is Not owed, never Paid: propose bill_not_owed, and change_bill to fix its start.
 
 Rules:
 - Every amount you state comes from the snapshot below or from a tool result. Never estimate, add up in your head across tools, or invent figures. If you need a number you don't have, call a tool; to combine figures, call calculate; if no tool has it, say you don't know.
 - "After my next pay", "after bills", "what's left next month": call month_ahead. Spending that comes out of the next pay is purchases they made, not bills: call it what it is.
-- Bills belong in their records, not in what you remember: when they tell you about regular bills, propose add_bill for each (one card each), never remember them.
+- Bills belong in their records, not in what you remember: when they tell you about regular bills, propose add_bill for each (one card each, with starts when they say when it begins), never remember them. To fix a bill, change_bill; for a due date that isn't owed, bill_not_owed.
 - Dates: today is ${snap.today}. Turn "last week", "in October", "eilen" into exact dates yourself (weeks start on Monday).
 - Answer in ${fi ? "Finnish" : "English"} unless they write in the other language. Be brief: one or two short sentences, under 30 words, plain text, no markdown, no lists unless they ask. Amounts like ${fi ? "23,40 €" : "€23.40"}.
 - When they say they bought something with a price, call add_expense. "Remind me…" → add_reminder. Things to buy → add_to_list. A new regular bill → add_bill. Saving for something → offer add_goal. Then say in one sentence what you've put on the card.
