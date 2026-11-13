@@ -1048,3 +1048,16 @@ label#kcPicL{cursor:pointer}
 .kconv-s{margin:0;font-size:16px;font-weight:600;color:var(--ink-2)}
 @media (prefers-reduced-motion:reduce){.kconv-orb{animation:none!important}}
 .kconv .pill{justify-self:center}
+
+/* Koti's tables (a breakdown in a chat) and "How did Koti do?" */
+.ktable-w{margin:6px 0 2px 44px;overflow-x:auto;border-radius:14px;background:var(--paper);border:1px solid var(--line)}
+.ktable{width:100%;border-collapse:collapse;font-size:15px}
+.ktable th{text-align:left;font-weight:600;color:var(--muted);font-size:13px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.ktable td{padding:8px 12px;border-bottom:1px solid var(--soft-line)}
+.ktable td.num,.ktable th:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.ktable tr:last-child td{border-bottom:0}
+.ktable tr.tot td{font-weight:700;border-top:1.5px solid var(--ink)}
+.krate{margin:8px 0 0 44px;display:grid;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px}
+.krate p,.krate label{margin:0;font-weight:600}
+.krate .btns{display:flex;gap:8px;flex-wrap:wrap}
+.krate-done{margin:8px 0 0 44px;color:var(--muted);font-size:14px}

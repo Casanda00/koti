@@ -37,6 +37,10 @@ export function modelFromRows({ settings = {}, bills = [], tx = [], income = [],
 export const memoryOf = settings => (Array.isArray(settings && settings.memory) ? settings.memory : [])
   .filter(m => m && typeof m.text === "string" && m.text.trim()).slice(-MAX_MEMORY).map(m => ({ id: String(m.id || ""), text: m.text.trim().slice(0, MEMORY_LEN), at: m.at || null }));
 
+/* What they said could be better when Koti asked at the end of a chat (settings.kotiFeedback): the last few notes. */
+export const feedbackOf = settings => (Array.isArray(settings && settings.kotiFeedback) ? settings.kotiFeedback : [])
+  .filter(f => f && f.good === false && typeof f.note === "string" && f.note.trim()).slice(-5).map(f => f.note.trim().slice(0, 200));
+
 /* Category, project and goal names, both ways. */
 function namer(M) {
   const cats = new Map(M.categories.map(c => [c.id, c.name])), lists = new Map(M.lists.map(l => [l.id, l.name]));
@@ -67,7 +71,9 @@ export function snapshot(M, today) {
     leftUntilPayday: eu(L.left), balanceNow: eu(L.now), moneyMustLastUntil: L.until,
     nextPayday: pd ? { date: pd.date, inDays: pd.days, from: pd.source ? pd.source.name : null, amount: pd.source && pd.source.amount != null ? Number(pd.source.amount) : null } : null,
     setAsideForBillsBeforePayday: L.dueThisMonth.map(occ), overdueBills: L.overdue.map(occ), savingsPlanStillToMove: eu(L.savingsDue),
-    toComeOutOfNextPay: eu(L.owedSum), paymentsDatedAhead: eu(L.aheadSum),
+    // Spending they said comes out of their next pay: purchases, not bills (Koti once called two lunches "bills").
+    spendingToComeOutOfNextPay: { total: eu(L.owedSum), purchases: L.owed.map(t => ({ what: t.payee || t.note || name(t.categoryId), amount: Number(t.amount), bought: t.date, comesOutOn: t.fromPay })) },
+    paymentsDatedAhead: eu(L.aheadSum),
     budgetMonth: { from: L.p.from, to: L.p.to, income: T.income == null ? null : eu(T.income), spent: eu(T.spend), billsPaid: eu(T.billsPaid), billsStillDue: eu(T.billsDue) },
     budgets: M.categories.filter(c => B.byId[c.id] != null).map(c => ({ category: c.name, budget: eu(B.byId[c.id]), spent: eu(T.byCat[c.id] || 0), left: eu(B.byId[c.id] - (T.byCat[c.id] || 0)) })),
     categoriesWithoutBudget: M.categories.filter(c => c.budget == null && c.id !== E.BILLS_CAT).map(c => c.name),
@@ -91,6 +97,10 @@ export const LOOK = [
   fn("lists", "Their lists (shopping lists and home projects with rooms) and what is still to get on each, with prices where known."),
   fn("reminders", "The reminders they have set in Koti."),
   fn("missing", "What may not be recorded yet, worked out from their own records (Koti can't see bank accounts): places they pay most months that haven't appeared yet this budget month by the day they usually would, recent days with nothing recorded when they usually record most days, bills past due and not marked paid, and pay that was expected and not recorded. Use it when they think something is missing or the figures look off."),
+  fn("month_ahead", "The next budget month, worked out by Koti's engine: what it starts with (what's left now, plus pay still to come, less spending that comes out of the next pay), every bill due in it with its amount, the budgets and savings plan, and what's left after all of them. Use for 'after my next pay', 'after bills', 'what will remain next month'.", {
+    months_ahead: Nm("1 for the next budget month, 2 for the one after, up to 6") }),
+  fn("calculate", "Exact arithmetic on amounts you already have from the snapshot or a tool (never estimate): + - * / and brackets, e.g. '3100 - (15 + 8 + 50 + 8 + 67 + 910) - 18'. Returns the result to the cent.", {
+    expression: S("Numbers with + - * / and brackets only") }),
   fn("afford", "What happens if they spend an amount today: what's left today and until payday before and after, the amount a day from tomorrow, and the category's budget. Use for 'can I afford…'.", {
     amount: Nm("Euros"), category: S("One of their category names, or null", true), from_next_pay: Bo("True if it would come out of their next pay instead of today's money") }),
 ];
@@ -180,7 +190,31 @@ export function look(M, today, name, a = {}) {
       ...(pay ? { comesOutOfPayOn: pay.date } : {}), wouldBeOverUntilPayday: L1.left < 0 };
   }
   if (name === "missing") return missing(M, today);
+  if (name === "month_ahead") {
+    const sd = E.monthStart(M), n = Math.min(6, Math.max(1, Math.round(Number(a.months_ahead) || 1)));
+    const L = E.state(M, today); if (L.kind !== "current") return { error: "Counting hasn't started yet." };
+    const p = E.shiftPeriod(E.periodOf(today, sd), n, sd), P = E.month(M, p, today);
+    return { month: { from: p.from, to: p.to },
+      startsWith: { total: eu(P.start), ...(n === 1 ? { leftNow: eu(L.left), payStillToCome: eu(L.expectedSum + L.late.reduce((s, o) => s + o.amount, 0)), lessSpendingFromNextPay: eu(L.owedSum) } : {}) },
+      payInThatMonth: P.income.map(o => ({ from: o.src.name, due: o.due, amount: eu(o.amount) })),
+      bills: P.billList.map(o => ({ bill: o.bill.name, due: o.due, amount: eu(o.amount), autopay: !!o.bill.autopay })), billsTotal: eu(P.bills),
+      budgetsTotal: eu(P.budgets), savingsPlan: eu(P.goals), leftAfterAll: eu(P.left),
+      note: P.billList.length ? null : "No bills are saved in Koti for that month. If they've told you about bills, propose add_bill for each so they count." };
+  }
+  if (name === "calculate") { const v = calc(a.expression); return v == null ? { error: "Use only numbers, + - * / and brackets." } : { expression: String(a.expression).slice(0, 300), result: Math.round(v * 100) / 100 }; }
   return { error: `No tool called ${name}.` };
+}
+
+/* Exact arithmetic for the model: numbers, + - * / and brackets, nothing else (no eval). null if it isn't that. */
+export function calc(expr) {
+  const src = String(expr || "").replace(/€|eur|\s+/gi, "").replace(/(\d),(\d{1,2})(?!\d)/g, "$1.$2");
+  if (!src || src.length > 300 || /[^0-9.+\-*/()]/.test(src)) return null;
+  let i = 0;
+  const num = () => { const m = /^\d+(\.\d+)?|^\.\d+/.exec(src.slice(i)); if (!m) throw 0; i += m[0].length; return parseFloat(m[0]); };
+  const atom = () => { if (src[i] === "-") { i++; return -atom(); } if (src[i] === "(") { i++; const v = sum(); if (src[i++] !== ")") throw 0; return v; } return num(); };
+  const prod = () => { let v = atom(); while (src[i] === "*" || src[i] === "/") { const op = src[i++], r = atom(); if (op === "/" && r === 0) throw 0; v = op === "*" ? v * r : v / r; } return v; };
+  const sum = () => { let v = prod(); while (src[i] === "+" || src[i] === "-") { const op = src[i++], r = prod(); v = op === "+" ? v + r : v - r; } return v; };
+  try { const v = sum(); return i === src.length && isFinite(v) ? v : null; } catch { return null; }
 }
 
 /* What may not be recorded yet. Guesses from their own patterns, each with what it's based on; nothing is assumed. */
@@ -276,7 +310,7 @@ export function action(M, today, name, a = {}) {
 
 /* ---------- The prompts ---------- */
 export function systemPrompt(M, today, { lang = "en", mode = "chat" } = {}) {
-  const mem = memoryOf(M.settings), fi = lang === "fi", name = str(M.settings.name, 60);
+  const mem = memoryOf(M.settings), fi = lang === "fi", name = str(M.settings.name, 60), fb = feedbackOf(M.settings);
   const snap = snapshot(M, today);
   return `You are Koti, the assistant inside Koti, a phone app for one person in Finland to run their money and set up their home. Money is in euros.
 You are their sharp, warm, proactive helper: you notice what matters, say it plainly, and offer the next step. You can look things up with tools and propose actions, which appear as cards the person taps to confirm. You never save, pay or move money yourself, and you never claim you did.
@@ -286,7 +320,9 @@ How Koti counts (use these words):
 - A direct debit (autopay) is never assumed paid; Koti asks.
 
 Rules:
-- Every amount you state comes from the snapshot below or from a tool result. Never estimate, add up in your head across tools, or invent figures. If you need a number you don't have, call a tool; if no tool has it, say you don't know.
+- Every amount you state comes from the snapshot below or from a tool result. Never estimate, add up in your head across tools, or invent figures. If you need a number you don't have, call a tool; to combine figures, call calculate; if no tool has it, say you don't know.
+- "After my next pay", "after bills", "what's left next month": call month_ahead. Spending that comes out of the next pay is purchases they made, not bills: call it what it is.
+- Bills belong in their records, not in what you remember: when they tell you about regular bills, propose add_bill for each (one card each), never remember them.
 - Dates: today is ${snap.today}. Turn "last week", "in October", "eilen" into exact dates yourself (weeks start on Monday).
 - Answer in ${fi ? "Finnish" : "English"} unless they write in the other language. Be brief: one or two short sentences, under 30 words, plain text, no markdown, no lists unless they ask. Amounts like ${fi ? "23,40 €" : "€23.40"}.
 - When they say they bought something with a price, call add_expense. "Remind me…" → add_reminder. Things to buy → add_to_list. A new regular bill → add_bill. Saving for something → offer add_goal. Then say in one sentence what you've put on the card.
@@ -297,11 +333,13 @@ Rules:
 - Think it through: look things up as many times as you need, check one result against another, and if a tool says no, fix the call and try again. Never end without an answer: if you couldn't find something, say what you did find.
 - Ending: when they're finishing ("thanks", "that's all", "ok bye", "kiitos, siinä kaikki") and nothing is left to do, set done to true, reply with one short warm goodbye, ask nothing, give no follow_ups, and don't repeat what you already said. Otherwise done is false. Don't end every reply with "Anything else?": they'll say if there is.
 - Dates in what you write are said as people say them ("Monday 30 November", "${fi ? "maanantaina 30.11." : "tomorrow"}"), never as YYYY-MM-DD.
+- When they ask for a breakdown, a table, or several amounts side by side, put them in table (columns and rows of short text, at most 12 rows, a total row last when it adds up) and keep reply to one sentence. Otherwise table is null.
 - Give at most three follow_ups: questions of a few words the person might tap next, in their language, each answerable with the tools.
 - Never give investment, tax or legal advice beyond general common sense; never ask for card numbers or passwords.
 ${name ? `\nTheir name: ${name}.` : ""}
 What you remember about them:
 ${mem.length ? mem.map(m => `- ${m.text}`).join("\n") : "- (nothing yet)"}
+${fb.length ? `\nWhat they said could be better in earlier chats (do better at these):\n${fb.map(f => `- ${f}`).join("\n")}\n` : ""}
 
 Their categories: ${M.categories.map(c => c.name).join(", ") || "(none)"}
 Their savings goals: ${M.goals.map(g => g.name).join(", ") || "(none)"}
@@ -313,9 +351,18 @@ Now write today's note for the top of their Today screen. Give one to three note
 }
 
 const FINAL = {
-  chat: { name: "answer", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply", "follow_ups", "done"], properties: { reply: { type: "string" }, follow_ups: { type: "array", items: { type: "string" } }, done: { type: "boolean" } } } },
+  chat: { name: "answer", strict: true, schema: { type: "object", additionalProperties: false, required: ["reply", "follow_ups", "done", "table"], properties: { reply: { type: "string" }, follow_ups: { type: "array", items: { type: "string" } }, done: { type: "boolean" },
+    table: { anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, required: ["columns", "rows"], properties: { columns: { type: "array", items: { type: "string" } }, rows: { type: "array", items: { type: "array", items: { type: "string" } } } } }] } } } },
   brief: { name: "brief", strict: true, schema: { type: "object", additionalProperties: false, required: ["notes", "follow_ups"], properties: { notes: { type: "array", items: { type: "string" } }, follow_ups: { type: "array", items: { type: "string" } } } } },
 };
+
+/* A table from the answer, cleaned: up to 6 columns and 12 rows of short text, or null. */
+export function tableOf(t) {
+  if (!t || !Array.isArray(t.columns) || !Array.isArray(t.rows)) return null;
+  const cell = v => String(v ?? "").trim().slice(0, 60), columns = t.columns.slice(0, 6).map(cell);
+  const rows = t.rows.filter(Array.isArray).slice(0, 12).map(r => columns.map((_, k) => cell(r[k])));
+  return columns.length && rows.length ? { columns, rows } : null;
+}
 
 /* The history the app sent: user and assistant turns only, text only, the last few. */
 export function cleanHistory(h) {
@@ -375,5 +422,5 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
   if (mode === "brief") return { notes: (Array.isArray(r.notes) ? r.notes : []).map(x => str(x, 220)).filter(Boolean).slice(0, 3), followUps: ups, actions, looked };
   // done: they're finishing and nothing is left to do. The app says goodbye and closes the chat (no actions waiting).
   const done = r.done === true && !actions.length;
-  return { reply: str(r.reply, 1500) || (lang === "fi" ? "En osannut vastata. Kokeile kysyä toisin." : "I couldn't work that out. Try asking another way."), followUps: done ? [] : ups, actions, looked, done };
+  return { reply: str(r.reply, 1500) || (lang === "fi" ? "En osannut vastata. Kokeile kysyä toisin." : "I couldn't work that out. Try asking another way."), followUps: done ? [] : ups, actions, looked, done, table: tableOf(r.table) };
 }

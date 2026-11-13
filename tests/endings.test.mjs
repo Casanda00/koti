@@ -50,7 +50,7 @@ test("a chat isn't closed while a card is still waiting", async () => {
 test("the app closes a finished chat, keeps it in Earlier, and a hands-free one ends after the goodbye", () => {
   const k = read("js/koti.js"), c = read("js/converse.js"), b = read("js/brain.js");
   assert.match(b, /done: d\.done === true/);
-  assert.match(k, /if \(r\.done && !quiet\) setTimeout\(finishChat/);
+  assert.match(k, /if \(r\.done && !quiet\) \{ if \(rate\) markAsked\(\); else setTimeout\(finishChat/);
   assert.match(k, /function finishChat\(\) \{[\s\S]*?persist\(\);[\s\S]*?newConversation\(\);[\s\S]*?closeKoti\(\);/);
   assert.match(k, /end: r\.done/);
   assert.match(c, /if \(reply && reply\.end\) \{ end\("done"\)/);
