@@ -34,6 +34,7 @@ export const STORED = [
   ["The app itself", "Koti's own files, so it opens without a connection (the offline cache)."],
   ["Small preferences", "What you've dismissed, today's note, your conversations with Koti for 30 days, and this choice (local storage, koti.*)."],
   ["Your fixes", "Shop names, categories, dates and totals you corrected, so Koti reads better for you (with your settings)."],
+  ["How Koti did", "When you rate a chat: good or could be better, and your few words, so Koti does better for you (with your settings, the last 30)."],
 ];
 export const SENT = [
   ["Supabase", "Stores your account and records, so your phone and computer stay in step. Only you can read them."],

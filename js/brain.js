@@ -82,7 +82,9 @@ export function openConversation(id) {
 export const deleteConversation = id => { const c = chats(); c.list = c.list.filter(x => !(x.id === id && x.owner === owner())); if (c.current === id) c.current = null; saveChats(c); };
 export const deleteAllConversations = () => { const c = chats(); c.list = c.list.filter(x => x.owner !== owner()); c.current = null; saveChats(c); };
 /* What the server is sent of it: the words only, the last twelve turns. */
-export const historyOf = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content).slice(-12).map(m => ({ role: m.role, content: m.content }));
+/* A table Koti showed, as text, so the next turn knows what was in it. */
+const tableText = t => (t && t.columns ? "\n" + [t.columns, ...t.rows].map(r => r.join(" | ")).join("\n") : "");
+export const historyOf = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content).slice(-12).map(m => ({ role: m.role, content: m.content + (m.role === "assistant" ? tableText(m.table) : "") }));
 
 export const canAsk = () => aiPossible();
 const blobToDataURL = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
@@ -106,7 +108,7 @@ export async function ask({ message = "", audio = null, history = [], spoken = f
   else body.message = String(message).trim();
   const d = await invoke(body);
   autoApply(d.actions || []);
-  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, done: d.done === true, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
+  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, done: d.done === true, table: d.table && Array.isArray(d.table.columns) && Array.isArray(d.table.rows) ? d.table : null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
 }
 
 /* Remembering and forgetting happen as soon as Koti says so: the chat shows it, with Undo. */
@@ -133,7 +135,10 @@ export function describeAction(a) {
     case "expense": return { title: `${euro(a.amount)}${a.payee ? ` at ${a.payee}` : ""}`, sub: [a.category, a.note, a.date !== todayISO() ? dayWords(a.date) : null, a.fromNextPay ? "from your next pay" : a.fromSavings ? `from ${a.goal || "savings"}` : null].filter(Boolean).join(" · "), button: "Save it", icon: "wallet" };
     case "list": return { title: a.items.map(i => (i.qty ? `${i.qty} × ${i.name}` : i.name)).join(", "), sub: `On ${a.list || "your shopping list"}`, button: "Add", icon: "list" };
     case "reminder": return { title: a.title, sub: a.when === "once" ? `${dayWords(a.date)} at ${a.hour}:00` : a.when === "monthly" ? `Every month on the ${ord(a.monthDay)} at ${a.hour}:00` : `Every ${DAYS[a.weekday]} at ${a.hour}:00`, button: "Remind me", icon: "bell" };
-    case "bill": return { title: `${a.name}, ${euro(a.amount)}`, sub: `${a.frequency === "once" ? `Once, due ${dayWords(a.dueDate)}` : `${{ monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly" }[a.frequency]}, due on the ${ord(a.dueDay)}`}${a.autopay ? " · direct debit" : ""}`, button: "Add bill", icon: "bill" };
+    case "bill": return { title: `${a.name}, ${euro(a.amount)}`, sub: `${a.frequency === "once" ? `Once, due ${dayWords(a.dueDate)}` : `${{ monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly" }[a.frequency]}, due on the ${ord(a.dueDay)}`}${a.startDate ? ` · first one ${dayWords(a.startDate)}` : ""}${a.autopay ? " · direct debit" : ""}`, button: "Add bill", icon: "bill" };
+    case "change_bill": { const c = a.changes || {}; return { title: `Change ${a.bill}`, sub: [c.amount != null ? euro(c.amount) : null, c.dueDay ? `due on the ${ord(c.dueDay)}` : null, c.startDate ? `first one ${dayWords(c.startDate)}` : null,
+      c.autopay === true ? "direct debit" : c.autopay === false ? "not a direct debit" : null, c.active === false ? "paused" : c.active === true ? "resumed" : null].filter(Boolean).join(" · "), button: "Review", icon: "bill" }; }
+    case "bill_not_owed": return { title: `${a.bill}, ${euro(a.amount)}: not owed`, sub: `The one due ${dayWords(a.due)}${a.wasPaid ? " · the payment you marked comes off" : ""}`, button: "Not owed", icon: "bill" };
     case "goal": return { title: `${a.name}: ${euro(a.target)}`, sub: [a.monthly ? `${euro(a.monthly)} a month` : null, a.targetDate ? `by ${dayWords(a.targetDate)}` : null].filter(Boolean).join(" · ") || "A savings goal", button: "Start saving", icon: "plan" };
     case "budget": return { title: `${a.category}: ${euro(a.amount)} a month`, sub: a.was != null ? `Was ${euro(a.was)}` : "No budget yet", button: "Set budget", icon: "budgets" };
     case "remember": return { title: a.fact, sub: "Koti will remember", button: null, icon: "spark" };
@@ -172,8 +177,24 @@ export async function doAction(a) {
   }
   if (a.type === "bill") {
     const m = await import("./plan.js");
-    m.openBill(null, { name: a.name, amount: a.amount, frequency: a.frequency, dueDay: a.dueDay, dueDate: a.dueDate, autopay: a.autopay, anchorMonth: a.anchorMonth });
+    m.openBill(null, { name: a.name, amount: a.amount, frequency: a.frequency, dueDay: a.dueDay, dueDate: a.dueDate, autopay: a.autopay, anchorMonth: a.anchorMonth, startDate: a.startDate || null });
     return { opened: true };
+  }
+  if (a.type === "change_bill") {
+    const b = store.model.bills.find(x => x.id === a.billId) || store.model.bills.find(x => lower(x.name) === lower(a.bill));
+    if (!b) return { done: false, message: `There's no ${a.bill} bill any more.` };
+    const m = await import("./plan.js");
+    m.openBill(b, a.changes || {});   // the bill, with the changes filled in: Save to keep them
+    return { opened: true };
+  }
+  if (a.type === "bill_not_owed") {
+    const b = store.model.bills.find(x => x.id === a.billId) || store.model.bills.find(x => lower(x.name) === lower(a.bill));
+    if (!b) return { done: false, message: `There's no ${a.bill} bill any more.` };
+    const m = await import("./plan.js"), E = await import("./engine.js");
+    const o = E.billOccurrence(store.model, b, a.due), paid = o.paid ? { ...o.paid } : null;
+    if (paid) store.remove("transactions", paid.id);   // marked Paid by mistake: the payment comes off too
+    m.setSkipped(o, true);
+    return { done: true, message: `${b.name} on ${dayWords(a.due)}: not owed`, undo: () => { m.setSkipped(E.billOccurrence(store.model, b, a.due), false); if (paid) store.put("transactions", paid); } };
   }
   return { done: false, message: "" };
 }

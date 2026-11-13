@@ -7,6 +7,7 @@
 // Replies to something said out loud are read out loud too, unless that's switched off in You.
 import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
+import { shouldAsk, rateChat, markAsked, feedback, forgetFeedback } from "./feedback.js";
 import { ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
 import { learned, forgetLearned } from "./learn.js";
@@ -57,12 +58,14 @@ function sheet() {
     if (e.target.closest("#kcPast")) { past = !past; paint(); return; }
     const op = e.target.closest("[data-open-chat]"); if (op) { msgs = openConversation(op.dataset.openChat); past = false; paint(); return; }
     const del = e.target.closest("[data-del-chat]"); if (del) { deleteConversation(del.dataset.delChat); paint(); toast("Conversation deleted"); return; }
+    const rt = e.target.closest("[data-rate]"); if (rt) { const [i, v] = rt.dataset.rate.split(":"); if (v === "good") rated(+i, true, ""); else { msgs[+i].rate = "note"; paint(); setTimeout(() => { const n = $("#krIn", ui.el); if (n) n.focus(); }, 30); } return; }
     const up = e.target.closest("[data-up]"); if (up) { send({ message: up.dataset.up }); return; }
     const act = e.target.closest("[data-act]"); if (act) { runCard(act); return; }
     const und = e.target.closest("[data-unremember]"); if (und) { const [i, j] = und.dataset.unremember.split(":").map(Number); const a = msgs[i] && msgs[i].remembered && msgs[i].remembered[j]; if (a && a.undo) { a.undo(); a.undone = true; delete a.undo; persist(); paint(); toast("Undone"); } }
   });
   el.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); closeKoti(); } });
   ui.form.addEventListener("submit", e => { e.preventDefault(); const t = ui.input.value.trim(); if (t) send({ message: t }); });
+  el.addEventListener("submit", e => { const f = e.target.closest("[data-rate-note]"); if (!f) return; e.preventDefault(); rated(+f.dataset.rateNote, false, $("#krIn", f).value); });
   // A screenshot or a photo: a payment, a receipt or a bill is read and checked the usual way, over the conversation.
   $("#kcPic", el).addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) import("./scan.js").then(m => m.openScan({ file: f })); });
   if (aiVoice() || speechSupported()) {
@@ -108,13 +111,41 @@ function paint() {
     ? `<div class="kmsg mine"><p>${esc(m.content)}</p></div>`
     : m.role === "error" ? `<div class="kmsg err"><p>${esc(m.content)}</p></div>`
     : `<div class="kmsg koti">${m.content ? `<div class="ai-says"><span class="ai-mark" aria-hidden="true">${icon("spark", "ic sm")}</span><p>${esc(m.content)}</p></div>` : ""}
+        ${tableHTML(m.table)}
         ${(m.actions || []).map((a, j) => cardHTML(a, `${i}:${j}`)).join("")}
+        ${m.rate ? rateHTML(m.rate, i) : ""}
         ${(m.remembered || []).filter(r => r.done).map((r, j) => `<p class="kmem">${icon("spark", "ic xs")} ${esc(r.type === "forget" ? "Forgot" : "Remembered")}: ${esc(r.fact)}${r.undone ? " (undone)" : ` <button type="button" class="tlink" data-unremember="${i}:${j}">Undo</button>`}</p>`).join("")}
       </div>`).join("") + (busy ? `<div class="kmsg koti"><div class="ai-says"><span class="ai-mark" aria-hidden="true">${icon("spark", "ic sm")}</span><p class="kdots" aria-label="Koti is thinking"><i></i><i></i><i></i></p></div></div>` : "");
   const last = [...msgs].reverse().find(m => m.role === "assistant");
   u.ups.innerHTML = busy || !last ? "" : (last.followUps || []).map(s => `<button type="button" class="fchip" data-up="${esc(s)}">${esc(s)}</button>`).join("");
   u.go.disabled = busy; u.input.readOnly = busy;
   requestAnimationFrame(() => { u.log.scrollTop = u.log.scrollHeight; });
+}
+
+/* A table Koti gave (a breakdown): its columns and rows; the last row in bold when it's a total. */
+function tableHTML(t) {
+  if (!t || !t.columns || !t.rows || !t.rows.length) return "";
+  const total = /^(total|yhteensä|left|jäljellä)/i.test(String(t.rows[t.rows.length - 1][0] || ""));
+  const num = v => /^[−\-+]?\s?€?\s?[\d\s.,]+\s?€?$/.test(String(v).trim());
+  return `<div class="ktable-w"><table class="ktable"><thead><tr>${t.columns.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead>
+    <tbody>${t.rows.map((r, k) => `<tr${total && k === t.rows.length - 1 ? ' class="tot"' : ""}>${r.map(c => `<td${num(c) ? ' class="num"' : ""}>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+
+/* "How did Koti do?" at the end of a chat: Good, or Could be better with a few words. */
+function rateHTML(state, i) {
+  if (state === "thanks") return `<p class="krate-done">${esc(fi() ? "Kiitos! Koti käyttää tätä." : "Thanks. Koti will use this.")}</p>`;
+  if (state === "note") return `<form class="krate" data-rate-note="${i}"><label for="krIn">${esc(fi() ? "Mikä olisi voinut olla parempaa?" : "What could be better?")}</label>
+    <input class="inp" id="krIn" maxlength="200" placeholder="${esc(fi() ? "Muutama sana" : "A few words")}"><button type="submit" class="pill">${esc(fi() ? "Lähetä" : "Send")}</button></form>`;
+  return `<div class="krate"><p>${esc(fi() ? "Miten Koti onnistui?" : "How did Koti do?")}</p><div class="btns">
+    <button type="button" class="pill" data-rate="${i}:good">${esc(fi() ? "Hyvin" : "Good")}</button>
+    <button type="button" class="pill ghost" data-rate="${i}:better">${esc(fi() ? "Voisi olla parempi" : "Could be better")}</button></div></div>`;
+}
+const titleOfChat = () => { const u = msgs.find(m => m.role === "user"); return u ? u.content.slice(0, 60) : ""; };
+function rated(i, good, note) {
+  rateChat({ good, note, title: titleOfChat() });
+  if (msgs[i]) msgs[i].rate = "thanks";
+  persist(); paint();
+  setTimeout(finishChat, 1400);
 }
 
 /* An action as a card: what it is and a button, or what happened to it. */
@@ -176,10 +207,12 @@ async function send({ message = "", audio = null, spoken = false, quiet = false 
   try {
     const r = await ask({ message, audio, history, spoken: spoken && !audio && speaks() });
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
-    msgs.push({ role: "assistant", content: r.reply, actions: r.actions, followUps: r.followUps, remembered: r.remembered });
+    // At the end of a real conversation, once a day, Koti asks how it did instead of closing straight away.
+    const rate = r.done && !quiet && shouldAsk(msgs);
+    msgs.push({ role: "assistant", content: r.reply, actions: r.actions, followUps: r.followUps, remembered: r.remembered, table: r.table || null, ...(rate ? { rate: "ask" } : {}) });
     if ((audio || spoken) && !quiet) playReply({ speech: r.speech, text: r.reply });
     // They said that's all: Koti's goodbye shows, then the chat closes and the next one starts fresh.
-    if (r.done && !quiet) setTimeout(finishChat, 1800);
+    if (r.done && !quiet) { if (rate) markAsked(); else setTimeout(finishChat, 1800); }
     return r;
   } catch (e) {
     msgs.push({ role: "error", content: String(e.message || e) });
@@ -239,6 +272,12 @@ export function briefClick(e) {
 /* ---------- You: what Koti remembers ---------- */
 export const memoryCount = () => memory().length;
 /* Everything Koti remembers about you, to read, remove or add to. It goes with every question you ask Koti. */
+/* What you said could be better at the end of chats: Koti works on these. Each can be forgotten. */
+function feedbackHTML() {
+  const f = feedback().filter(x => !x.good && x.note);
+  return f.length ? `<h3 class="pv-h">Your notes on Koti's answers</h3><div class="grp">${f.slice().reverse().map(x => `<div class="row"><span class="rt">${esc(x.note)}<small>${esc(x.at || "")}</small></span><button type="button" class="pill ghost" data-unfb="${esc(x.id)}">Forget</button></div>`).join("")}</div>` : "";
+}
+
 export function openMemory() {
   openSheet({ title: "What Koti remembers", left: "Done", body: B => {
     const paintM = () => {
@@ -246,9 +285,11 @@ export function openMemory() {
       B.innerHTML = `<p class="note" style="margin-top:0">Koti uses these to make answers yours.</p>
         <div class="grp">${m.length ? m.map(x => `<div class="row"><span class="rt">${esc(x.text)}${x.at ? `<small>${esc(x.at)}</small>` : ""}</span><button type="button" class="pill ghost" data-forget="${esc(x.id)}" aria-label="Forget ${esc(x.text)}">Forget</button></div>`).join("") : `<div class="row"><span class="rt">Nothing yet<small>Try “I'm saving for a sofa”.</small></span></div>`}</div>
         ${learnedHTML()}
+        ${feedbackHTML()}
         <form class="field" id="memAdd" style="margin-top:14px"><label for="memIn">Tell Koti something about you</label><input class="inp" id="memIn" maxlength="200" placeholder="e.g. My partner pays the rent" autocomplete="off"></form>`;
       $("#memAdd", B).onsubmit = e => { e.preventDefault(); const t = $("#memIn", B).value.trim(); if (t && remember(t)) { toast("Koti will remember that"); paintM(); } };
     };
+    B.addEventListener("click", e => { const x = e.target.closest("[data-unfb]"); if (x) { forgetFeedback(x.dataset.unfb); paintM(); toast("Koti forgot that note"); } });
     B.addEventListener("click", e => { const l = e.target.closest("[data-unlearn]"); if (l) { forgetLearned(l.dataset.unlearn); paintM(); toast("Koti forgot that fix"); return; } });
     B.addEventListener("click", e => { const f = e.target.closest("[data-forget]"); if (!f) return; const gone = forget(f.dataset.forget); paintM(); if (gone) toast("Forgotten", { label: "Undo", run: () => { remember(gone.text); paintM(); } }); });
     paintM();

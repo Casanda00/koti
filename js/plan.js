@@ -210,9 +210,21 @@ export function bindCopy(scope) {
   scope.addEventListener("click", async e => { const c = e.target.closest("[data-copy]"); if (!c) return; e.preventDefault();
     try { await navigator.clipboard.writeText(c.dataset.copy); toast("Copied"); } catch { prompt("Copy this:", c.dataset.copy); } });
 }
+/* A bill's first due date from today: this month's if its day hasn't gone, otherwise next month's. */
+export function firstDueOf(dueDay, today) {
+  const y = +today.slice(0, 4), m = +today.slice(5, 7) - 1;
+  const at = k => { const last = new Date(y, m + k + 1, 0).getDate(), d = new Date(y, m + k, Math.min(dueDay, last)); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  return at(0) >= today ? at(0) : at(1);
+}
+
 export function openBill(bill = null, preset = {}) {
   // preset: what's known already (a quick name, or a bill Koti heard about in a conversation)
-  const b = bill || { name: "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "", dueDate: null, reference: "", iban: "", ...preset };
+  // preset on an existing bill: changes Koti proposed, filled in for the person to Save.
+  const b = bill ? { ...bill, ...preset } : { name: "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "", dueDate: null, reference: "", iban: "", ...preset };
+  // When a new bill starts, unless said: its next due date from today. A bill set up today owes nothing for a due
+  // date already gone this month (14 November 2026: bills said to start next month were asked "Did you pay?").
+  let startTouched = !!b.startDate;
+  const defaultStart = day => firstDueOf(Number(day) || 1, todayISO()).slice(0, 7);
   let freq = b.frequency;
   const ord = n => n + (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th");
   const QUICK = ["Rent", "Electricity", "Internet", "Phone", "Home insurance", "Streaming", "Gym", "Water"];
@@ -231,7 +243,7 @@ export function openBill(bill = null, preset = {}) {
         <label class="row"><span class="rt">Reference</span><input class="inl mono" id="biRef" value="${esc(b.reference || "")}" placeholder="Viitenumero" maxlength="60" autocomplete="off" style="max-width:55%"></label>
         <label class="row"><span class="rt">Pay to (IBAN)</span><input class="inl mono" id="biIban" value="${esc(b.iban || "")}" placeholder="Optional" maxlength="40" autocomplete="off" style="max-width:55%"></label>
         ${b.reference || b.iban ? `<div class="row copy-row">${b.reference ? `<button type="button" class="link" data-copy="${esc(b.reference)}">${icon("copy", "ic xs")} Copy reference</button>` : ""}${b.iban ? `<button type="button" class="link" data-copy="${esc(b.iban.replace(/\s+/g, ""))}">${icon("copy", "ic xs")} Copy IBAN</button>` : ""}</div>` : ""}
-        <label class="row" id="biStartRow"><span class="rt">Starts<small>First month this bill is due</small></span><input class="inl" id="biStart" type="month" value="${esc((b.startDate || todayISO()).slice(0, 7))}"></label>
+        <label class="row" id="biStartRow"><span class="rt">Starts<small>First month this bill is due</small></span><input class="inl" id="biStart" type="month" value="${esc(b.startDate ? b.startDate.slice(0, 7) : bill ? todayISO().slice(0, 7) : defaultStart(b.dueDay))}"></label>
         <label class="row" id="biEndRow"><span class="rt">Ends<small>Optional, like a contract end</small></span><input class="inl" id="biEnd" type="month" value="${esc((b.endDate || "").slice(0, 7))}"></label>
         <label class="row"><span class="rt">Note</span><input class="inl" id="biNote" value="${esc(b.note || "")}" placeholder="Optional" maxlength="500" autocomplete="off" style="max-width:60%"></label>
         ${bill ? `<label class="row"><span class="rt">Paused<small>Hidden from the calendar and totals</small></span><input type="checkbox" class="switch" id="biPaused" ${b.active ? "" : "checked"}></label>` : ""}
@@ -257,6 +269,9 @@ export function openBill(bill = null, preset = {}) {
     bindCopy(B); paint();
     $("#biFreqSel", B).onchange = e => { freq = e.target.value; paint(); };
     ["#biDay", "#biMonth", "#biDate", "#biStart", "#biAmt", "#biAuto"].forEach(id => $(id, B).addEventListener("input", paint));
+    $("#biStart", B).addEventListener("input", () => { startTouched = true; });
+    // A new bill's start follows its day until the person picks a start themselves.
+    $("#biDay", B).addEventListener("input", () => { if (!bill && !startTouched) { $("#biStart", B).value = defaultStart($("#biDay", B).value); paint(); } });
     $$("[data-qn]", B).forEach(x => x.onclick = () => { $("#biName", B).value = x.dataset.qn; $$("[data-qn]", B).forEach(y => y.setAttribute("aria-pressed", y === x)); $("#biAmt", B).focus(); });
     $("#biName", B).addEventListener("input", () => $$("[data-qn]", B).forEach(y => y.setAttribute("aria-pressed", y.dataset.qn === $("#biName", B).value.trim())));
     const rb = $("#biRemind", B); if (rb) rb.onclick = () => { closeSheet(); setTimeout(() => import("./reminders.js").then(m => m.openReminder(null, { title: `Pay ${bill.name}`, when: "before", aboutKind: "bill", aboutId: bill.id, beforeDays: 3 })), 260); };
