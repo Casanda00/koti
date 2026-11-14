@@ -29,7 +29,7 @@ export function awaitingIncome() {
   return out.sort((a, b) => b.due.localeCompare(a.due));
 }
 
-const MONEY = ["carried", "income", "spent", "bills", "adjust", "saved", "net", "now", "due", "aheadSum", "savingsDue", "left", "owedSum", "expectedSum", "end", "start", "budgets", "goals", "incomeSum"];
+const MONEY = ["carried", "income", "spent", "bills", "adjust", "saved", "fromSavings", "net", "now", "due", "aheadSum", "savingsDue", "left", "owedSum", "expectedSum", "end", "start", "budgets", "goals", "incomeSum"];
 /* One month: past, current or a plan, in euros. */
 export function monthLedger(p) {
   const L = E.month(M(), P(p), todayISO()), out = { ...L, p };

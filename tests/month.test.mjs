@@ -16,3 +16,9 @@ test("the month's figure is what's in the account less what's spoken for, as Tod
 test("no plan from the whole month's pay that the bank can't show", () => {
   for (const s of ["Living expenses", "left to plan", "Keep for", "billTotals", "incomeTotals"]) assert.ok(!src.includes(s), s);
 });
+
+test("every expense so far is a line: from where the month started to what's in the account now", () => {
+  for (const k of ["L.carried", "-L.spent", "-L.bills", "L.income", "L.adjust"]) assert.ok(src.includes(k), k);
+  assert.match(src, /In your account now/);
+  assert.match(src, /already in that bank balance/);
+});
