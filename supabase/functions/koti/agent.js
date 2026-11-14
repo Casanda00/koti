@@ -74,6 +74,7 @@ export function snapshot(M, today) {
     // Spending they said comes out of their next pay: purchases, not bills (Koti once called two lunches "bills").
     spendingToComeOutOfNextPay: { total: eu(L.owedSum), purchases: L.owed.map(t => ({ what: t.payee || t.note || name(t.categoryId), amount: Number(t.amount), bought: t.date, comesOutOn: t.fromPay })) },
     paymentsDatedAhead: eu(L.aheadSum),
+    plannedPayments: M.transactions.filter(t => E.isPlanned(t) && t.date > today).sort((x, y) => x.date.localeCompare(y.date)).slice(0, 12).map(t => ({ what: t.payee || t.note || name(t.categoryId), amount: Number(t.amount), on: t.date, category: name(t.categoryId) })),
     // What the Today screen is asking them right now (the same rule as js/now.js), so Koti and the app say the same.
     askingOnToday: [
       ...[...L.overdue, ...L.dueThisMonth.filter(o => o.due < today || (o.bill.autopay && o.due <= today))].map(o => ({ asks: o.bill.autopay && !o.failed ? "Did it go out?" : "Did you pay it?", bill: o.bill.name, due: o.due, amount: eu(o.amount), starts: o.bill.startDate || null })),
@@ -121,7 +122,11 @@ export const ACT = [
   fn("add_bill", "Propose adding a regular bill they told you about.", {
     name: S("Who or what the bill is for"), amount: Nm("Euros each time"), frequency: { type: "string", enum: ["monthly", "quarterly", "yearly", "once"] },
     due_day: Nm("Day of the month it's due, 1-31", true), due_date: Day("For a one-off bill, its due date"), autopay: Bo("It's a direct debit (goes out by itself)"),
-    starts: Day("Its first due date when they say it starts later (e.g. next month), YYYY-MM-DD; null: the next due date from today") }),
+    starts: Day("Its first due date when they say it starts later (e.g. next month), YYYY-MM-DD; null: the next due date from today"),
+    remind_days_before: Nm("A reminder this many days before each due date (0 = on the day), or null for none", true) }),
+  fn("plan_payment", "Propose a one-off payment they'll make on a day ahead that isn't a bill (paying someone back, tickets, a deposit, a fee, a one-off purchase): entered for that day in its category, so the money is set aside until then, with a reminder.", {
+    what: S("Who or what they'll pay, short"), amount: Nm("Euros"), date: Day("The day they'll pay, YYYY-MM-DD, after today", false), category: S("One of their category names, or null", true),
+    note: S("What it's for, or null", true), remind_days_before: Nm("Remind them this many days before (0 = on the day), or null for none", true) }),
   fn("change_bill", "Propose changing one of their bills: its amount, due day, when it starts, direct debit, or pausing it. Opens the bill filled in, to confirm.", {
     bill: S("One of their bill names"), amount: Nm("New amount in euros, or null", true), due_day: Nm("New day of the month, or null", true), starts: Day("New first due date, YYYY-MM-DD, or null"),
     autopay: { type: ["boolean", "null"], description: "Direct debit on or off, or null" }, paused: { type: ["boolean", "null"], description: "Pause or resume it, or null" } }),
@@ -209,7 +214,9 @@ export function look(M, today, name, a = {}) {
       startsWith: { total: eu(P.start), ...(n === 1 ? { leftNow: eu(L.left), payStillToCome: eu(L.expectedSum + L.late.reduce((s, o) => s + o.amount, 0)), lessSpendingFromNextPay: eu(L.owedSum) } : {}) },
       payInThatMonth: P.income.map(o => ({ from: o.src.name, due: o.due, amount: eu(o.amount) })),
       bills: P.billList.map(o => ({ bill: o.bill.name, due: o.due, amount: eu(o.amount), autopay: !!o.bill.autopay })), billsTotal: eu(P.bills),
+      plannedPayments: M.transactions.filter(t => E.isPlanned(t) && t.date >= p.from && t.date <= p.to).map(t => ({ what: t.payee || t.note, amount: Number(t.amount), on: t.date })),
       budgetsTotal: eu(P.budgets), savingsPlan: eu(P.goals), leftAfterAll: eu(P.left),
+      leftAfterPlannedPayments: eu(P.left - M.transactions.filter(t => E.isPlanned(t) && t.date >= p.from && t.date <= p.to).reduce((s, t) => s + E.cents(t.amount), 0)),
       note: P.billList.length ? null : "No bills are saved in Koti for that month. If they've told you about bills, propose add_bill for each so they count." };
   }
   if (name === "calculate") { const v = calc(a.expression); return v == null ? { error: "Use only numbers, + - * / and brackets." } : { expression: String(a.expression).slice(0, 300), result: Math.round(v * 100) / 100 }; }
@@ -268,6 +275,9 @@ export function firstDue(dueDay, today) {
   return at(0) >= today ? at(0) : at(1);
 }
 
+/* Days before for a reminder: 0 to 30, or null for none. */
+const remindOf = v => (Number.isInteger(v) && v >= 0 && v <= 30 ? v : null);
+
 /* ---------- Actions: checked against their records, then returned to the app as cards ---------- */
 export function action(M, today, name, a = {}) {
   const fail = error => ({ error });
@@ -304,7 +314,14 @@ export function action(M, today, name, a = {}) {
     // When it starts: the date they gave, or else the next due date from today. A bill set up today owes nothing for
     // a due date already gone this month (bills said to start next month were asked about this month: 14 November 2026).
     const startDate = frequency === "once" ? null : day(a.starts) || firstDue(dueDay, today);
-    return { type: "bill", name: nm, amount, frequency, dueDay, dueDate, autopay: a.autopay === true, startDate, anchorMonth: dueDate ? +dueDate.slice(5, 7) : startDate ? +startDate.slice(5, 7) : +today.slice(5, 7) };
+    return { type: "bill", name: nm, amount, frequency, dueDay, dueDate, autopay: a.autopay === true, startDate, anchorMonth: dueDate ? +dueDate.slice(5, 7) : startDate ? +startDate.slice(5, 7) : +today.slice(5, 7), remindDaysBefore: remindOf(a.remind_days_before) };
+  }
+  if (name === "plan_payment") {
+    const what = str(a.what, 120), amount = amountOf(a.amount); if (!what) return fail("Say who or what the payment is to.");
+    if (!amount) return fail("A planned payment needs its amount. Ask them; if they don't know it, offer a reminder instead.");
+    const date = day(a.date); if (!date || date <= today) return fail("A planned payment needs a day after today (YYYY-MM-DD).");
+    const cat = catName(a.category); if (cat === undefined) return fail(`No category called "${a.category}". Use one of: ${M.categories.map(c => c.name).join(", ")}, or null.`);
+    return { type: "payment", payee: what, amount, date, category: cat, note: str(a.note, 200), remindDaysBefore: remindOf(a.remind_days_before) };
   }
   if (name === "change_bill") {
     const b = byName(M.bills, a.bill); if (!b) return fail(`No bill called "${a.bill}". Their bills: ${M.bills.map(x => x.name).join(", ") || "none"}.`);
@@ -356,6 +373,7 @@ You are their sharp, warm, proactive helper: you notice what matters, say it pla
 How Koti counts (use these words):
 - "Left to spend today" is today's share of what's left until payday, minus what was spent today. "Left until payday" is the balance after setting aside unpaid bills due before payday, overdue bills, payments dated ahead and this month's savings plan not yet moved. Money moved to a savings goal is not spending. Spending they said comes out of their next pay leaves on that payday.
 - A direct debit (autopay) is never assumed paid; Koti asks.
+- A planned payment (plan_payment) is entered for its day in its category: until then it's set aside like a bill ("paymentsDatedAhead"), and on the day it counts as spending in that category, not out of that day's share. They're in the snapshot (plannedPayments).
 - Bills are set aside: an unpaid bill due before payday is already taken out of "left until payday" and today's money. So marking a bill paid doesn't change what they have left today; it moves the money from "set aside" to "paid". Bill payments are not everyday spending.
 - A bill starts on its first due date ("starts"). Nothing is owed before it. If they say a bill starts later ("from next month", "from January"), that's its first due date.
 - The Today screen asks them about things: "Did you pay X?" for a bill past its due date and unpaid, "Did it go out?" for a direct debit on its due day, "Did your pay arrive?" for pay that's due. They're in the snapshot (askingOnToday). If one isn't really owed (the bill hadn't started, it was cancelled), the answer is Not owed, never Paid: propose bill_not_owed, and change_bill to fix its start.
@@ -366,7 +384,8 @@ Rules:
 - Bills belong in their records, not in what you remember: when they tell you about regular bills, propose add_bill for each (one card each, with starts when they say when it begins), never remember them. To fix a bill, change_bill; for a due date that isn't owed, bill_not_owed.
 - Dates: today is ${snap.today}. Turn "last week", "in October", "eilen" into exact dates yourself (weeks start on Monday).
 - Answer in ${fi ? "Finnish" : "English"} unless they write in the other language. Be brief: one or two short sentences, under 30 words, plain text, no markdown, no lists unless they ask. Amounts like ${fi ? "23,40 €" : "€23.40"}.
-- When they say they bought something with a price, call add_expense. "Remind me…" → add_reminder. Things to buy → add_to_list. A new regular bill → add_bill. Saving for something → offer add_goal. Then say in one sentence what you've put on the card.
+- Something to pay on a day ahead ("remind me to pay…", "I have to pay…"): decide what it is. If it repeats (rent, a subscription, insurance, a domain renewed every year), it's a bill: add_bill with starts on that day and remind_days_before. If it's a one-off payment (paying someone back, tickets, a deposit, a fee, a purchase), it's not a bill: plan_payment on that day, in the category it belongs to, with remind_days_before. If you can't tell whether it repeats, ask once. Either needs the amount: ask; if they don't know it, offer add_reminder alone. A reminder with no money in it ("call mum") is add_reminder only. Default reminder: 1 day before.
+- When they say they bought something with a price, call add_expense. "Remind me…" (nothing to pay) → add_reminder. Things to buy → add_to_list. A new regular bill → add_bill. Saving for something → offer add_goal. Then say in one sentence what you've put on the card.
 - When they tell you something about themselves that would help later (how they get paid, who pays what, what they're saving for, preferences, a correction), call remember. Use what you remember to make answers personal. Don't repeat remembered facts back unprompted.
 - Be proactive but not pushy: when you see a real risk (a bill before payday that money doesn't cover, a budget about to run out, a late bill) or a good move (a goal nearly reached, spare money before payday), mention it once, with the figure.
 - Only offer what your tools can do. You can't see their bank or card. To look for what might not be recorded, call missing, then ask about what it found.

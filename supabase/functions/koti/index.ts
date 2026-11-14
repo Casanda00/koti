@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     const [settings, bills, tx, income, cats, goals, lists, items, reminders] = await Promise.all([
       rows("settings?select=data", "user_id"),
       rows("bills?select=*&deleted=eq.false", "id"),
-      rows("transactions?select=id,date,amount,kind,category_id,payee,note,bill_id,bill_due,income_id,income_due,from_pay,lines,updated_at&deleted=eq.false", "id"),
+      rows("transactions?select=id,date,amount,kind,category_id,payee,note,source,bill_id,bill_due,income_id,income_due,from_pay,lines,updated_at&deleted=eq.false", "id"),
       rows("income_sources?select=*&deleted=eq.false", "id"),
       rows("categories?select=id,name,budget&deleted=eq.false", "id"),
       rows("goals?select=*&deleted=eq.false", "id"),

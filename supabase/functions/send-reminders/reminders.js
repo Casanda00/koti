@@ -94,7 +94,7 @@ export function modelOf({ settings = {}, bills = [], tx = [], income = [], cats 
     bills: bills.map(r => ({ id: r.id, name: r.name, amount: Number(r.amount), frequency: r.frequency, dueDay: r.due_day, anchorMonth: r.anchor_month, autopay: !!r.autopay, active: r.active !== false,
       dueDate: r.due_date || null, startDate: r.start_date || null, endDate: r.end_date || null, reference: r.reference || null, dues: r.dues || {} })),
     transactions: tx.map(r => ({ id: r.id, date: r.date, amount: Number(r.amount), kind: r.kind, categoryId: r.category_id, payee: r.payee, billId: r.bill_id || null, billDue: r.bill_due || null,
-      incomeId: r.income_id || null, incomeDue: r.income_due || null, fromPay: r.from_pay || null, lines: Array.isArray(r.lines) ? r.lines : null, updatedAt: r.updated_at })),
+      incomeId: r.income_id || null, incomeDue: r.income_due || null, fromPay: r.from_pay || null, source: r.source || null, lines: Array.isArray(r.lines) ? r.lines : null, updatedAt: r.updated_at })),
     income: income.map(r => ({ id: r.id, name: r.name, amount: r.amount == null ? null : Number(r.amount), frequency: r.frequency, payDay: r.pay_day, expectedDate: r.expected_date, active: r.active !== false,
       endDate: r.end_date || null, missed: Array.isArray(r.missed) ? r.missed : [] })),
     categories: cats.map(r => ({ id: r.id, name: r.name, budget: r.budget == null ? null : Number(r.budget) })),

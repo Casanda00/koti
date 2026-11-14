@@ -166,6 +166,9 @@ export function startPoint(model, today) {
    the payday it comes out of, so today's money doesn't drop and the next pay starts that much lower. */
 export const fromNextPay = t => !!(t.fromPay && t.kind === "expense" && t.fromPay > t.date);
 export const moneyDay = t => (fromNextPay(t) ? t.fromPay : t.date);
+/* A payment planned ahead (Koti's "plan a payment"): an expense entered for its day, in its own category. Until then
+   it's set aside (aheadOut); on the day it's spending in that category, but not out of that day's share. */
+export const isPlanned = t => t.source === "planned" && t.kind === "expense" && !t.billId;
 /* Expenses still waiting for the pay they come out of, after today. */
 export function owedFromPay(model, today) {
   const list = model.transactions.filter(t => fromNextPay(t) && t.fromPay > today && t.date <= today).sort((a, b) => a.fromPay.localeCompare(b.fromPay) || a.date.localeCompare(b.date));
@@ -288,9 +291,11 @@ export function state(model, today) {
    Bills paid today were already taken off, so they don't count against it. */
 export function dayShare(model, today) {
   const L = state(model, today); if (L.kind !== "current") return null;
-  // Not today's money: spending from the next pay, and spending paid for out of savings (its withdrawal is today's).
+  // Not today's money: spending from the next pay, spending paid for out of savings (its withdrawal is today's), and a
+  // payment planned ahead (set aside until its day, like a bill).
   const S = spending(model, today, today), later = sum(S.entries.filter(fromNextPay), t => cents(t.amount)), saved = flow(model, today, today).fromSavings;
-  const spent = S.total - S.bills - later - saved, days = L.payday ? Math.max(1, L.payday.days) : null;
+  const planned = sum(S.entries.filter(isPlanned), t => cents(t.amount));
+  const spent = S.total - S.bills - later - saved - planned, days = L.payday ? Math.max(1, L.payday.days) : null;
   const morning = L.left + spent, share = days ? Math.round(Math.max(0, morning) / days) : null;
   // Over today's share: what's left is shared again over the days after today, so tomorrow's amount is smaller.
   // (Under it, tomorrow's is bigger.) None when payday is tomorrow: the new pay sets it.
