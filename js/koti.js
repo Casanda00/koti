@@ -60,6 +60,7 @@ function sheet() {
     const del = e.target.closest("[data-del-chat]"); if (del) { deleteConversation(del.dataset.delChat); paint(); toast("Conversation deleted"); return; }
     const rt = e.target.closest("[data-rate]"); if (rt) { const [i, v] = rt.dataset.rate.split(":"); if (v === "good") rated(+i, true, ""); else { msgs[+i].rate = "note"; paint(); setTimeout(() => { const n = $("#krIn", ui.el); if (n) n.focus(); }, 30); } return; }
     const up = e.target.closest("[data-up]"); if (up) { send({ message: up.dataset.up }); return; }
+    if (e.target.closest("[data-update]")) { import("./update.js").then(m => m.checkForUpdate({ manual: true })); return; }
     const act = e.target.closest("[data-act]"); if (act) { runCard(act); return; }
     const und = e.target.closest("[data-unremember]"); if (und) { const [i, j] = und.dataset.unremember.split(":").map(Number); const a = msgs[i] && msgs[i].remembered && msgs[i].remembered[j]; if (a && a.undo) { a.undo(); a.undone = true; delete a.undo; persist(); paint(); toast("Undone"); } }
   });
@@ -151,6 +152,7 @@ function rated(i, good, note) {
 /* An action as a card: what it is and a button, or what happened to it. */
 function cardHTML(a, key) {
   const d = describeAction(a);
+  if (!d.title) return `<div class="kcard"><span class="ico g">${icon("spark")}</span><span class="rt">${esc(fi() ? "Tämä vaatii uusimman Kotin" : "This needs the newest Koti")}<small>${esc(fi() ? "Päivitä ja kysy uudelleen." : "Update, then ask again.")}</small></span><button type="button" class="pill kcard-go" data-update>${esc(fi() ? "Päivitä" : "Update")}</button></div>`;
   const state = a.status === "done" ? `<span class="kcard-done">${icon("check", "ic xs")} Done</span>` : a.status === "opened" ? `<span class="kcard-done">Opened</span>` : a.status === "undone" ? `<span class="kcard-done">Undone</span>`
     : d.button ? `<button type="button" class="pill kcard-go" data-act="${key}">${esc(d.button)}</button>` : "";
   return `<div class="kcard"><span class="ico g">${icon(d.icon)}</span><span class="rt">${esc(d.title)}${d.sub ? `<small>${esc(d.sub)}</small>` : ""}</span>${state}</div>`;

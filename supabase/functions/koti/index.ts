@@ -95,7 +95,9 @@ Deno.serve(async (req) => {
       if (!message) { if (me.id) await giveBack(url, me.id); return json(200, { heard: "", reply: lang === "fi" ? "En kuullut mitään. Kokeile uudelleen." : "I didn't hear anything. Try again.", followUps: [], actions: [], used, limit: LIMIT }); }
     }
     const history = [...(Array.isArray(body.history) ? body.history : []), ...(mode === "chat" ? [{ role: "user", content: message }] : [])];
-    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history });
+    // The cards the app can show (an older app doesn't say: it gets the ones every version has had).
+    const can = Array.isArray(body.can) ? body.can.filter((x: unknown) => typeof x === "string").slice(0, 40) : null;
+    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history, can });
     // Koti speaks only when spoken to: a recording, or words the phone heard (spoken). Never to typing.
     const voice = mode === "chat" && shouldSpeak({ audio: !!audio, spoken: body.spoken === true, settings: M.settings }) ? await speech({ key: openaiKey, text: out.reply, lang }) : null;
     return json(200, { ...out, heard: audio ? message : undefined, speech: voice ? `data:audio/mpeg;base64,${voice}` : null, model: MODEL, used, limit: LIMIT });

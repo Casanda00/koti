@@ -101,9 +101,13 @@ async function invoke(body) {
 }
 
 /* One turn: what you said (text or a recording) and the conversation before it. */
+/* The cards this version of the app can show. Sent with every question, so Koti only offers those: a phone running
+   an older copy got a "change this bill" card it couldn't draw (14 November 2026). */
+export const ACTION_TYPES = ["expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
+
 export async function ask({ message = "", audio = null, history = [], spoken = false }) {
   // spoken: the phone heard these words. With a recording it's spoken too. Only then does the answer come with a voice.
-  const body = { mode: "chat", history: historyOf(history), ...(spoken && !audio ? { spoken: true } : {}) };
+  const body = { mode: "chat", history: historyOf(history), can: ACTION_TYPES, ...(spoken && !audio ? { spoken: true } : {}) };
   if (audio) { if (audio.size < 1200) throw Object.assign(new Error("Didn't hear anything. Hold the button a moment longer."), { code: "short" }); body.audio = await blobToDataURL(audio); }
   else body.message = String(message).trim();
   const d = await invoke(body);
@@ -226,7 +230,7 @@ export async function brief({ force = false } = {}) {
   if (briefing) return briefing;
   briefing = (async () => {
     try {
-      const d = await invoke({ mode: "brief" });
+      const d = await invoke({ mode: "brief", can: ACTION_TYPES });
       const b = { day: todayISO(), owner: owner(), at: Date.now(), notes: d.notes || [], followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)) };
       write(BRIEF_KEY, b);
       return b;
