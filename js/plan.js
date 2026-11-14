@@ -217,7 +217,7 @@ export function firstDueOf(dueDay, today) {
   return at(0) >= today ? at(0) : at(1);
 }
 
-export function openBill(bill = null, preset = {}) {
+export function openBill(bill = null, preset = {}, { onSaved = null } = {}) {   // onSaved(bill): after Save (Koti's linked reminder)
   // preset: what's known already (a quick name, or a bill Koti heard about in a conversation)
   // preset on an existing bill: changes Koti proposed, filled in for the person to Save.
   const b = bill ? { ...bill, ...preset } : { name: "", amount: null, frequency: "monthly", dueDay: 1, anchorMonth: new Date().getMonth() + 1, autopay: false, active: true, payee: "", note: "", dueDate: null, reference: "", iban: "", ...preset };
@@ -291,6 +291,7 @@ export function openBill(bill = null, preset = {}) {
       reference: $("#biRef", B).value.trim() || null, iban: $("#biIban", B).value.trim() || null,
       autopay, active: bill ? !$("#biPaused", B).checked : true, payee: $("#biPayee", B).value.trim() || null, note: $("#biNote", B).value.trim() || null, position: bill ? bill.position : store.model.bills.length });
     closeSheet();
+    if (onSaved) try { onSaved(saved); } catch { /* the bill is saved either way */ }
     toast(bill ? "Saved" : `Added ${saved.name}`);
   } });
 }

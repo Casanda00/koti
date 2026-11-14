@@ -127,6 +127,7 @@ const catId = n => (store.model.categories.find(c => lower(c.name) === lower(n))
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const ord = n => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
 const euro = v => "€" + (Number.isInteger(v) ? v : Number(v).toFixed(2));
+const remindWords = n => (n === 0 ? "reminder on the day" : `reminder ${n} day${n === 1 ? "" : "s"} before`);
 const dayWords = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
 /* What a card says, and the word on its button. */
@@ -135,7 +136,8 @@ export function describeAction(a) {
     case "expense": return { title: `${euro(a.amount)}${a.payee ? ` at ${a.payee}` : ""}`, sub: [a.category, a.note, a.date !== todayISO() ? dayWords(a.date) : null, a.fromNextPay ? "from your next pay" : a.fromSavings ? `from ${a.goal || "savings"}` : null].filter(Boolean).join(" · "), button: "Save it", icon: "wallet" };
     case "list": return { title: a.items.map(i => (i.qty ? `${i.qty} × ${i.name}` : i.name)).join(", "), sub: `On ${a.list || "your shopping list"}`, button: "Add", icon: "list" };
     case "reminder": return { title: a.title, sub: a.when === "once" ? `${dayWords(a.date)} at ${a.hour}:00` : a.when === "monthly" ? `Every month on the ${ord(a.monthDay)} at ${a.hour}:00` : `Every ${DAYS[a.weekday]} at ${a.hour}:00`, button: "Remind me", icon: "bell" };
-    case "bill": return { title: `${a.name}, ${euro(a.amount)}`, sub: `${a.frequency === "once" ? `Once, due ${dayWords(a.dueDate)}` : `${{ monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly" }[a.frequency]}, due on the ${ord(a.dueDay)}`}${a.startDate ? ` · first one ${dayWords(a.startDate)}` : ""}${a.autopay ? " · direct debit" : ""}`, button: "Add bill", icon: "bill" };
+    case "bill": return { title: `${a.name}, ${euro(a.amount)}`, sub: `${a.frequency === "once" ? `Once, due ${dayWords(a.dueDate)}` : `${{ monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly" }[a.frequency]}, due on the ${ord(a.dueDay)}`}${a.startDate ? ` · first one ${dayWords(a.startDate)}` : ""}${a.autopay ? " · direct debit" : ""}${a.remindDaysBefore != null ? ` · ${remindWords(a.remindDaysBefore)}` : ""}`, button: "Add bill", icon: "bill" };
+    case "payment": return { title: `${euro(a.amount)} to ${a.payee}`, sub: [dayWords(a.date), a.category, "set aside until then", a.remindDaysBefore != null ? remindWords(a.remindDaysBefore) : null].filter(Boolean).join(" · "), button: "Plan it", icon: "wallet" };
     case "change_bill": { const c = a.changes || {}; return { title: `Change ${a.bill}`, sub: [c.amount != null ? euro(c.amount) : null, c.dueDay ? `due on the ${ord(c.dueDay)}` : null, c.startDate ? `first one ${dayWords(c.startDate)}` : null,
       c.autopay === true ? "direct debit" : c.autopay === false ? "not a direct debit" : null, c.active === false ? "paused" : c.active === true ? "resumed" : null].filter(Boolean).join(" · "), button: "Review", icon: "bill" }; }
     case "bill_not_owed": return { title: `${a.bill}, ${euro(a.amount)}: not owed`, sub: `The one due ${dayWords(a.due)}${a.wasPaid ? " · the payment you marked comes off" : ""}`, button: "Not owed", icon: "bill" };
@@ -177,8 +179,18 @@ export async function doAction(a) {
   }
   if (a.type === "bill") {
     const m = await import("./plan.js");
-    m.openBill(null, { name: a.name, amount: a.amount, frequency: a.frequency, dueDay: a.dueDay, dueDate: a.dueDate, autopay: a.autopay, anchorMonth: a.anchorMonth, startDate: a.startDate || null });
+    // The reminder belongs to the bill: made once the bill is saved, "N days before" it's due, so it follows the bill.
+    const onSaved = a.remindDaysBefore == null ? null : saved => store.put("reminders", { title: `Pay ${saved.name}`, note: null, when: "before", aboutKind: "bill", aboutId: saved.id, beforeDays: a.remindDaysBefore, hour: 9, active: true, position: store.model.reminders.length });
+    m.openBill(null, { name: a.name, amount: a.amount, frequency: a.frequency, dueDay: a.dueDay, dueDate: a.dueDate, autopay: a.autopay, anchorMonth: a.anchorMonth, startDate: a.startDate || null }, { onSaved });
     return { opened: true };
+  }
+  if (a.type === "payment") {
+    // A one-off payment, not a bill: entered for its day in its category (set aside until then), with a reminder.
+    const tx = store.put("transactions", { date: a.date, amount: a.amount, kind: "expense", categoryId: catId(a.category), payee: a.payee, note: a.note || null, source: "planned" });
+    const on = a.remindDaysBefore == null ? null : new Date(new Date(a.date + "T12:00:00").getTime() - a.remindDaysBefore * 864e5);
+    const rd = on ? `${on.getFullYear()}-${String(on.getMonth() + 1).padStart(2, "0")}-${String(on.getDate()).padStart(2, "0")}` : null;
+    const r = rd && rd >= todayISO() ? store.put("reminders", { title: `Pay ${a.payee}, ${euro(a.amount)}`, note: [a.note, `Due ${dayWords(a.date)}`].filter(Boolean).join(". "), when: "once", date: rd, hour: 9, active: true, position: store.model.reminders.length }) : null;
+    return { done: true, message: `Planned: ${euro(a.amount)} to ${a.payee}, ${dayWords(a.date)}`, undo: () => { store.remove("transactions", tx.id); if (r) store.remove("reminders", r.id); } };
   }
   if (a.type === "change_bill") {
     const b = store.model.bills.find(x => x.id === a.billId) || store.model.bills.find(x => lower(x.name) === lower(a.bill));

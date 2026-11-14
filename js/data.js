@@ -86,7 +86,7 @@ function cleanTx(t) {
     id: String(t.id || newId("tx")).slice(0, 120), date: validDay(t.date) || todayISO(), amount: Math.round(Math.abs(Number(t.amount)) * 100) / 100,
     kind: TX_KINDS.includes(t.kind) ? t.kind : "expense", categoryId: t.categoryId || null,
     payee: t.payee ? String(t.payee).slice(0, 120) : null, note: t.note ? String(t.note).slice(0, 500) : null,
-    source: ["manual", "voice", "bank", "receipt"].includes(t.source) ? t.source : "manual",
+    source: ["manual", "voice", "bank", "receipt", "planned"].includes(t.source) ? t.source : "manual",   // planned: a payment Koti planned for a day ahead (engine isPlanned)
     receiptPath: t.receiptPath || null, bankRef: t.bankRef || null, billId: t.billId || null, billDue: validDay(t.billDue),
     incomeId: t.incomeId || null, incomeDue: validDay(t.incomeDue),
     fromPay: (t.kind || "expense") === "expense" && validDay(t.fromPay) && t.fromPay > (validDay(t.date) || todayISO()) ? t.fromPay : null,   // paid out of the next pay (engine.js fromNextPay)

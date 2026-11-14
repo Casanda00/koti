@@ -26,6 +26,7 @@ const title = sel => sel === "today" ? "Today's payments" : sel === "yesterday" 
 const row = (label, value, sub, cls = "") => `<div class="rc-r ${cls}"><span>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><b>${value}</b></div>`;
 
 const isBill = e => !!(e.billId || e.categoryId === BILLS_CAT);
+const isPlannedPay = e => E.isPlanned(e);
 
 /* The payments themselves: every expense and bill paid in the period, newest first, and the total. */
 export function paymentsBody(sel) { return body(sel); }
@@ -36,15 +37,15 @@ function body(sel) {
   // Spending from the next pay is listed with the day it comes out, and kept out of the total: it isn't this
   // money (the owner, 13 November 2026: two lunches said to come out of the next pay read as today's spending).
   const rows = list.map(e => row(e.payee || catName(e.categoryId), minus(e.kind === "refund" ? -e.amount : e.amount),
-    [isBill(e) ? "Bill, paid from money set aside" : e.payee ? catName(e.categoryId) : null, one ? null : day(e.date), E.fromNextPay(e) ? `From your pay on ${payWords({ date: e.fromPay })}` : null].filter(Boolean).join(" · ") || null, E.fromNextPay(e) || isBill(e) ? "later" : ""));
+    [isBill(e) ? "Bill, paid from money set aside" : isPlannedPay(e) ? `${catName(e.categoryId)} · planned, paid from money set aside` : e.payee ? catName(e.categoryId) : null, one ? null : day(e.date), E.fromNextPay(e) ? `From your pay on ${payWords({ date: e.fromPay })}` : null].filter(Boolean).join(" · ") || null, E.fromNextPay(e) || isBill(e) || isPlannedPay(e) ? "later" : ""));
   if (rows.length) rows[rows.length - 1] = rows[rows.length - 1].replace('class="rc-r ', 'class="rc-r dbl ');
   const range = one ? longDay(r.from) : `${parseDay(r.from).toLocaleDateString("en-GB", { day: "numeric", month: "long" })} to ${parseDay(r.to).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`;
   // Bills were set aside before they were paid, so paying one isn't spending today's money: it's listed, and shown
   // apart from the total (14 November 2026: bills marked Paid read as today's spending).
   const sum = xs => Math.round(xs.reduce((s, e) => s + (e.kind === "refund" ? -e.amount : e.amount), 0) * 100) / 100;
-  const later = sum(list.filter(e => E.fromNextPay(e))), bills = sum(list.filter(isBill)), paid = Math.round((S.total - later - bills) * 100) / 100;
+  const later = sum(list.filter(e => E.fromNextPay(e))), bills = sum(list.filter(e => isBill(e) || isPlannedPay(e))), paid = Math.round((S.total - later - bills) * 100) / 100;
   const money = v => eur(v, Number.isInteger(Math.round(v * 100) / 100) ? 0 : 2);
-  return { date: range, rows, total: ["Total", money(paid)], later: later ? ["From your next pay", money(later)] : null, bills: bills ? ["Bills paid", money(bills)] : null, foot: rows.length ? "" : "No payments." };
+  return { date: range, rows, total: ["Total", money(paid)], later: later ? ["From your next pay", money(later)] : null, bills: bills ? ["Bills and planned payments", money(bills)] : null, foot: rows.length ? "" : "No payments." };
 }
 
 export function openPayments(sel = "today") {
