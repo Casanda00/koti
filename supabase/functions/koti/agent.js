@@ -139,6 +139,13 @@ export const ACT = [
 ];
 export const TOOLS = [...LOOK, ...ACT];
 const ACTION_NAMES = new Set(ACT.map(t => t.function.name));
+/* Which card each action becomes in the app. The app says which cards it can show (can); an older app that doesn't
+   say gets the cards every version has had. Only those actions are offered, so no card arrives that the phone can't
+   draw (an old copy showed "change this bill" as an empty box: 14 November 2026). */
+export const CARD_OF = { add_expense: "expense", add_to_list: "list", add_reminder: "reminder", add_bill: "bill", plan_payment: "payment", change_bill: "change_bill",
+  bill_not_owed: "bill_not_owed", add_goal: "goal", set_budget: "budget", remember: "remember", forget: "forget" };
+export const OLD_CARDS = ["expense", "list", "reminder", "bill", "goal", "budget", "remember", "forget"];
+export const toolsFor = can => { const ok = new Set(Array.isArray(can) ? can : OLD_CARDS); return TOOLS.filter(t => !CARD_OF[t.function.name] || ok.has(CARD_OF[t.function.name])); };
 
 function validRange(from, to, today) {
   let f = E.validDay(from) ? from : E.periodOf(today, E.monthStart({ settings: {} })).from, t = E.validDay(to) ? to : today;
@@ -394,7 +401,8 @@ Rules:
 - Ending: when they're finishing ("thanks", "that's all", "ok bye", "kiitos, siinä kaikki") and nothing is left to do, set done to true, reply with one short warm goodbye, ask nothing, give no follow_ups, and don't repeat what you already said. Otherwise done is false. Don't end every reply with "Anything else?": they'll say if there is.
 - Dates in what you write are said as people say them ("Monday 30 November", "${fi ? "maanantaina 30.11." : "tomorrow"}"), never as YYYY-MM-DD.
 - When they ask for a breakdown, a table, or several amounts side by side, put them in table (columns and rows of short text, at most 12 rows, a total row last when it adds up) and keep reply to one sentence. Otherwise table is null.
-- Give at most three follow_ups: questions of a few words the person might tap next, in their language, each answerable with the tools.
+- Give at most three follow_ups: questions of a few words the person might tap next, in their language, each answerable with the tools. Never a follow_up that confirms or cancels a card ("Confirm change", "Cancel"): a card has its own button, and they can just ignore it.
+- If what they want needs an action you don't have, their app may be out of date: tell them to update Koti (More, then Version), then ask again.
 - Never give investment, tax or legal advice beyond general common sense; never ask for card numbers or passwords.
 ${name ? `\nTheir name: ${name}.` : ""}
 What you remember about them:
@@ -433,14 +441,15 @@ export function cleanHistory(h) {
 /* The conversation: the model looks things up and proposes actions for as many rounds as it needs (up to maxRounds),
    then answers. It never ends on nothing: if the answer comes back empty or unreadable, or it still wants to look
    things up after the last round, it is asked once more, without tools, to answer from what it found. */
-export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", mode = "chat", history = [], model = MODEL, maxRounds = MAX_ROUNDS }) {
+export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", mode = "chat", history = [], model = MODEL, maxRounds = MAX_ROUNDS, can = null }) {
+  const tools = toolsFor(can), offered = new Set(tools.map(t => t.function.name));
   const messages = [{ role: "system", content: systemPrompt(M, today, { lang, mode }) }, ...cleanHistory(history)];
   if (mode === "brief") messages.push({ role: "user", content: lang === "fi" ? "Mitä minun pitäisi tietää tänään?" : "What should I know today?" });
   const actions = [], looked = [];
   const ask = async (withTools) => {
     const res = await f(`${OPENAI_BASE}/chat/completions`, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(chatBody({ model, messages, ...(withTools ? { tools: TOOLS, tool_choice: "auto" } : {}), response_format: { type: "json_schema", json_schema: FINAL[mode] || FINAL.chat } }, { effort: "low", model })),
+      body: JSON.stringify(chatBody({ model, messages, ...(withTools ? { tools, tool_choice: "auto" } : {}), response_format: { type: "json_schema", json_schema: FINAL[mode] || FINAL.chat } }, { effort: "low", model })),
     });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw Object.assign(new Error(openaiError(res.status, e.error && e.error.message, model)), { status: res.status }); }
     const choice = ((await res.json()).choices || [])[0] || {};
@@ -458,7 +467,8 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
         let args = {}; try { args = JSON.parse(c.function.arguments || "{}"); } catch { /* empty */ }
         const n = c.function.name;
         let out;
-        if (ACTION_NAMES.has(n)) {
+        if (ACTION_NAMES.has(n) && !offered.has(n)) out = { error: "Their version of the app can't show that card. Tell them to update Koti (More, then Version), then ask again." };
+        else if (ACTION_NAMES.has(n)) {
           out = action(M, today, n, args);
           if (!out.error && actions.length < 6) { actions.push({ id: `a${actions.length + 1}`, ...out }); out = { ok: true, shown: "A card is shown to them to confirm." }; }
           else if (!out.error) out = { error: "Too many cards already. Finish with what you have." };
