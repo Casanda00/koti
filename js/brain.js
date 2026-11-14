@@ -84,7 +84,10 @@ export const deleteAllConversations = () => { const c = chats(); c.list = c.list
 /* What the server is sent of it: the words only, the last twelve turns. */
 /* A table Koti showed, as text, so the next turn knows what was in it. */
 const tableText = t => (t && t.columns ? "\n" + [t.columns, ...t.rows].map(r => r.join(" | ")).join("\n") : "");
-export const historyOf = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content).slice(-12).map(m => ({ role: m.role, content: m.content + (m.role === "assistant" ? tableText(m.table) : ""), ...(m.scan ? { doc: readingText(m.scan.id, m.scan.r) } : {}) }));
+/* The cards Koti showed with a reply, and what happened to each, so the next turn doesn't offer them again. */
+const cardsText = actions => { const a = (actions || []).filter(x => x && x.type); if (!a.length) return "";
+  return `\n[Cards shown: ${a.map(x => `${describeAction(x).title || x.type}${x.scanId ? ` (save_scan ${x.scanId})` : ""}: ${x.status || "waiting"}`).join("; ")}]`; };
+export const historyOf = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content).slice(-12).map(m => ({ role: m.role, content: m.content + (m.role === "assistant" ? tableText(m.table) + cardsText(m.actions) : ""), ...(m.scan ? { doc: readingText(m.scan.id, m.scan.r) } : {}) }));
 
 /* A photo added in the chat, as Koti's reader read it, in the words Koti reads: "[Photo p1, as read: {…}]".
    Category and place ids become their names. */

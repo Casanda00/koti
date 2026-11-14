@@ -83,3 +83,14 @@ test("the app: photos in the chat go into the conversation, and a bill has Ask K
   assert.match(p, /openKoti\(\{ about: \{ kind: "bill", id: bill\.id, name: bill\.name \} \}\)/);
   assert.match(i, /runAgent\(\{[^}]*image, about \}\)/);
 });
+
+test("a breakdown of a photo is a table from its reading, cards are never claimed as done, and chips never answer a card", () => {
+  const p = A.systemPrompt(M, TODAY);
+  assert.match(p, /Questions about a photo \(a breakdown[^]*answered from its reading, never with a card: a table of its lines/);
+  assert.match(p, /never say you saved, split, sorted, added or changed anything/);
+  const h = B.historyOf([{ role: "user", content: "Here's a photo.", scan: { id: "p1", r: reading } },
+    { role: "assistant", content: "A K-Market receipt.", actions: [{ type: "scan", scanId: "p1", docType: "receipt", title: "K-Market", total: 23.4, status: "opened" }] }]);
+  assert.match(h[1].content, /\[Cards shown: Receipt from K-Market · €23\.40 \(save_scan p1\): opened\]/);
+  for (const x of ["Cancel", "Confirm change", "Peruuta"]) assert.ok(A.CARD_ANSWER.test(x), x);
+  assert.ok(!A.CARD_ANSWER.test("Split differently"));
+});
