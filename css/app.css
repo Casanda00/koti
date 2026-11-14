@@ -1058,3 +1058,10 @@ label#kcPicL{cursor:pointer}
 .krate p,.krate label{margin:0;font-weight:600}
 .krate .btns{display:flex;gap:8px;flex-wrap:wrap}
 .krate-done{margin:8px 0 0 44px;color:var(--muted);font-size:14px}
+
+/* Koti chat: a photo you added, and a chat about one bill */
+.kphoto{display:block;max-width:62%;max-height:240px;border-radius:16px 16px 4px 16px;object-fit:cover;background:var(--soft-line)}
+.kphoto.pdf{display:grid;place-items:center;width:96px;height:72px;font-weight:800;color:var(--muted)}
+.kmsg.mine .kphoto+p{margin-top:6px}
+.kabout{display:flex;align-items:center;gap:6px;margin:0 0 10px;font-size:14px;color:var(--muted)}.kabout b{color:var(--ink)}
+.bi-si.ai{border-radius:50%}

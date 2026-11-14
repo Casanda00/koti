@@ -1,6 +1,6 @@
 // Koti service worker: the app opens offline, and updates arrive on the next launch.
 // Bump VERSION with every release so phones pick up new files.
-const VERSION = "koti-2026-11-14-57";
+const VERSION = "koti-2026-11-14-58";
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "css/app.css", "css/fonts.css", "fonts/archivo-latin.woff2", "fonts/archivo-latin-ext.woff2",
   "js/config.js", "js/theme.js", "js/vendor/supabase-2.117.3.js", "js/app.js", "js/data.js", "js/sync.js", "js/ui.js", "js/charts.js", "js/setup.js", "js/more.js", "js/money.js", "js/voice.js", "js/talk.js", "js/ptr.js", "js/plan.js", "js/receipts.js", "js/income.js", "js/lists.js", "js/version.js", "js/update.js", "js/scan.js", "js/ledger.js", "js/push.js", "js/now.js", "js/month.js", "js/place.js", "js/composer.js", "js/onboarding.js", "js/paydays.js", "js/reminders.js", "js/remindparse.js", "js/install.js", "js/spent.js", "js/hear.js", "js/period.js", "js/receipt.js", "js/engine.js", "js/budgetai.js", "js/brain.js", "js/koti.js", "js/privacy.js", "js/printeddate.js", "js/voiceout.js", "js/converse.js", "js/learn.js", "js/platform.js", "js/feedback.js",

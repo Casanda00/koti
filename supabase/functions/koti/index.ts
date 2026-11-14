@@ -1,5 +1,5 @@
 // Koti: talk to Koti about your money and home, and get today's note for the Today screen.
-//   {mode:"chat", message | audio, spoken?, history, today, lang}   an answer, follow-up questions, actions to confirm,
+//   {mode:"chat", message | audio, spoken?, image?, doc?, about?, history, today, lang}   an answer, follow-up questions, actions to confirm,
 //                                                        and, when it was spoken to, the answer as speech (MP3)
 //   {mode:"brief", today, lang}                            one to three notes for Today, and actions to confirm
 // The thinking is in agent.js. This file checks who is asking, counts the daily AI limit, reads that person's own
@@ -51,6 +51,7 @@ Deno.serve(async (req) => {
   let message = typeof body.message === "string" ? body.message.trim().slice(0, 1000) : "";
   const audio = mode === "chat" && !message ? audioOf(body.audio) : null;
   if (mode === "chat" && !message && !audio) return json(400, { error: "Say or type something.", code: "input" });
+  if (typeof body.image === "string" && body.image.length >= 3_500_000) return json(400, { error: "That photo is too big. Try a smaller one.", code: "input" });
   if (typeof body.audio === "string" && body.audio.length > 4_000_000) return json(400, { error: "That recording is too long. Keep it under a minute.", code: "input" });
 
   const use = await fetch(`${url}/rest/v1/rpc/koti_ai_use`, { method: "POST", headers: { Authorization: auth, apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ daily_limit: LIMIT }) });
@@ -94,10 +95,15 @@ Deno.serve(async (req) => {
       message = await transcribe({ key: openaiKey, bytes: audio.bytes, type: audio.type, lang, words });
       if (!message) { if (me.id) await giveBack(url, me.id); return json(200, { heard: "", reply: lang === "fi" ? "En kuullut mitään. Kokeile uudelleen." : "I didn't hear anything. Try again.", followUps: [], actions: [], used, limit: LIMIT }); }
     }
-    const history = [...(Array.isArray(body.history) ? body.history : []), ...(mode === "chat" ? [{ role: "user", content: message }] : [])];
+    // A photo added in the chat: what Koti's reader read (doc) goes with this turn, and the picture itself is shown once.
+    const doc = typeof body.doc === "string" ? body.doc.slice(0, 6200) : undefined;
+    const image = mode === "chat" && typeof body.image === "string" && body.image.length < 3_500_000 ? body.image : null;
+    const history = [...(Array.isArray(body.history) ? body.history : []), ...(mode === "chat" ? [{ role: "user", content: message, doc }] : [])];
+    // Opened from a bill (its Ask Koti): the chat is about that bill.
+    const about = body.about && typeof body.about === "object" && body.about.kind === "bill" && typeof body.about.id === "string" ? { kind: "bill", id: body.about.id.slice(0, 80) } : null;
     // The cards the app can show (an older app doesn't say: it gets the ones every version has had).
     const can = Array.isArray(body.can) ? body.can.filter((x: unknown) => typeof x === "string").slice(0, 40) : null;
-    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history, can });
+    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history, can, image, about });
     // Koti speaks only when spoken to: a recording, or words the phone heard (spoken). Never to typing.
     const voice = mode === "chat" && shouldSpeak({ audio: !!audio, spoken: body.spoken === true, settings: M.settings }) ? await speech({ key: openaiKey, text: out.reply, lang }) : null;
     return json(200, { ...out, heard: audio ? message : undefined, speech: voice ? `data:audio/mpeg;base64,${voice}` : null, model: MODEL, used, limit: LIMIT });

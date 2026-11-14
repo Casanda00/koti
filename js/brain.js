@@ -84,7 +84,20 @@ export const deleteAllConversations = () => { const c = chats(); c.list = c.list
 /* What the server is sent of it: the words only, the last twelve turns. */
 /* A table Koti showed, as text, so the next turn knows what was in it. */
 const tableText = t => (t && t.columns ? "\n" + [t.columns, ...t.rows].map(r => r.join(" | ")).join("\n") : "");
-export const historyOf = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content).slice(-12).map(m => ({ role: m.role, content: m.content + (m.role === "assistant" ? tableText(m.table) : "") }));
+export const historyOf = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content).slice(-12).map(m => ({ role: m.role, content: m.content + (m.role === "assistant" ? tableText(m.table) : ""), ...(m.scan ? { doc: readingText(m.scan.id, m.scan.r) } : {}) }));
+
+/* A photo added in the chat, as Koti's reader read it, in the words Koti reads: "[Photo p1, as read: {…}]".
+   Category and place ids become their names. */
+export function readingText(id, r) {
+  const P = (r && r.parsed) || {}, cats = store.model.categories, name = cid => (cats.find(c => c.id === cid) || {}).name || null;
+  const x = { type: r.docType || "receipt", from: P.payee || null, date: P.date || null, total: P.amount ?? null, ...(P.currency && P.currency !== "EUR" ? { currency: P.currency } : {}), ...(P.moneyIn ? { moneyIn: true } : {}),
+    ...(r.reply ? { koti: r.reply } : {}),
+    ...(P.lines && P.lines.length ? { lines: P.lines.slice(0, 60).map(l => ({ name: l.name, price: l.price, ...(l.qty ? { qty: l.qty } : {}), category: name(l.categoryId), ...(l.itemId ? { onList: true } : {}), ...(l.placeId ? { forHome: true } : {}) })) } : {}),
+    ...(r.bill ? { bill: { company: r.bill.company, amount: r.bill.amount, due: r.bill.due_date, reference: r.bill.reference ? "yes" : null, period: r.bill.period, isTheirBill: r.bill.match || null } } : {}),
+    ...(r.payments ? { payments: r.payments.slice(0, 30).map(p => ({ payee: p.payee, amount: p.amount, date: p.date, moneyIn: p.kind === "income" || undefined })) } : {}),
+    ...(r.check ? { check: r.check } : {}) };
+  return `[Photo ${id}, as read: ${JSON.stringify(x).slice(0, 5800)}]`;
+}
 
 export const canAsk = () => aiPossible();
 const blobToDataURL = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
@@ -103,11 +116,12 @@ async function invoke(body) {
 /* One turn: what you said (text or a recording) and the conversation before it. */
 /* The cards this version of the app can show. Sent with every question, so Koti only offers those: a phone running
    an older copy got a "change this bill" card it couldn't draw (14 November 2026). */
-export const ACTION_TYPES = ["expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
+export const ACTION_TYPES = ["scan", "expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
 
-export async function ask({ message = "", audio = null, history = [], spoken = false }) {
+export async function ask({ message = "", audio = null, history = [], spoken = false, image = null, doc = null, about = null }) {
   // spoken: the phone heard these words. With a recording it's spoken too. Only then does the answer come with a voice.
-  const body = { mode: "chat", history: historyOf(history), can: ACTION_TYPES, ...(spoken && !audio ? { spoken: true } : {}) };
+  // image and doc: a photo added in the chat, and what the reader read from it. about: a chat opened from a bill.
+  const body = { mode: "chat", history: historyOf(history), can: ACTION_TYPES, ...(spoken && !audio ? { spoken: true } : {}), ...(image ? { image } : {}), ...(doc ? { doc } : {}), ...(about ? { about } : {}) };
   if (audio) { if (audio.size < 1200) throw Object.assign(new Error("Didn't hear anything. Hold the button a moment longer."), { code: "short" }); body.audio = await blobToDataURL(audio); }
   else body.message = String(message).trim();
   const d = await invoke(body);
@@ -137,6 +151,8 @@ const dayWords = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { we
 /* What a card says, and the word on its button. */
 export function describeAction(a) {
   switch (a.type) {
+    case "scan": { const what = { bill: "Bill", payment: "Payment", payments: "Payments" }[a.docType] || "Receipt";
+      return { title: `${what}${a.title ? ` from ${a.title}` : ""}${a.total != null ? ` · ${euro(a.total)}` : ""}`, sub: a.docType === "bill" ? "Check the amount, due date and reference, then save" : a.docType === "payments" ? "Tick the ones to save" : "Check the lines and where they go, then save", button: "Check and save", icon: a.docType === "bill" ? "bill" : "cam" }; }
     case "expense": return { title: `${euro(a.amount)}${a.payee ? ` at ${a.payee}` : ""}`, sub: [a.category, a.note, a.date !== todayISO() ? dayWords(a.date) : null, a.fromNextPay ? "from your next pay" : a.fromSavings ? `from ${a.goal || "savings"}` : null].filter(Boolean).join(" · "), button: "Save it", icon: "wallet" };
     case "list": return { title: a.items.map(i => (i.qty ? `${i.qty} × ${i.name}` : i.name)).join(", "), sub: `On ${a.list || "your shopping list"}`, button: "Add", icon: "list" };
     case "reminder": return { title: a.title, sub: a.when === "once" ? `${dayWords(a.date)} at ${a.hour}:00` : a.when === "monthly" ? `Every month on the ${ord(a.monthDay)} at ${a.hour}:00` : `Every ${DAYS[a.weekday]} at ${a.hour}:00`, button: "Remind me", icon: "bell" };
