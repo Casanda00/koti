@@ -231,6 +231,7 @@ export function openBill(bill = null, preset = {}, { onSaved = null } = {}) {   
   openSheet({ title: bill ? b.name || "Bill" : "Add a bill", right: "Save", body: B => {
     const sel = (id, label, opts, cur) => `<select class="bi-w" id="${id}" aria-label="${esc(label)}">${opts.map(([v, t]) => `<option value="${v}"${String(v) === String(cur) ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
     B.innerHTML = `
+      ${bill ? `<button type="button" class="bi-scan bi-ask" id="biAsk"><span class="bi-si ai">${icon("spark", "ic sm")}</span><span><b>Ask Koti about ${esc(b.name || "this bill")}</b> When it's due, what you've paid, or what changed.</span></button>` : ""}
       ${bill ? "" : `<button type="button" class="bi-scan" id="biScan"><span class="bi-si">${icon("cam", "ic sm")}</span><span><b>Have the bill?</b> Take a photo and Koti fills this in, reference and all.</span></button>`}
       ${bill ? "" : `<p class="bi-k">What's the bill?</p><div class="chips bi-quick" role="group" aria-label="Common bills">${QUICK.map(n => `<button type="button" class="fchip" data-qn="${esc(n)}" aria-pressed="${n === b.name}">${esc(n)}</button>`).join("")}</div>`}
       <label class="bi-name"><span class="sr">Name</span><input class="inp" id="biName" value="${esc(b.name)}" placeholder="${bill ? "Name" : "Or type a name"}" maxlength="80" autocomplete="off"></label>
@@ -252,6 +253,8 @@ export function openBill(bill = null, preset = {}, { onSaved = null } = {}) {   
       <p class="msg" id="biMsg" aria-live="polite"></p>
       ${bill ? `<button type="button" class="btn" id="biRemind">${icon("bell", "ic sm")} Remind me before it's due</button>` : ""}
       ${bill ? `<p class="note" style="margin-top:0">${eur(perYear(b))} a year. Past payments stay in Month if you delete this bill.</p><button type="button" class="btn danger" id="biDel">${icon("trash", "ic sm")} Delete bill</button>` : ""}`;
+    // A chat about this bill: Koti knows its due dates and every payment, and can change it or mark a date not owed.
+    const ak = $("#biAsk", B); if (ak) ak.onclick = () => { closeSheet(); setTimeout(() => import("./koti.js").then(m => m.openKoti({ about: { kind: "bill", id: bill.id, name: bill.name } })), 240); };
     const sc = $("#biScan", B); if (sc) sc.onclick = () => import("./scan.js").then(m => m.openScan({ dest: { kind: "bill" } }));
     const docs = bill ? Object.entries(bill.dues || {}).filter(([, x]) => x.docPath).slice(-3).reverse() : [];
     if (docs.length) $("#biMsg", B).insertAdjacentHTML("beforebegin", `<div class="grp">${docs.map(([d, x]) => `<button type="button" class="row" data-doc="${esc(x.docPath)}"><span class="ico r">${icon("bill")}</span><span class="rt">Bill due ${esc(fmtDay(parseDay(d)))}<small>${x.amount ? eur(x.amount) : ""}${x.reference ? " · " + esc(x.reference) : ""}</small></span><span class="link">View</span></button>`).join("")}</div>`);

@@ -1,5 +1,11 @@
 # Koti as an iPhone app
 
+> **Changed 14 November 2026:** once Koti moves to the lehgo-technology organisation, the app is rebuilt on the
+> company's stack (Expo, React Native, TypeScript, EAS), in Koti's design, rather than shipped with Capacitor. The
+> money engine and the Supabase backend carry over unchanged; the screens are rebuilt. The plan is the "Koti migration
+> plan" doc, Phase 5. What follows records the Capacitor work, which stands until then: what Apple asks for (account
+> deletion, privacy policy, permission wording, AI consent) applies to the new app just the same.
+
 Decided 9 November 2026: Koti becomes an iPhone app with **Capacitor**. The same code runs inside a real app in the
 App Store; the website keeps working as it is. Android comes after the iPhone.
 

@@ -102,6 +102,16 @@ async function run(S, file, B) {
   }
 }
 
+/* A photo added in a chat with Koti, already read: the same "Check it" screen as a scan, from that reading. */
+export function openReading({ r, file = null }) {
+  const pref = store.model.settings.scanDefault;
+  const dest = r.docType === "bill" ? { kind: "bill" } : { kind: pref === "spending" ? "spending" : "mix" };
+  const S = { dest, keep: file ? keepDefault(dest.kind) : false, keepTouched: !file, file, r, lines: null, linesFor: null, edits: {} };
+  if (r.docType === "payments" && r.payments && r.payments.length) { paymentsReview(S); return; }
+  if (r.docType === "payment") { S.moneyIn = !!(r.parsed && r.parsed.moneyIn); S.billPay = billPaymentFor(r); }
+  review(S);
+}
+
 /* What the microphone heard, when it's several things ("Prisma 86, the lamp was 35 of it"): the same "Check it"
    screen as a receipt, without a photo. */
 export function openParsed(parsed) {

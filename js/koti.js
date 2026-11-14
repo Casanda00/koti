@@ -1,23 +1,29 @@
 // Talking to Koti, and Koti speaking first.
 //   openKoti()   a conversation over the screen: type or hold the microphone, Koti answers with your own figures,
 //                offers follow-up questions to tap, and proposes actions as cards (Save it, Add, Remind me…).
-//                It opens from the spark at the top, from a question typed in the add box, and from today's note.
+//                It opens from the spark at the top, from a question typed in the add box, from today's note, and from a
+//                bill (Ask Koti about it). A photo or screenshot added in the chat is read and talked about there.
 //   briefHTML()  "Koti noticed": today's note at the top of Today, one to three things worth knowing, with any
 //                action Koti suggests. Fetched once a day (js/brain.js).
 // Replies to something said out loud are read out loud too, unless that's switched off in You.
 import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
 import { shouldAsk, rateChat, markAsked, feedback, forgetFeedback } from "./feedback.js";
-import { ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
+import { ask, readingText, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
 import { learned, forgetLearned } from "./learn.js";
 import { aiVoice } from "./hear.js";
-import { aiOffReason } from "./receipts.js";
+import { aiOffReason, prepareFile, readReceipt } from "./receipts.js";
 import { speechSupported } from "./voice.js";
 import { playReply, stopVoice, unlockAudio, speaks } from "./voiceout.js";
 import { createConversation } from "./converse.js";
 
 let ui = null, msgs = [], busy = false, past = false;
+// about: the chat was opened from a bill (its Ask Koti), so it's about that bill. photos: what was added in this
+// chat, read and ready to save (the picture itself only while the app is open; the reading stays with the chat).
+let about = null;
+const photos = new Map();
+const BILL_STARTERS = ["When is it due next?", "How much have I paid this year?", "The amount has changed", "It's not owed this month"];
 const STARTERS = ["How am I doing this month?", "Can I afford a €60 dinner out?", "What bills are coming before payday?", "Where did my money go last week?"];
 const STARTERS_FI = ["Miten kuukausi menee?", "Onko minulla varaa 60 € illalliseen?", "Mitä laskuja tulee ennen palkkapäivää?", "Mihin rahani menivät viime viikolla?"];
 const fi = () => String(store.model.settings.voiceLang || "").startsWith("fi");
@@ -54,7 +60,8 @@ function sheet() {
     conv: $("#kcConv", el), orb: $("#kcOrb", el), convS: $("#kcConvS", el) };
   el.addEventListener("click", e => {
     if (e.target.closest("[data-kclose]")) { closeKoti(); return; }
-    if (e.target.closest("#kcNew")) { if (msgs.length) persist(); newConversation(); msgs = []; past = false; paint(); ui.input.focus(); return; }
+    if (e.target.closest("#kcNew")) { if (msgs.length) persist(); newConversation(); msgs = []; about = null; past = false; paint(); ui.input.focus(); return; }
+    if (e.target.closest("[data-unabout]")) { about = null; paint(); ui.input.focus(); return; }
     if (e.target.closest("#kcPast")) { past = !past; paint(); return; }
     const op = e.target.closest("[data-open-chat]"); if (op) { msgs = openConversation(op.dataset.openChat); past = false; paint(); return; }
     const del = e.target.closest("[data-del-chat]"); if (del) { deleteConversation(del.dataset.delChat); paint(); toast("Conversation deleted"); return; }
@@ -67,8 +74,9 @@ function sheet() {
   el.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); closeKoti(); } });
   ui.form.addEventListener("submit", e => { e.preventDefault(); const t = ui.input.value.trim(); if (t) send({ message: t }); });
   el.addEventListener("submit", e => { const f = e.target.closest("[data-rate-note]"); if (!f) return; e.preventDefault(); rated(+f.dataset.rateNote, false, $("#krIn", f).value); });
-  // A screenshot or a photo: a payment, a receipt or a bill is read and checked the usual way, over the conversation.
-  $("#kcPic", el).addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) import("./scan.js").then(m => m.openScan({ file: f })); });
+  // A screenshot or a photo is part of the conversation: Koti reads it, says what it is, and offers the record that
+  // fits (the receipt's lines to check, a new bill, a payment to plan…). Words typed beside it go with it.
+  $("#kcPic", el).addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) sendPhoto(f); });
   if (aiVoice() || speechSupported()) {
     ui.mic.hidden = false;
     initTalk(ui.mic, { send: async ({ audio, text }) => { if (audio) await send({ audio }); else if (text) await send({ message: text, spoken: true }); } });
@@ -102,14 +110,21 @@ function paint() {
   if (past) { paintPast(u); return; }
   $("#kcPast", u.el).textContent = "Earlier";
   const name = String(store.model.settings.name || "").split(" ")[0];
+  const aboutChip = about ? `<p class="kabout">${icon("bill", "ic xs")} About <b>${esc(about.name)}</b> <button type="button" class="tlink" data-unabout aria-label="Stop talking about ${esc(about.name)}">Clear</button></p>` : "";
+  if (!msgs.length && about) {
+    u.log.innerHTML = `${aboutChip}<div class="kchat-hello"><p class="kchat-hi">${esc(`What would you like to know about ${about.name}?`)}</p>
+      <p class="kchat-sub">Ask when it's due or what you've paid, or tell me what changed.</p></div>`;
+    u.ups.innerHTML = BILL_STARTERS.map(s => `<button type="button" class="fchip" data-up="${esc(s)}">${esc(s)}</button>`).join("");
+    return;
+  }
   if (!msgs.length) {
     u.log.innerHTML = `<div class="kchat-hello"><p class="kchat-hi">${esc(fi() ? `Hei${name ? " " + name : ""}! Mitä haluat tietää?` : `Hi${name ? " " + name : ""}. What would you like to know?`)}</p>
       <p class="kchat-sub">${esc(fi() ? "Kysy rahoistasi tai kerro, mitä lisätään." : "Ask about your money, or tell me what to add.")}</p></div>`;
     u.ups.innerHTML = (fi() ? STARTERS_FI : STARTERS).map(s => `<button type="button" class="fchip" data-up="${esc(s)}">${esc(s)}</button>`).join("");
     return;
   }
-  u.log.innerHTML = msgs.map((m, i) => m.role === "user"
-    ? `<div class="kmsg mine"><p>${esc(m.content)}</p></div>`
+  u.log.innerHTML = aboutChip + msgs.map((m, i) => m.role === "user"
+    ? `<div class="kmsg mine">${m.photo ? `<img class="kphoto" src="${esc(m.photo)}" alt="Your photo">` : m.pdf ? `<span class="kphoto pdf">PDF</span>` : ""}${!m.photo && !m.pdf || m.typed ? `<p>${esc(m.content)}</p>` : ""}</div>`
     : m.role === "error" ? `<div class="kmsg err"><p>${esc(m.content)}</p></div>`
     : `<div class="kmsg koti">${m.content ? `<div class="ai-says"><span class="ai-mark" aria-hidden="true">${icon("spark", "ic sm")}</span><p>${esc(m.content)}</p></div>` : ""}
         ${tableHTML(m.table)}
@@ -162,6 +177,12 @@ async function runCard(btn) {
   const [i, j] = btn.dataset.act.split(":"), brief = i === "b";
   const a = brief ? (cachedBrief() || { actions: [] }).actions.find(x => x.id === j) : msgs[+i] && msgs[+i].actions[+j];
   if (!a || a.status) return;
+  if (a.type === "scan") {   // the photo's reading, on the usual "Check it" screen
+    const m = msgs.find(x => x.scan && x.scan.id === a.scanId);
+    if (!m) { toast("That photo isn't in this chat any more. Add it again."); return; }
+    import("./scan.js").then(s => s.openReading({ r: m.scan.r, file: photos.get(a.scanId) || null }));
+    a.status = "opened"; persist(); paint(); return;
+  }
   btn.disabled = true;
   const r = await doAction(a);
   if (brief) { dismissBriefAction(a.id); if (r.done) toast(r.message, r.undo ? { label: "Undo", run: r.undo } : undefined); return; }
@@ -200,14 +221,15 @@ function startConversation() {
 
 /* One turn. Koti speaks only when spoken to: a recording or words the phone heard, never typing.
    quiet: the hands-free conversation plays the answer itself. Returns the answer. */
-async function send({ message = "", audio = null, spoken = false, quiet = false }) {
+async function send({ message = "", audio = null, spoken = false, quiet = false, mine = null, image = null }) {
   if (busy) return null;
   if (!canAsk()) { toast(aiOffReason("Koti")); return; }
-  const history = msgs.filter(m => m.role !== "error");
-  if (message) msgs.push({ role: "user", content: message });
+  const history = msgs.filter(m => m.role !== "error" && m !== mine);
+  if (message && !mine) msgs.push({ role: "user", content: message });
   ui.input.value = ""; busy = true; paint();
   try {
-    const r = await ask({ message, audio, history, spoken: spoken && !audio && speaks() });
+    const doc = mine && mine.scan ? readingText(mine.scan.id, mine.scan.r) : null;
+    const r = await ask({ message, audio, history, spoken: spoken && !audio && speaks(), image, doc, about: about ? { kind: about.kind, id: about.id } : null });
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
     // At the end of a real conversation, once a day, Koti asks how it did instead of closing straight away.
     const rate = r.done && !quiet && shouldAsk(msgs);
@@ -224,18 +246,56 @@ async function send({ message = "", audio = null, spoken = false, quiet = false 
   } finally { busy = false; persist(); paint(); }
 }
 
+/* A photo or screenshot added in the chat: read by Koti's reader (the same as a scan), shown as yours, then sent with
+   what was read so Koti can say what it is and offer the record that fits. The picture goes along once, so Koti can
+   look at it too: a question about it, or a photo that isn't a receipt (a shopping list, a letter with a date). */
+const toDataURL = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+function thumbOf(prepared) {
+  if (!prepared.canvas) return null;
+  const c = document.createElement("canvas"), k = 240 / Math.max(prepared.canvas.width, prepared.canvas.height);
+  c.width = Math.round(prepared.canvas.width * Math.min(1, k)); c.height = Math.round(prepared.canvas.height * Math.min(1, k));
+  c.getContext("2d").drawImage(prepared.canvas, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.7);
+}
+/* What's kept of a reading with the chat: no picture data, nothing the screens don't use. */
+const keepOf = r => ({ ai: true, docType: r.docType, reply: r.reply || null, bill: r.bill || null, payments: r.payments || null, parsed: r.parsed || {} });
+async function sendPhoto(file) {
+  if (busy) return;
+  if (!canAsk()) { toast(aiOffReason("Koti")); return; }
+  const typed = ui.input.value.trim(), id = "p" + (msgs.filter(m => m.scan).length + 1);
+  const mine = { role: "user", content: typed || "Here's a photo.", typed: !!typed };
+  msgs.push(mine); ui.input.value = ""; busy = true; paint();
+  let image = null;
+  try {
+    const prepared = await prepareFile(file);
+    if (prepared.type === "application/pdf") mine.pdf = true; else { mine.photo = thumbOf(prepared); image = await toDataURL(prepared.blob); }
+    paint();
+    let r = null;
+    try { r = await readReceipt(prepared, null, null); } catch (e) { if (e.code !== "not_receipt") throw e; }   // not a receipt: Koti still looks at it
+    if (r && r.ai) { mine.scan = { id, r: keepOf(r) }; photos.set(id, prepared); }
+    else if (!image) throw new Error("Koti couldn't read that PDF. Try a photo or a screenshot of it.");
+  } catch (e) {
+    msgs.push({ role: "error", content: String(e.message || e) });
+    busy = false; persist(); paint(); return;
+  }
+  busy = false;
+  await send({ message: mine.content, mine, image });
+}
+
 /* The chat is over: kept in Earlier, closed, and a new one next time. */
 function finishChat() {
   if (!ui || ui.el.hidden || busy || conv || ui.input.value.trim()) return;   // still typing: stay open
   if (msgs.length) persist();
-  newConversation(); msgs = [];
+  newConversation(); msgs = []; about = null;
   closeKoti();
 }
 
-export function openKoti({ message = "" } = {}) {
+/* about: { kind: "bill", id, name } when opened from a bill. A chat about something else starts fresh. */
+export function openKoti({ message = "", about: on = null } = {}) {
   if (!canAsk() && !message) { toast(aiOffReason("Koti")); return; }
   const u = sheet();
   msgs = conversation(); past = false;
+  if (on && !(about && about.id === on.id)) { if (msgs.length) { persist(); newConversation(); msgs = []; } about = on; }
   u.el.hidden = false; requestAnimationFrame(() => u.el.classList.add("on"));
   document.body.classList.add("kchat-open");
   paint();

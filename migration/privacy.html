@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Koti · Privacy</title>
+<link rel="icon" type="image/png" sizes="192x192" href="../icons/icon-192.png">
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  :root{--bg:#F7F8F6;--paper:#fff;--ink:#15161A;--ink-2:#3D3F45;--line:#E2E4DF;--spruce:#2442D6}
+  @media (prefers-color-scheme:dark){:root{--bg:#111216;--paper:#1A1B20;--ink:#F2F3F0;--ink-2:#C9CBD0;--line:#2A2C31;--spruce:#A9B8FF}}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Archivo",system-ui,sans-serif}
+  main{max-width:640px;margin:0 auto;padding:32px 20px 60px}
+  h1{font:800 40px/1.05 "Archivo",sans-serif;font-stretch:75%;margin:0 0 6px}
+  h2{font-size:19px;margin:28px 0 6px}
+  p,li{color:var(--ink-2)}
+  a{color:var(--spruce)}
+  .meta{font-size:14px}
+  .fill{background:#FFE58A;color:#15161A;border-radius:4px;padding:0 4px;font-weight:600}
+  .legal{font-size:12px;font-weight:700;color:#B3261E;letter-spacing:.02em}
+</style>
+</head>
+<body>
+<main>
+<!-- DRAFT for the move to Lehgo Technology. Yellow = fill in. [NEEDS LEGAL REVIEW] = a claim about the law, for a
+     lawyer to confirm; everything about how Koti works was checked against the code. When ready, this replaces
+     privacy.html and the in-app text in js/privacy.js is updated to match. -->
+<h1>Koti and your privacy</h1>
+<p class="meta">Last updated <span class="fill">[date of the move]</span>. This applies to the Koti website and the Koti app.</p>
+
+<h2>Who is responsible</h2>
+<p>Koti is run by <span class="fill">[Lehgo Technology's registered legal name]</span>, <span class="fill">[business ID]</span>, <span class="fill">[registered address, country]</span>. We decide how your data in Koti is used, which makes us its controller under the EU General Data Protection Regulation. <span class="legal">[NEEDS LEGAL REVIEW]</span></p>
+<p>Contact us about your data at <span class="fill">[privacy contact email]</span>.<span class="fill">[If the company is not established in the EU: name and address of its EU representative, Article 27 GDPR.]</span> <span class="legal">[NEEDS LEGAL REVIEW]</span></p>
+
+<h2>What Koti keeps</h2>
+<ul>
+  <li>Your account: your email address and a password Koti never sees in plain text.</li>
+  <li>What you put in Koti: money, bills, income, savings goals, lists, reminders and settings.</li>
+  <li>Receipt photos and bill documents, only if you switch on keeping them.</li>
+  <li>What Koti remembers about you, the fixes you made to what it read, and how you rated its answers, so it gets things right for you.</li>
+  <li>If you turn on reminders, the address your phone gives for notifications.</li>
+</ul>
+<p>It's kept on your device and in your account. Only you can read it.</p>
+
+<h2>Why, and on what basis</h2>
+<ul>
+  <li>To run Koti for you: your account and everything you put in it. This is needed to provide the service you signed up for. <span class="legal">[NEEDS LEGAL REVIEW: contract, Art. 6(1)(b)]</span></li>
+  <li>Koti's AI, only when you allow it. You can withdraw that at any time in You → Privacy. <span class="legal">[NEEDS LEGAL REVIEW: consent, Art. 6(1)(a)]</span></li>
+</ul>
+
+<h2>Who else handles it</h2>
+<ul>
+  <li><b>Supabase</b> stores your account and records, in the EU (Paris).</li>
+  <li><b>OpenAI</b>, only with the AI on: reading receipts and screenshots, the microphone, talking to Koti and today's note. What you scan, say or ask, and the records needed to answer, are sent to OpenAI in the United States. OpenAI says it doesn't train its models on this data and keeps it at most 30 days to check for abuse. <span class="legal">[NEEDS LEGAL REVIEW: the safeguard for the transfer, e.g. the EU–US Data Privacy Framework or standard contractual clauses, and OpenAI's data processing agreement signed by the company]</span></li>
+  <li><b>GitHub</b> hosts the website, and like any web host sees the address your device connects from. <span class="fill">[Replace with the new host if the website moves elsewhere.]</span></li>
+  <li>Notifications go through your phone's own service (Apple, Google or your browser's).</li>
+</ul>
+<p>Your data isn't sold, and isn't shared with anyone else.</p>
+
+<h2>What Koti doesn't do</h2>
+<ul>
+  <li>No cookies, no ads, no analytics, no tracking.</li>
+</ul>
+
+<h2>How long it's kept</h2>
+<p>For as long as you have an account. When you delete it, everything in it is deleted for good, receipts included. Our database provider's backups are overwritten within <span class="fill">[the Supabase plan's backup retention, e.g. 7 days]</span>.</p>
+
+<h2>Your rights</h2>
+<p>You can see, correct and download your data in Koti (You → Download a backup), and delete it (You → Delete account). You can also ask us for a copy, a correction or deletion, or object to how it's used, at the address above. If you think we've got it wrong, you can complain to the Data Protection Ombudsman in Finland (tietosuoja.fi) or to the authority where you live. <span class="legal">[NEEDS LEGAL REVIEW]</span></p>
+
+<h2>Changes</h2>
+<p>When this page changes in a way that matters, Koti will tell you in the app.</p>
+
+<p class="meta">This page describes how the product works. It is not legal advice.</p>
+</main>
+</body>
+</html>
