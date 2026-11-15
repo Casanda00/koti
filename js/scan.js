@@ -103,10 +103,11 @@ async function run(S, file, B) {
 }
 
 /* A photo added in a chat with Koti, already read: the same "Check it" screen as a scan, from that reading. */
-export function openReading({ r, file = null }) {
+/* onSaved: told what was saved ({ id, amount, payee, lines }), or null when the save is undone (Koti's chat card). */
+export function openReading({ r, file = null, onSaved = null }) {
   const pref = store.model.settings.scanDefault;
   const dest = r.docType === "bill" ? { kind: "bill" } : { kind: pref === "spending" ? "spending" : "mix" };
-  const S = { dest, keep: file ? keepDefault(dest.kind) : false, keepTouched: !file, file, r, lines: null, linesFor: null, edits: {} };
+  const S = { dest, keep: file ? keepDefault(dest.kind) : false, keepTouched: !file, file, r, lines: null, linesFor: null, edits: {}, onSaved };
   if (r.docType === "payments" && r.payments && r.payments.length) { paymentsReview(S); return; }
   if (r.docType === "payment") { S.moneyIn = !!(r.parsed && r.parsed.moneyIn); S.billPay = billPaymentFor(r); }
   review(S);
@@ -114,8 +115,8 @@ export function openReading({ r, file = null }) {
 
 /* What the microphone heard, when it's several things ("Prisma 86, the lamp was 35 of it"): the same "Check it"
    screen as a receipt, without a photo. */
-export function openParsed(parsed) {
-  const S = { dest: { kind: "mix" }, keep: false, keepTouched: true, file: null, r: { ai: true, heard: true, docType: "receipt", parsed }, lines: null, linesFor: null, edits: {} };
+export function openParsed(parsed, { onSaved = null } = {}) {
+  const S = { dest: { kind: "mix" }, keep: false, keepTouched: true, file: null, r: { ai: true, heard: true, docType: "receipt", parsed }, lines: null, linesFor: null, edits: {}, onSaved };
   receiptReview(S);
 }
 
@@ -250,7 +251,8 @@ function receiptReview(S) {
       $("#rvDate", B).value = b.dataset.day; saveEdits(S); receiptReview(S); };
     const dir = $("#rvDir", B); if (dir) dir.onclick = e => { const x = e.target.closest("[data-in]"); if (!x) return; saveEdits(S); S.moneyIn = x.dataset.in === "1"; receiptReview(S); };
     const bp = $("#rvBillPaid", B); if (bp) bp.onclick = () => { saveEdits(S); const o = S.billPay, date = $("#rvDate", B).value || todayISO(), tx = markPaid(o, date > todayISO() ? todayISO() : date, true);
-      closeSheet(); toast(`${o.bill.name} marked paid`, { label: "Undo", run: () => store.remove("transactions", tx.id) }); };
+      closeSheet(); if (S.onSaved) S.onSaved({ id: tx.id, amount: tx.amount, payee: o.bill.name, lines: null });
+      toast(`${o.bill.name} marked paid`, { label: "Undo", run: () => { store.remove("transactions", tx.id); if (S.onSaved) S.onSaved(null); } }); };
     paintHead(S, B); paintLines(S, B);
   }, onRight: B => saveReceipt(S, B) });
 }
@@ -314,7 +316,8 @@ async function saveReceipt(S, B) {
     const tx = store.put("transactions", { id, date, amount: total, kind: "income", categoryId: null, payee: shop || null, note: null, source: "receipt", receiptPath });
     if (S.r && S.r.ai) learnFromSave({ read: { payee: S.r.parsed.payee, date: S.r.parsed.date, amount: S.r.parsed.amount }, saved: { payee: shop, date, amount: total } });
     closeSheet(); S.busy = false;
-    toast(`Saved ${eur(tx.amount)} in${shop ? ` from ${shop}` : ""}`, { label: "Undo", run: () => store.remove("transactions", tx.id) });
+    if (S.onSaved) S.onSaved({ id: tx.id, amount: tx.amount, payee: tx.payee, lines: null });
+    toast(`Saved ${eur(tx.amount)} in${shop ? ` from ${shop}` : ""}`, { label: "Undo", run: () => { store.remove("transactions", tx.id); if (S.onSaved) S.onSaved(null); } });
     return;
   }
   S.busy = true;
@@ -339,10 +342,11 @@ async function saveReceipt(S, B) {
   if (S.r && (S.r.ai || S.r.heard)) { const R0 = S.r.parsed || {}; learnFromSave({ read: { payee: R0.payee, categoryId: txLines.length > 1 ? null : R0.categoryId, date: R0.date, amount: R0.amount }, saved: { payee: shop, categoryId: main, date, amount: total } }); }
   const P0 = (S.r && S.r.parsed) || {}, goal = !fromPay && P0.fromSavings ? goalFor(P0.goal) : null, out = goal ? spendFromGoal(goal, tx) : null;   // "from my savings"
   closeSheet(); S.busy = false;
+  if (S.onSaved) S.onSaved({ id: tx.id, amount: tx.amount, payee: tx.payee, lines: txLines.length || null });
   const ticks = before.length, news = created.length;
   const extra = [ticks ? `${ticks} ticked` : "", news ? `${news} new item${news === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   toast(`Saved ${eur(tx.amount)}${d.kind === "mix" ? (shop ? ` at ${shop}` : "") : ` to ${destName(d)}`}${extra ? " · " + extra : ""}`, { label: "Undo", run: () => {
-    store.remove("transactions", tx.id); if (out) store.remove("transactions", out.id);
+    store.remove("transactions", tx.id); if (out) store.remove("transactions", out.id); if (S.onSaved) S.onSaved(null);
     before.forEach(it => store.updateItem(it.id, { done: it.done, price: it.price, boughtAt: it.boughtAt }));
     created.forEach(i => store.deleteItem(i));
   } });
@@ -427,6 +431,7 @@ async function saveBill(S, B) {
   if (W.paid) markPaid(o);
   else if (o.paid && Math.abs(o.paid.amount - W.amount) >= 0.005) store.put("transactions", { ...o.paid, amount: W.amount });
   closeSheet(); S.busy = false;
+  if (S.onSaved) S.onSaved({ id: bill.id, amount: W.amount, payee: bill.name, lines: null });
   toast(`Added as a bill · ${bill.name} ${eur(W.amount)} ${W.paid ? "paid" : "due " + fmtDay(due)}`, { label: "Open", run: () => { location.hash = "#bills"; } });
 }
 
@@ -485,6 +490,7 @@ function paymentsReview(S) {
     if (on.some(p => !p.date)) { const m = $("#pyMsg", B); m.textContent = "Pick the day for each ticked payment."; m.dataset.state = "error"; return; }
     if (on.some(p => p.date > todayISO())) { const m = $("#pyMsg", B); m.textContent = "A payment dated after today can't be saved yet. Untick it."; m.dataset.state = "error"; return; }
     const saved = savePayments(on); closeSheet();
+    if (S.onSaved) S.onSaved({ id: saved[0] && saved[0].id, amount: saved.reduce((x, t) => x + t.amount, 0), payee: `${saved.length} payment${saved.length === 1 ? "" : "s"}`, lines: null });
     on.forEach(p => { if (p.kind !== "income") learnFromSave({ read: { payee: p.payee, categoryId: p.readCategoryId }, saved: { payee: p.payee, categoryId: p.categoryId } }); });
     toast(`Saved ${saved.length} payment${saved.length === 1 ? "" : "s"}`, { label: "Undo", run: () => saved.forEach(t => store.remove("transactions", t.id)) });
   } });

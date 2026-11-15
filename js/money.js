@@ -321,7 +321,8 @@ const cats = () => store.model.categories.slice().sort((a, b) => a.position - b.
 const recentPayees = () => [...new Set(store.model.transactions.slice().sort((a, b) => b.date.localeCompare(a.date)).map(t => t.payee).filter(Boolean))].slice(0, 30);
 const payeeCat = payee => { const t = store.model.transactions.filter(x => x.payee && x.payee.toLowerCase() === String(payee).toLowerCase()).sort((a, b) => b.date.localeCompare(a.date))[0]; return t ? t.categoryId : null; };
 
-export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
+/* onSaved: told what was saved ({ id, amount, payee, lines }), or null when it's deleted (Koti's chat card). */
+export function openExpense({ tx = null, mode = "type", draft = null, onSaved = null } = {}) {
   if (mode === "scan" && !tx) { import("./scan.js").then(m => m.openScan()); return; }   // scanning has one place: + → Scan or upload
   const editing = !!tx, d = tx || draft || { amount: null, categoryId: null, payee: "", date: todayISO(), note: "", kind: "expense" };
   const spent0 = tx ? spendOf(tx.id) : null;   // an expense paid from savings: its withdrawal
@@ -343,7 +344,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
       if (modeSeg) modeSeg.addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (!b) return; if (stop) { stop(); stop = null; } $$("[data-m]", modeSeg).forEach(x => x.setAttribute("aria-pressed", x === b)); paint(b.dataset.m); });
       const del = $("#exDel", B); if (del) del.onclick = () => {   // paid from savings: the money goes back into the goal too
         closeSheet(); const copy = { ...tx }, out = spendOf(tx.id), outCopy = out && { ...out };
-        store.remove("transactions", tx.id); if (out) store.remove("transactions", out.id);
+        store.remove("transactions", tx.id); if (out) store.remove("transactions", out.id); if (onSaved) onSaved(null);
         toast(`Deleted ${eur(tx.amount)}`, { label: "Undo", run: () => { store.put("transactions", copy); if (outCopy) store.put("transactions", outCopy); } });
       };
       paint(editing || mode !== "scan" ? "type" : "scan");
@@ -499,6 +500,7 @@ export function openExpense({ tx = null, mode = "type", draft = null } = {}) {
         let ticked = 0;
         (lines || []).forEach(l => { const it = l.itemId && store.model.items.find(i => i.id === l.itemId); if (it && !it.done) { store.updateItem(it.id, { done: true, price: Math.round(l.price / (l.qty && l.qty > 0 ? l.qty : 1) * 100) / 100, boughtAt: date }); ticked++; } });
         closeSheet();
+        if (onSaved) onSaved({ id: saved.id, amount: saved.amount, payee: saved.payee, lines: saved.lines ? saved.lines.length : null });
         if (editing) toast("Saved");
         else toast(`Saved ${eur(saved.amount)}${ticked ? ` · ${ticked} list item${ticked === 1 ? "" : "s"} ticked` : catId ? ` · ${catName(catId)}` : ""}`, { label: "Undo", run: () => store.remove("transactions", saved.id) });
         if (location.hash !== "#money" && !editing) { /* stay where you are */ }

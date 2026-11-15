@@ -107,7 +107,9 @@ Deno.serve(async (req) => {
     const pinned = Array.isArray(body.photos) ? body.photos.filter((x: unknown) => typeof x === "string").slice(-6) : [];
     const earlier = Array.isArray(body.earlier) ? body.earlier.filter((x: unknown) => typeof x === "string").slice(-40) : [];
     // again: the app has just sent a photo through the reader again and asks once more; it isn't sent again.
-    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history, can, image, about, pinned, earlier, again: body.again === true });
+    // drafts: the purchases being worked on in this chat (lines, status), kept by the app and sent back every turn.
+    const drafts = Array.isArray(body.drafts) ? body.drafts.slice(-4) : [];
+    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history, can, image, about, pinned, earlier, again: body.again === true, drafts });
     // Koti speaks only when spoken to: a recording, or words the phone heard (spoken). Never to typing.
     const voice = mode === "chat" && shouldSpeak({ audio: !!audio, spoken: body.spoken === true, settings: M.settings }) ? await speech({ key: openaiKey, text: out.reply, lang }) : null;
     return json(200, { ...out, heard: audio ? message : undefined, speech: voice ? `data:audio/mpeg;base64,${voice}` : null, model: MODEL, used, limit: LIMIT });

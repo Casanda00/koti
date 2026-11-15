@@ -94,7 +94,9 @@ test("the conversation looks things up, proposes actions, then answers", async (
     { content: JSON.stringify({ reply: "€8 on coffee so far this month. I've put two coffees on your list.", follow_ups: ["How much on groceries?"] }) },
   ]);
   const r = await A.runAgent({ fetch: f, key: "k", M, today: TODAY, history: [{ role: "user", content: "How much coffee did I buy? Add some to my list" }] });
-  assert.equal(r.reply, "€8 on coffee so far this month. I've put two coffees on your list.");
+  // "I've put two coffees on your list" is a card waiting for a tap, not done: the check sends it back, and with no
+  // better answer the code says what's really on screen (15 November 2026).
+  assert.equal(r.reply, '€8 on coffee so far this month. Tap "Add" on the card below.');
   assert.deepEqual(r.followUps, ["How much on groceries?"]);
   assert.deepEqual(r.actions.map(a => a.type), ["remember", "list"]);
   assert.deepEqual(r.actions[1].items, [{ name: "Coffee", qty: 2 }]);
@@ -121,9 +123,9 @@ test("a refused action goes back to the model to fix, and never reaches the app"
 
 test("it stops looking things up after the last round and answers from what it found", async () => {
   const loop = { content: null, tool_calls: [call("c", "bills", {})] };
-  const { f, sent } = openai([loop, loop, loop, { content: JSON.stringify({ reply: "Done.", follow_ups: [] }) }]);
+  const { f, sent } = openai([loop, loop, loop, { content: JSON.stringify({ reply: "Rent is due on the 1st.", follow_ups: [] }) }]);
   const r = await A.runAgent({ fetch: f, key: "k", M, today: TODAY, history: [{ role: "user", content: "bills?" }], maxRounds: 3 });
-  assert.equal(r.reply, "Done.");
+  assert.equal(r.reply, "Rent is due on the 1st.");
   // The last ask has no tools at all, and tells it to answer from what it found.
   assert.equal(sent[3].tools, undefined);
   assert.match(sent[3].messages.at(-1).content, /Answer now from what you found/);
