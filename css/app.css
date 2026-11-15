@@ -772,13 +772,20 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-opt[aria-checked="true"]{border:2px solid var(--spruce);background:var(--paper)}
 .onb-opt[aria-checked="true"] i{border:7px solid var(--spruce)}
 .onb-day{display:flex;align-items:center;gap:10px;font-size:16px}
-.onb-day select,.onb-row select{font:600 16px var(--body);color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:12px;padding:8px 10px}
+.onb-day select{font:600 16px var(--body);color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:12px;padding:8px 10px}
 .onb-chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .onb-chip{font:600 20px var(--body);min-height:52px;padding:0 20px;border-radius:999px;border:1.5px solid var(--line);color:var(--ink)}
 .onb-chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
-.onb-rows{display:grid;gap:8px;margin-top:6px}
-.onb-row{display:grid;grid-template-columns:minmax(0,1fr) 100px auto;gap:8px;align-items:center;font-weight:600}
-.onb-row input{font:600 16px var(--body);color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:12px;padding:9px 10px;width:100%;text-align:right}
+/* A card for each bill or goal: amount, how often, when */
+.onb-cards{display:grid;gap:12px;margin-top:8px}
+.onb-card{margin:0;border:1.5px solid var(--line);border-radius:18px;padding:12px 14px 14px;display:grid;gap:10px;background:var(--paper);min-width:0}
+.onb-card legend{float:left;width:100%;padding:0;font:700 18px var(--body);color:var(--ink)}
+.onb-cl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:10px;align-items:center;font-size:15px;font-weight:600;color:var(--ink-2)}
+.onb-cin{font:600 16px var(--body);color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;width:100%;min-width:0;min-height:46px}
+input.onb-cin.num{text-align:right}
+.onb-seg{display:flex;flex-wrap:wrap;gap:6px}
+.onb-seg button{font:600 14px var(--body);min-height:40px;padding:0 12px;border-radius:999px;border:1.5px solid var(--line);color:var(--ink)}
+.onb-seg button[aria-checked="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .onb-msg{margin:0;color:var(--crit);font-weight:600;min-height:1.2em}
 .onb.lake .onb-msg{color:#fff}
 .onb-foot{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(560px,100%);padding:18px 20px calc(var(--safe-bottom) + 22px);display:flex;gap:10px;align-items:center;background:linear-gradient(transparent,var(--bg) 30%)}

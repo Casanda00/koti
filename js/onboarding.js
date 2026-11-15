@@ -30,10 +30,14 @@ export const TX = {
     payL: "What lands in your account each month, after tax", whenL: "And when does it land?", payDay: "On day", payGo: "Next: your bills",
     whenOpts: d => [[LAST_WORKING_DAY, "Last working day of the month", `This month that's ${d}`], [LAST_DAY, "Last day of the month", ""], ["date", "The same date every month", ""], ["varies", "It changes", "I'll ask when it lands"]],
     payErr: "Type what lands, like 2400. Or tap Later.", salary: "Salary",
-    billsT: "What do you spend money on?", billsP: "Tap the bills you pay, or add your own, then the amount and the day each one is due. I'll set that money aside before telling you what's yours to spend. Anything due before today starts next month.",
+    billsT: "What do you spend money on?", billsP: "Tap the ones you pay, or add your own. Next we'll add how much each one is and when it's due.",
     BILLS: ["Rent", "Electricity", "Water", "Phone", "Internet", "Home insurance", "Netflix", "Spotify", "Gym", "Travel card", "Loan"],
     addOwn: "+ Add your own", ownPh: "e.g. Daycare, Car loan, Union fee", ownL: "Your own bill", add: "Add", dayN: n => `Day ${n}`, amtOf: n => `${n} amount`, dueOf: n => `${n} is due on day`,
-    billsErr: list => `Add an amount for ${list}, or tap it again to take it off.`, billsGo: "Next: reminders",
+    billsErr: list => `Add an amount for ${list}, or go back and take it off.`, billsGo: "Next: how much and when",
+    howT: "How much, and how often?", howP: "For each one: the amount, how often it comes and when it's due. I'll set that money aside before telling you what's yours to spend.",
+    FREQ: [["monthly", "Every month"], ["quarterly", "Every 3 months"], ["yearly", "Once a year"], ["once", "Just once"]], freqL: n => `How often ${n} comes`, amtL: "Amount",
+    dueDayL: "Due on day", dueNextL: "Next due", dueOnceL: "Due on", pickDay: "Pick", dueErr: list => `Say when ${list} is due.`, howGo: "Next: reminders",
+    FREQW: { monthly: "a month", quarterly: "every 3 months", yearly: "a year", once: "once" },
     nudgeT: "How shall we stay on track?", nudgeP: "I'll only nudge you for what you switch on here, and you can change it any time in You.",
     nBills: ["Before a bill is due", "A reminder the morning before, so nothing catches you out"], nPay: ["On payday", "What's yours to spend for the month ahead"], nWeek: ["A Sunday summary", "How the week went, in one short note"],
     nameT: "Before we go on, what should I call you?", nameP: "So we can be on first-name terms. I'll use it from here on, and whenever we talk about your money.",
@@ -47,11 +51,12 @@ export const TX = {
       ["short", "It often runs short", "Money often runs short before payday: be careful with it."], ["varies", "It changes a lot", "How the month ends changes a lot from month to month."]],
     pplT: "Who shares your money life?", pplP: "So I can talk about shared bills and costs the way they really work in your home.",
     PEOPLE: [["me", "Just me", "Manages money on their own."], ["partner", "Me and a partner", "Shares money with a partner."], ["family", "A family with children", "Has a family with children."], ["flat", "Flatmates", "Lives with flatmates and shares some costs."]],
-    goalT: "Saving for something?", goalP: "Pick one and, if you know it, how much you'd like to have. I'll show how close you are and what to put aside each month.",
-    whenGoalT: "When would you like to reach it?", whenGoalP: "I'll work out what to put aside each month to get there, and tell you if we're falling behind.",
-    BY: [["3", "In 3 months"], ["6", "In 6 months"], ["12", "In a year"], ["24", "In 2 years"], ["date", "By a month I choose"], ["none", "No set date"]], byMonth: "Which month?", byErr: "Pick a month after this one, or another answer.",
+    goalT: "Saving for something?", goalP: "Pick everything you're saving for. Tap Something else to name your own. Next we'll set how much and by when.",
+    goalHowT: "How much, and by when?", goalHowP: "For each goal. I'll work out what to put aside each month to get there, and tell you if we're falling behind.",
+    goalOwnL: "What are you saving for?", goalOwnPh: "e.g. Wedding, New laptop, Course", goalAmtL: "How much?", goalByL: "By when?", goalGo: "Next: how much and when",
+    BY: [["3", "In 3 months"], ["6", "In 6 months"], ["12", "In a year"], ["24", "In 2 years"], ["date", "By a month I choose"], ["none", "No set date"]], byMonth: "Which month?", byErr: list => `Pick a month after this one for ${list}, or another answer.`,
     monthly: (m, by) => `${m} a month, ready by ${by}`, byWord: by => `by ${by}`,
-    GOALS: ["Holiday", "Emergency fund", "New home", "Car", "Something else"], goalAmt: g => `How much for ${g === "Something else" ? "it" : g.toLowerCase()}?`, goalNone: "Not right now", goalErr: "Type an amount like 1500, or leave it empty.",
+    GOALS: ["Holiday", "Emergency fund", "New home", "Car", "Something else"], goalNone: "Not right now", goalErr: list => `Type an amount like 1500 for ${list}, or leave it empty.`,
     sumT: f => `Here's what you told me${f ? `, ${f}` : ""}`, sumP: "Check it's all right. Tap Edit to change anything.", edit: "Edit", sumGo: "Looks good",
     rows: { lang: "Language", why: "What matters to you", pay: "Pay", bills: "Bills", nudges: "Reminders", name: "Name", balance: "Balance", feel: "End of the month", people: "Money at home", goal: "Saving for" },
     whenWord: { [LAST_WORKING_DAY]: "last working day", [LAST_DAY]: "last day of the month", varies: "it changes", date: d => `on day ${d}` }, perMonth: "a month",
@@ -74,6 +79,7 @@ export const TX = {
       bills: (n, r) => `Set ${n ? `your ${n} ${n === 1 ? "bill" : "bills"}` : "your bills"} aside before anything else${r ? ", and remind you the morning before each one" : ""}.`,
       short: "Give you an early heads-up when money's getting tight, and help you find where to slow down.", varies: "Watch for the months that run short, and warn you before they do.",
       just: "Tell you when payday is close and what's left until then.", left: g => `Point out spare money${g ? ` that could go to your ${g.toLowerCase()} fund` : " you could put aside"}.`,
+      goals: gs => `Track your ${gs.length} savings goals (${gs.join(", ")}), and what to put aside each month for each.`,
       goal: (g, t, by, m) => `Track your ${g === "Something else" ? "savings goal" : `${g.toLowerCase()} fund`}${t ? ` to ${t}` : ""}${by ? ` by ${by}` : ""}${m ? `: about ${m} a month` : ", and show what to put aside each month"}.`,
       partner: "Keep shared costs with your partner in mind when we talk.", family: "Keep the whole family's costs in mind when we talk.", flat: "Keep costs you share with flatmates in mind when we talk.",
       home: "Keep your Home setup close: rooms, what's bought and what's left.", where: "Show you where your money goes, by category, every week.", weekly: "Send you a short summary on Sunday evenings.",
@@ -90,10 +96,14 @@ export const TX = {
     payL: "Paljonko tilillesi tulee kuukaudessa verojen jälkeen", whenL: "Ja milloin se tulee?", payDay: "Päivänä", payGo: "Seuraavaksi: laskut",
     whenOpts: d => [[LAST_WORKING_DAY, "Kuun viimeisenä arkipäivänä", `Tässä kuussa se on ${d}`], [LAST_DAY, "Kuun viimeisenä päivänä", ""], ["date", "Samana päivänä joka kuukausi", ""], ["varies", "Se vaihtelee", "Kysyn, kun se tulee"]],
     payErr: "Kirjoita summa, esim. 2400. Tai napauta Myöhemmin.", salary: "Palkka",
-    billsT: "Mihin käytät rahaa?", billsP: "Napauta laskut, jotka maksat, tai lisää omasi, ja sitten summa ja eräpäivä. Varaan sen rahan ennen kuin kerron, paljonko on sinun käytettävissäsi. Jos eräpäivä on jo mennyt, lasku alkaa ensi kuussa.",
+    billsT: "Mihin käytät rahaa?", billsP: "Napauta ne, jotka maksat, tai lisää omasi. Seuraavaksi lisätään summat ja eräpäivät.",
     BILLS: ["Vuokra", "Sähkö", "Vesi", "Puhelin", "Internet", "Kotivakuutus", "Netflix", "Spotify", "Kuntosali", "Matkakortti", "Laina"],
     addOwn: "+ Lisää oma", ownPh: "esim. Päiväkoti, Autolaina, Liiton jäsenmaksu", ownL: "Oma lasku", add: "Lisää", dayN: n => `${n}. pv`, amtOf: n => `${n}, summa`, dueOf: n => `${n}, eräpäivä`,
-    billsErr: list => `Lisää summa: ${list}, tai poista se napauttamalla uudelleen.`, billsGo: "Seuraavaksi: muistutukset",
+    billsErr: list => `Lisää summa: ${list}, tai palaa takaisin ja poista se.`, billsGo: "Seuraavaksi: summat ja eräpäivät",
+    howT: "Paljonko ja kuinka usein?", howP: "Jokaisesta: summa, kuinka usein se tulee ja milloin se erääntyy. Varaan sen rahan ennen kuin kerron, paljonko on sinun käytettävissäsi.",
+    FREQ: [["monthly", "Joka kuukausi"], ["quarterly", "3 kuukauden välein"], ["yearly", "Kerran vuodessa"], ["once", "Vain kerran"]], freqL: n => `${n}, kuinka usein`, amtL: "Summa",
+    dueDayL: "Eräpäivä", dueNextL: "Seuraava eräpäivä", dueOnceL: "Eräpäivä", pickDay: "Valitse", dueErr: list => `Kerro, milloin ${list} erääntyy.`, howGo: "Seuraavaksi: muistutukset",
+    FREQW: { monthly: "kuukaudessa", quarterly: "3 kk välein", yearly: "vuodessa", once: "kerran" },
     nudgeT: "Miten pysytään kärryillä?", nudgeP: "Muistutan vain siitä, minkä kytket päälle, ja voit muuttaa sitä milloin vain kohdasta You.",
     nBills: ["Ennen laskun eräpäivää", "Muistutus edellisenä aamuna, ettei mikään yllätä"], nPay: ["Palkkapäivänä", "Paljonko on käytettävissäsi seuraavaksi kuukaudeksi"], nWeek: ["Sunnuntain yhteenveto", "Miten viikko meni, yhdessä lyhyessä viestissä"],
     nameT: "Ennen kuin jatketaan: miten sinua kutsun?", nameP: "Ollaan sinut. Käytän nimeäsi tästä eteenpäin, aina kun puhumme raha-asioistasi.",
@@ -106,11 +116,12 @@ export const TX = {
       ["short", "Usein loppuu kesken", "Rahat loppuvat usein ennen palkkapäivää: ole niiden kanssa tarkka."], ["varies", "Vaihtelee paljon", "Kuun loppu vaihtelee paljon kuukaudesta toiseen."]],
     pplT: "Kenen kanssa jaat raha-asiat?", pplP: "Jotta puhun yhteisistä laskuista ja kuluista niin kuin ne kotonasi oikeasti menevät.",
     PEOPLE: [["me", "Vain minä", "Hoitaa raha-asiansa yksin."], ["partner", "Minä ja kumppani", "Jakaa raha-asiat kumppanin kanssa."], ["family", "Lapsiperhe", "Lapsiperhe."], ["flat", "Kämppikset", "Asuu kämppisten kanssa ja jakaa osan kuluista."]],
-    goalT: "Säästätkö johonkin?", goalP: "Valitse yksi ja, jos tiedät, paljonko haluaisit säästää. Näytän, kuinka lähellä olet ja paljonko kannattaa laittaa sivuun joka kuukausi.",
-    whenGoalT: "Milloin haluaisit olla perillä?", whenGoalP: "Lasken, paljonko laittaa sivuun joka kuukausi, ja kerron, jos jäämme jälkeen.",
-    BY: [["3", "3 kuukaudessa"], ["6", "6 kuukaudessa"], ["12", "Vuodessa"], ["24", "Kahdessa vuodessa"], ["date", "Valitsemaani kuukauteen mennessä"], ["none", "Ei tiettyä aikaa"]], byMonth: "Mihin kuukauteen mennessä?", byErr: "Valitse tätä myöhempi kuukausi tai toinen vaihtoehto.",
+    goalT: "Säästätkö johonkin?", goalP: "Valitse kaikki, joihin säästät. Napauta Jokin muu ja nimeä oma. Seuraavaksi sovitaan summa ja aikataulu.",
+    goalHowT: "Paljonko ja mihin mennessä?", goalHowP: "Jokaiselle tavoitteelle. Lasken, paljonko laittaa sivuun joka kuukausi, ja kerron, jos jäämme jälkeen.",
+    goalOwnL: "Mihin säästät?", goalOwnPh: "esim. Häät, Uusi läppäri, Kurssi", goalAmtL: "Paljonko?", goalByL: "Mihin mennessä?", goalGo: "Seuraavaksi: summa ja aikataulu",
+    BY: [["3", "3 kuukaudessa"], ["6", "6 kuukaudessa"], ["12", "Vuodessa"], ["24", "Kahdessa vuodessa"], ["date", "Valitsemaani kuukauteen mennessä"], ["none", "Ei tiettyä aikaa"]], byMonth: "Mihin kuukauteen mennessä?", byErr: list => `Valitse tätä myöhempi kuukausi (${list}) tai toinen vaihtoehto.`,
     monthly: (m, by) => `${m} kuukaudessa, valmis ${by}`, byWord: by => `${by} mennessä`,
-    GOALS: ["Loma", "Puskurirahasto", "Uusi koti", "Auto", "Jokin muu"], goalAmt: () => "Paljonko tavoittelet?", goalNone: "Ei nyt", goalErr: "Kirjoita summa, esim. 1500, tai jätä tyhjäksi.",
+    GOALS: ["Loma", "Puskurirahasto", "Uusi koti", "Auto", "Jokin muu"], goalNone: "Ei nyt", goalErr: list => `Kirjoita summa, esim. 1500 (${list}), tai jätä tyhjäksi.`,
     sumT: f => `Tässä mitä kerroit${f ? `, ${f}` : ""}`, sumP: "Tarkista, että kaikki on oikein. Napauta Muuta, jos jotain pitää vaihtaa.", edit: "Muuta", sumGo: "Näyttää hyvältä",
     rows: { lang: "Kieli", why: "Mikä on sinulle tärkeää", pay: "Palkka", bills: "Laskut", nudges: "Muistutukset", name: "Nimi", balance: "Saldo", feel: "Kuun loppu", people: "Talous", goal: "Säästötavoite" },
     whenWord: { [LAST_WORKING_DAY]: "viimeisenä arkipäivänä", [LAST_DAY]: "kuun viimeisenä päivänä", varies: "vaihtelee", date: d => `${d}. päivänä` }, perMonth: "kuukaudessa",
@@ -133,6 +144,7 @@ export const TX = {
       bills: (n, r) => `Varaan ${n ? `${n} ${n === 1 ? "laskusi" : "laskuasi"}` : "laskusi"} ennen mitään muuta${r ? " ja muistutan edellisenä aamuna jokaisesta" : ""}.`,
       short: "Varoitan ajoissa, kun rahat alkavat käydä vähiin, ja autan löytämään, mistä hidastaa.", varies: "Seuraan kuukausia, jotka jäävät vajaiksi, ja varoitan ennen kuin niin käy.",
       just: "Kerron, kun palkkapäivä on lähellä ja paljonko on jäljellä siihen asti.", left: g => `Kerron, kun rahaa jää yli${g ? ` ja sen voisi laittaa tavoitteeseen ${g.toLowerCase()}` : " ja sen voisi laittaa sivuun"}.`,
+      goals: gs => `Seuraan ${gs.length} säästötavoitettasi (${gs.join(", ")}) ja sitä, paljonko kuhunkin laittaa sivuun kuukaudessa.`,
       goal: (g, t, by, m) => `Seuraan säästötavoitettasi${g === "Jokin muu" ? "" : ` (${g.toLowerCase()})`}${t ? `, ${t}` : ""}${by ? `, ${by} mennessä` : ""}${m ? `: noin ${m} kuukaudessa` : ", ja näytän, paljonko laittaa sivuun joka kuukausi"}.`,
       partner: "Pidän yhteiset kulut kumppanisi kanssa mielessä, kun puhumme.", family: "Pidän koko perheen kulut mielessä, kun puhumme.", flat: "Pidän kämppisten kanssa jaetut kulut mielessä, kun puhumme.",
       home: "Pidän kotiprojektisi lähellä: huoneet, mitä on ostettu ja mitä puuttuu.", where: "Näytän joka viikko, mihin rahasi menevät, luokittain.", weekly: "Lähetän lyhyen yhteenvedon sunnuntai-iltaisin.",
@@ -144,20 +156,25 @@ export const WHY = TX.en.WHY, FEEL = TX.en.FEEL, PEOPLE = TX.en.PEOPLE, GOALS = 
 /* Skin tones for their hand (the wave, and the handshake after their name): the default yellow, then five tones. */
 export const TONES = ["", "\u{1F3FB}", "\u{1F3FC}", "\u{1F3FD}", "\u{1F3FE}", "\u{1F3FF}"].map((m, k) => [m, TX.en.TONES[k]]);
 /* The steps, in order. */
-export const STEPS = ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account", "home"];
+export const STEPS = ["lang", "why", "pay", "bills", "billsHow", "nudges", "name", "balance", "feel", "people", "goal", "goalHow", "summary", "learned", "privacy", "account", "home"];
+/* How often a bill comes, kept as the bill's frequency; a month in each, for "… a month" in the summary. */
+const PER_MONTH = { monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, once: 0 };
 
 /* What Koti will do for them, from their answers: shown on "Here's how I'll work for you", at most five lines. The
    same answers (settings.profile) go to Koti with every question, so it really works this way. */
 export function planFor(p = {}, lang = "en") {
   const T = TX[lang === "fi" ? "fi" : "en"], P = T.plan, out = [], why = new Set(p.why || []), money = moneyIn(lang);
-  const goal = p.goal && p.goal.name ? T.GOALS[GOALS.indexOf(p.goal.name)] || p.goal.name : null;   // kept by its English name, said in theirs
+  const say = n => T.GOALS[GOALS.indexOf(n)] || n;   // a goal from the list is kept by its English name, said in theirs; their own by the name they gave it
+  const gs = (Array.isArray(p.goals) && p.goals.length ? p.goals : p.goal ? [p.goal] : []).filter(g => g && g.name);
+  const goal = gs.length ? say(gs[0].name) : null;
   out.push(why.has("spend") || !why.size ? P.spendTop : P.spend);
   if (p.bills || why.has("bills")) out.push(P.bills(p.bills, p.nudges && p.nudges.bills));
   // how the month ends: several can be true; the most careful one first, and spare money too when there's some
   const feels = [].concat(p.feel || []), careful = ["short", "varies", "just"].find(f => feels.includes(f));
   if (careful) out.push(P[careful]);
   if (feels.includes("left")) out.push(P.left(goal));
-  if (goal) out.push(P.goal(goal, p.goal.target ? money(p.goal.target) : null, p.goal.by ? monthName(p.goal.by, lang) : null, p.goal.monthly ? money(p.goal.monthly) : null));
+  if (gs.length > 1) out.push(P.goals(gs.map(g => say(g.name))));
+  else if (goal) out.push(P.goal(goal, gs[0].target ? money(gs[0].target) : null, gs[0].by ? monthName(gs[0].by, lang) : null, gs[0].monthly ? money(gs[0].monthly) : null));
   if (p.people && p.people !== "me" && P[p.people]) out.push(P[p.people]);
   if (why.has("home")) out.push(P.home);
   if (why.has("where")) out.push(P.where);
@@ -171,13 +188,21 @@ export function goalBy(months, target, today = new Date()) {
   const d = new Date(Date.UTC(today.getFullYear(), today.getMonth() + months, 1)), by = d.toISOString().slice(0, 10);
   return { by, monthly: target ? Math.ceil(target / months) : null };
 }
-const moneyIn = lang => v => new Intl.NumberFormat(lang === "fi" ? "fi-FI" : "en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v);
+const moneyIn = lang => v => new Intl.NumberFormat(lang === "fi" ? "fi-FI" : "en-GB", { style: "currency", currency: "EUR", minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: v % 1 ? 2 : 0 }).format(v);   // cents only when there are some (13,99 €)
 
-const nextMonthStart = () => { const d = new Date(); const n = new Date(d.getFullYear(), d.getMonth() + 1, 1); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`; };
+/* When a bill is due, from how often it comes: monthly on a day (one already gone this month starts next month);
+   every 3 months, yearly or once from the date it's next due. */
+export function billDue(freq, day, date, today = new Date()) {
+  if (freq === "monthly") return { dueDay: day, anchorMonth: today.getMonth() + 1, dueDate: null, startDate: day < today.getDate() ? nextMonthStart(today) : null };
+  const [y, m, d] = String(date).split("-").map(Number);
+  return freq === "once" ? { dueDay: d, anchorMonth: m, dueDate: date, startDate: null } : { dueDay: d, anchorMonth: m, dueDate: null, startDate: `${y}-${String(m).padStart(2, "0")}-01` };
+}
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const nextMonthStart = (d = new Date()) => { const n = new Date(d.getFullYear(), d.getMonth() + 1, 1); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`; };
 let el = null, step = 0, st = null, dir = 1;
 const L = () => TX[st && st.lang === "fi" ? "fi" : "en"];
 /* The steps shown: the account is left out when signed in already, or with no server. */
-const steps = () => STEPS.filter(s => !(s === "account" && (sync.user || !sync.configured)) && !(s === "goalWhen" && st && !st.goal) && !(s === "home" && !(st && st.home)));   // the date only with a goal; the Home Screen only where it can go there
+const steps = () => STEPS.filter(s => !(s === "account" && (sync.user || !sync.configured)) && !(s === "billsHow" && st && !st.picked.size) && !(s === "goalHow" && st && !st.goals.length) && !(s === "home" && !(st && st.home)));   // amounts and dates only for what was picked; the Home Screen only where it can go there
 export const stepCount = () => steps().length;
 const id = () => steps()[step];
 const go = s => { step = steps().indexOf(s); };
@@ -189,8 +214,8 @@ export function shouldOnboard() {
 export function openOnboarding() {
   const S = store.model.settings, R = S.reminders || {};
   el = $("#onb"); step = 0; dir = 1;
-  st = { lang: String(S.voiceLang || "en-GB").startsWith("fi") ? "fi" : "en", why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), custom: [], adding: false, newBill: "", amounts: {}, days: {},
-    balance: "", feel: new Set(), people: null, goal: null, goalAmt: "", by: null, byMonth: "", nudge: { bills: R.bills !== false, payday: R.payday !== false, weekly: !!R.weekly },
+  st = { lang: String(S.voiceLang || "en-GB").startsWith("fi") ? "fi" : "en", why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), custom: [], adding: false, newBill: "", amounts: {}, days: {}, freq: {}, dates: {},
+    balance: "", feel: new Set(), people: null, goals: [], goalOwn: [], addingGoal: false, newGoal: "", gAmt: {}, gBy: {}, gMonth: {}, nudge: { bills: R.bills !== false, payday: R.payday !== false, weekly: !!R.weekly },
     home: wantsHomeStep(), name: S.name || "", tone: Math.max(0, Math.min(5, Number(S.skinTone) || 0)), email: "", mode: "up", sent: false, back: null, ids: {} };
   el.hidden = false; document.body.classList.add("onb-open"); paint();
 }
@@ -223,6 +248,17 @@ const tail = label => `<p class="onb-msg" id="obMsg" aria-live="polite"></p>${fo
 const first = () => esc(String(st.name || "").trim().split(/\s+/)[0]);
 const focus = sel => setTimeout(() => { const f = el && $(sel, el); if (f) f.focus(); }, 60);
 const allBills = () => [...L().BILLS, ...st.custom];
+const goalName = g => L().GOALS[GOALS.indexOf(g)] || g;   // one from the list in their language; their own as they wrote it
+const allGoals = () => [...GOALS.slice(0, -1), ...st.goalOwn];   // "Something else" isn't a goal: it opens a field to name one
+const dayOpts = (cur, T) => `<option value=""${cur ? "" : " selected"}>${T.pickDay}</option>` + Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === cur ? " selected" : ""}>${T.dayN(k + 1)}</option>`).join("");
+/* A goal's date and monthly amount, from "In 6 months" or a month they chose; null when it has none, false when the month is too soon. */
+function goalWhen(g, now = new Date()) {
+  const by = st.gBy[g], target = parseMoney(st.gAmt[g]) || null;
+  if (!by || by === "none") return null;
+  let months = Number(by);
+  if (by === "date") { const [y, m] = String(st.gMonth[g] || "").split("-").map(Number); months = y && m ? (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()) : 0; }
+  return months >= 1 ? goalBy(months, target, now) : false;
+}
 
 /* What they told Koti, as rows to check: each can be edited (back to that question, then back here). */
 function summaryRows() {
@@ -232,8 +268,8 @@ function summaryRows() {
   rows.push(["why", st.why.size ? T.WHY.filter(([v]) => st.why.has(v)).map(([, t]) => esc(t)).join(", ") : none]);
   const amount = parseMoney(st.amount), w = T.whenWord[st.when], when = typeof w === "function" ? w(st.day) : w;
   rows.push(["pay", amount ? `${money(amount)} · ${esc(when)}` : st.when === "varies" ? esc(when) : none]);
-  const bills = [...st.picked].map(n => [n, parseMoney(st.amounts[n])]).filter(([, a]) => a), sum = bills.reduce((s, [, a]) => s + a, 0);
-  rows.push(["bills", bills.length ? `${bills.map(([n, a]) => `${esc(n)} ${money(a)}`).join(", ")} · ${money(sum)} ${T.perMonth}` : none]);
+  const bills = [...st.picked].map(n => [n, parseMoney(st.amounts[n]), st.freq[n] || "monthly"]).filter(([, a]) => a), sum = bills.reduce((s, [, a, f]) => s + a * PER_MONTH[f], 0);
+  rows.push(["bills", bills.length ? `${bills.map(([n, a, f]) => `${esc(n)} ${money(a)} ${T.FREQW[f]}`).join(", ")}${sum ? ` · ${money(Math.round(sum))} ${T.perMonth}` : ""}` : none]);
   const on = [st.nudge.bills && T.rBills, st.nudge.payday && T.rPay, st.nudge.weekly && T.rWeek].filter(Boolean);
   rows.push(["nudges", on.length ? esc(on.join(", ").replace(/^./, c => c.toUpperCase())) : T.off]);
   rows.push(["name", st.name ? `${esc(st.name)} ${hand("\u{1F44B}")}` : none]);
@@ -241,9 +277,8 @@ function summaryRows() {
   rows.push(["balance", bal != null && !Number.isNaN(bal) ? money(/^\s*-/.test(st.balance) ? -bal : bal) : none]);
   rows.push(["feel", st.feel.size ? T.FEEL.filter(([v]) => st.feel.has(v)).map(([, t]) => esc(t)).join(", ") : none]);
   rows.push(["people", st.people ? esc(label(T.PEOPLE, st.people)) : none]);
-  const gi = GOALS.indexOf(st.goal), gt = parseMoney(st.goalAmt);
-  const pg = (store.model.settings.profile || {}).goal || {};
-  rows.push(["goal", st.goal ? `${esc(T.GOALS[gi] || st.goal)}${gt ? ` · ${money(gt)}` : ""}${pg.by ? ` · ${esc(pg.monthly ? T.monthly(money(pg.monthly), monthName(pg.by, st.lang)) : T.byWord(monthName(pg.by, st.lang)))}` : ""}` : none]);
+  rows.push(["goal", st.goals.length ? st.goals.map(g => { const gt = parseMoney(st.gAmt[g]), w = goalWhen(g);
+    return `${esc(goalName(g))}${gt ? ` ${money(gt)}` : ""}${w ? ` · ${esc(w.monthly ? T.monthly(money(w.monthly), monthName(w.by, st.lang)) : T.byWord(monthName(w.by, st.lang)))}` : ""}`; }).join("<br>") : none]);
   return rows;
 }
 
@@ -270,9 +305,19 @@ function paint() {
     el.innerHTML = head(T.billsT, T.billsP)
       + chips(allBills().map(n => [n, n]), n => st.picked.has(n), "bill", st.adding ? "" : `<button type="button" class="onb-chip onb-add" data-addbill>${T.addOwn}</button>`)
       + (st.adding ? `<div class="onb-newbill"><label class="sr" for="obNewBill">${T.ownL}</label><input class="onb-field" id="obNewBill" placeholder="${esc(T.ownPh)}" maxlength="40" value="${esc(st.newBill)}" enterkeyhint="done" autocapitalize="sentences"><button type="button" class="onb-addgo" data-savebill>${T.add}</button></div>` : "")
-      + `<div class="onb-rows">${[...st.picked].map(n => `<div class="onb-row"><span>${esc(n)}</span><input inputmode="decimal" placeholder="€0" aria-label="${esc(T.amtOf(n))}" data-amt="${esc(n)}" value="${esc(st.amounts[n] || "")}"><select aria-label="${esc(T.dueOf(n))}" data-dday="${esc(n)}">${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === (st.days[n] || 1) ? " selected" : ""}>${T.dayN(k + 1)}</option>`).join("")}</select></div>`).join("")}</div>`
-      + tail(T.billsGo);
+      + tail(st.picked.size ? T.billsGo : T.next);
     if (st.adding) { focus("#obNewBill"); $("#obNewBill", el).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addBill(); } }); }
+  } else if (s === "billsHow") {
+    // one card a bill: the amount, how often it comes, and when it's due (a day of the month, or a date)
+    const today = localISO(now);
+    el.innerHTML = head(T.howT, T.howP) + `<div class="onb-cards">${[...st.picked].map(n => { const f = st.freq[n] || "monthly";
+      return `<fieldset class="onb-card"><legend>${esc(n)}</legend>
+        <label class="onb-cl">${T.amtL}<input class="onb-cin num" inputmode="decimal" placeholder="€0" aria-label="${esc(T.amtOf(n))}" data-amt="${esc(n)}" value="${esc(st.amounts[n] || "")}" autocomplete="off"></label>
+        <div class="onb-seg" role="radiogroup" aria-label="${esc(T.freqL(n))}">${T.FREQ.map(([v, t]) => `<button type="button" role="radio" data-freq="${v}" data-of="${esc(n)}" aria-checked="${f === v}">${esc(t)}</button>`).join("")}</div>
+        <label class="onb-cl">${f === "monthly" ? T.dueDayL : f === "once" ? T.dueOnceL : T.dueNextL}${f === "monthly"
+          ? `<select class="onb-cin" aria-label="${esc(T.dueOf(n))}" data-dday="${esc(n)}">${dayOpts(st.days[n] || 0, T)}</select>`
+          : `<input class="onb-cin" type="date" min="${today}" aria-label="${esc(T.dueOf(n))}" data-ddate="${esc(n)}" value="${esc(st.dates[n] || "")}">`}</label></fieldset>`; }).join("")}</div>`
+      + tail(T.howGo);
   } else if (s === "nudges") {
     el.innerHTML = head(T.nudgeT, T.nudgeP) + `<div class="onb-togs">${toggle("bills", T.nBills, st.nudge.bills)}${toggle("payday", T.nPay, st.nudge.payday)}${toggle("weekly", T.nWeek, st.nudge.weekly)}</div>` + tail(T.next);
   } else if (s === "name") {
@@ -295,15 +340,20 @@ function paint() {
   } else if (s === "people") {
     el.innerHTML = head(T.pplT, T.pplP) + radios(T.pplT, T.PEOPLE.map(([v, t]) => [v, t]), st.people) + tail(T.next);
   } else if (s === "goal") {
+    // as many as they have; "Something else" opens a field to name their own, which becomes a chip, already picked
     el.innerHTML = head(T.goalT, T.goalP)
-      + chips(GOALS.map((g, k) => [g, T.GOALS[k]]), g => st.goal === g, "goal")
-      + (st.goal ? `<label class="onb-l" for="obGoalAmt">${esc(T.goalAmt(st.goal))}</label><input class="onb-amt num" id="obGoalAmt" inputmode="decimal" placeholder="€0" value="${esc(st.goalAmt)}" autocomplete="off">` : "")
-      + tail(st.goal ? T.next : T.goalNone);
-    if (st.goal && dir === 0) focus("#obGoalAmt");
-  } else if (s === "goalWhen") {
+      + chips(allGoals().map(g => [g, goalName(g)]), g => st.goals.includes(g), "goal", st.addingGoal ? "" : `<button type="button" class="onb-chip onb-add" data-addgoal>+ ${esc(T.GOALS[GOALS.length - 1])}</button>`)
+      + (st.addingGoal ? `<div class="onb-newbill"><label class="sr" for="obNewGoal">${T.goalOwnL}</label><input class="onb-field" id="obNewGoal" placeholder="${esc(T.goalOwnPh)}" maxlength="40" value="${esc(st.newGoal)}" enterkeyhint="done" autocapitalize="sentences"><button type="button" class="onb-addgo" data-savegoal>${T.add}</button></div>` : "")
+      + tail(st.goals.length ? T.goalGo : T.goalNone);
+    if (st.addingGoal) { focus("#obNewGoal"); $("#obNewGoal", el).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addGoal(); } }); }
+  } else if (s === "goalHow") {
+    // one card a goal: how much, and by when (what to put aside each month follows from both)
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1), min = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}`;
-    el.innerHTML = head(T.whenGoalT, T.whenGoalP) + radios(T.whenGoalT, T.BY, st.by)
-      + `<label class="onb-day" id="obByRow" ${st.by === "date" ? "" : "hidden"}>${T.byMonth} <input type="month" id="obByMonth" min="${min}" value="${esc(st.byMonth)}"></label>` + tail(T.next);
+    el.innerHTML = head(T.goalHowT, T.goalHowP) + `<div class="onb-cards">${st.goals.map(g => `<fieldset class="onb-card"><legend>${esc(goalName(g))}</legend>
+        <label class="onb-cl">${T.goalAmtL}<input class="onb-cin num" inputmode="decimal" placeholder="€0" data-gamt="${esc(g)}" value="${esc(st.gAmt[g] || "")}" autocomplete="off"></label>
+        <label class="onb-cl">${T.goalByL}<select class="onb-cin" data-gby="${esc(g)}"><option value=""${st.gBy[g] ? "" : " selected"}>${T.pickDay}</option>${T.BY.map(([v, t]) => `<option value="${v}"${st.gBy[g] === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+        ${st.gBy[g] === "date" ? `<label class="onb-cl">${T.byMonth}<input class="onb-cin" type="month" min="${min}" data-gmonth="${esc(g)}" value="${esc(st.gMonth[g] || "")}"></label>` : ""}</fieldset>`).join("")}</div>`
+      + tail(T.next);
   } else if (s === "summary") {
     el.innerHTML = head(T.sumT(f), T.sumP)
       + `<dl class="onb-sum">${summaryRows().map(([k, v]) => `<div class="onb-sumrow"><dt>${T.rows[k]}</dt><dd>${v}</dd><button type="button" class="onb-edit" data-edit="${k}" aria-label="${esc(`${T.edit}: ${T.rows[k]}`)}">${T.edit}</button></div>`).join("")}</dl>`
@@ -360,6 +410,7 @@ function paint() {
     if (a !== b) requestAnimationFrame(tick); else pct.textContent = `${b}%`;
   });
   el.onclick = onClick;
+  el.onchange = e => { if (e.target.closest("[data-gby]")) { keepRows(); dir = 0; paint(); } };   // "By a month I choose" shows the month
   if (dir !== 0) el.scrollTop = 0;
 }
 
@@ -380,13 +431,15 @@ function onClick(e) {
   if (t.closest("[data-addbill]")) { st.adding = true; again(); return; }
   if (t.closest("[data-savebill]")) { addBill(); return; }
   const b = t.closest("[data-bill]"); if (b) { const n = b.dataset.bill; st.picked.has(n) ? st.picked.delete(n) : st.picked.add(n); again(n); return; }
-  const g = t.closest("[data-goal]"); if (g) { st.goal = st.goal === g.dataset.goal ? null : g.dataset.goal; again(st.goal); return; }
+  const fq = t.closest("[data-freq]"); if (fq) { keepRows(); st.freq[fq.dataset.of] = fq.dataset.freq; again(); return; }
+  if (t.closest("[data-addgoal]")) { st.addingGoal = true; again(); return; }
+  if (t.closest("[data-savegoal]")) { addGoal(); return; }
+  const g = t.closest("[data-goal]"); if (g) { const v = g.dataset.goal; st.goals = st.goals.includes(v) ? st.goals.filter(x => x !== v) : [...st.goals, v]; again(v); return; }
   const n = t.closest("[data-nudge]"); if (n) { st.nudge[n.dataset.nudge] = !st.nudge[n.dataset.nudge]; n.setAttribute("aria-checked", st.nudge[n.dataset.nudge]); return; }
   const p = t.closest("[data-pick]");
   if (p) {
     const v = p.dataset.pick, s = id();
     if (s === "pay") { st.when = isNaN(Number(v)) ? v : Number(v); $("#obDayRow", el).hidden = st.when !== "date"; }
-    else if (s === "goalWhen") { st.by = v; $("#obByRow", el).hidden = v !== "date"; }
     else st[s] = v;
     $$("[data-pick]", p.parentElement).forEach(x => x.setAttribute("aria-checked", x === p));
     if (s === "people") setTimeout(() => { if (id() === s) next(false); }, 320);   // one choice: on to the next question
@@ -405,6 +458,18 @@ function addBill() {
   if (!same) st.custom.push(name);
   st.picked.add(same || name); st.newBill = ""; st.adding = false; st.just = same || name; dir = 0; paint(); st.just = null;
 }
+/* Their own goal ("Something else", named): a chip, already picked. */
+function addGoal() {
+  keepRows();
+  const name = String(st.newGoal || "").trim().replace(/\s+/g, " ").slice(0, 40);
+  if (name) {
+    const same = allGoals().find(x => x.toLowerCase() === name.toLowerCase() || goalName(x).toLowerCase() === name.toLowerCase());
+    if (!same) st.goalOwn.push(name);
+    if (!st.goals.includes(same || name)) st.goals.push(same || name);
+    st.just = same || name;
+  }
+  st.newGoal = ""; st.addingGoal = false; dir = 0; paint(); st.just = null;
+}
 /* After their name: their hand (in their tone) and Koti's meet and shake, "Nice to meet you, Antti", then on. */
 function shake() {
   el.insertAdjacentHTML("beforeend", `<div class="onb-shake" role="status"><div class="onb-hands" aria-hidden="true"><span class="h-you">${hand("\u{1FAF1}")}</span><span class="h-koti">\u{1FAF2}</span></div><p>${L().meet(first())}</p></div>`);
@@ -412,22 +477,29 @@ function shake() {
   setTimeout(advance, reduce ? 1100 : 2000);
 }
 /* On to the next step, or back to the summary when they came from it to change something. */
-function advance() { if (st.back && !(id() === "goal" && st.goal)) { go(st.back); st.back = null; } else step++; dir = 1; paint(); }   // a goal changed from the summary: its date next, then back
+function advance() { if (st.back && !(id() === "goal" && st.goals.length) && !(id() === "bills" && st.picked.size)) { go(st.back); st.back = null; } else step++; dir = 1; paint(); }   // bills or goals changed from the summary: their amounts and dates next, then back
 /* What they told Koti, as a profile Koti reads with every question (settings.profile). */
 const saveProfile = patch => store.updateSettings({ profile: { ...(store.model.settings.profile || {}), ...patch, at: new Date().toISOString().slice(0, 10) } });
-function msg(t) { const m = $("#obMsg", el); if (m) m.textContent = t; }
+/* Bills or goals saved earlier in these questions and since taken off: removed again. */
+function forget(prefix, keep) {
+  for (const key of Object.keys(st.ids)) if (key.startsWith(prefix) && !keep.includes(key.slice(prefix.length))) { store.remove(prefix === "b:" ? "bills" : "goals", st.ids[key]); delete st.ids[key]; }
+}
+function msg(t) { const m = $("#obMsg", el); if (m) { m.textContent = t; if (t && m.scrollIntoView) m.scrollIntoView({ block: "center", behavior: "smooth" }); } }   // below a long list of cards: brought into view
 function keepRows() {
   const v = sel => { const x = $(sel, el); return x ? x.value : null; };
   if (v("#obAmt") != null) st.amount = v("#obAmt");
   if (v("#obDay") != null) st.day = Number(v("#obDay"));
   if (v("#obBal") != null) st.balance = v("#obBal");
-  if (v("#obGoalAmt") != null) st.goalAmt = v("#obGoalAmt");
-  if (v("#obByMonth") != null) st.byMonth = v("#obByMonth");
+  if (v("#obNewGoal") != null) st.newGoal = v("#obNewGoal");
   if (v("#obName") != null) st.name = v("#obName");
   if (v("#obNewBill") != null) st.newBill = v("#obNewBill");
   if (v("#obEmail") != null) st.email = v("#obEmail").trim();
   $$("[data-amt]", el).forEach(i => { st.amounts[i.dataset.amt] = i.value; });
-  $$("[data-dday]", el).forEach(s => { st.days[s.dataset.dday] = Number(s.value); });
+  $$("[data-dday]", el).forEach(s => { st.days[s.dataset.dday] = Number(s.value) || 0; });
+  $$("[data-ddate]", el).forEach(i => { st.dates[i.dataset.ddate] = i.value; });
+  $$("[data-gamt]", el).forEach(i => { st.gAmt[i.dataset.gamt] = i.value; });
+  $$("[data-gby]", el).forEach(s => { st.gBy[s.dataset.gby] = s.value; });
+  $$("[data-gmonth]", el).forEach(i => { st.gMonth[i.dataset.gmonth] = i.value; });
 }
 
 function next(later) {
@@ -443,11 +515,15 @@ function next(later) {
     const payDay = st.when === "date" ? st.day : st.when === "varies" ? LAST_DAY : st.when;
     st.ids.income = store.put("income", { id: st.ids.income, name: T.salary, amount: amount || null, frequency: st.when === "varies" ? "varies" : "monthly", payDay, active: true, position: store.model.income.length }).id;
   }
-  if (s === "bills" && !later) {
+  if (s === "bills") { if (later) st.picked.clear(); forget("b:", [...st.picked]); }   // ones taken off since: gone again
+  if (s === "billsHow" && !later) {
     const missing = [...st.picked].filter(n => { const v = parseMoney(st.amounts[n]); return !v || Number.isNaN(v); });
     if (missing.length) return msg(T.billsErr(missing.join(", ")));
-    if (st.picked.size) saveProfile({ bills: st.picked.size });
-    [...st.picked].forEach((n, k) => { st.ids["b:" + n] = store.put("bills", { id: st.ids["b:" + n], name: n, amount: parseMoney(st.amounts[n]), frequency: "monthly", dueDay: st.days[n] || 1, anchorMonth: new Date().getMonth() + 1, startDate: (st.days[n] || 1) < new Date().getDate() ? nextMonthStart() : null, active: true, position: store.model.bills.length + k }).id; });
+    const undated = [...st.picked].filter(n => (st.freq[n] || "monthly") === "monthly" ? !st.days[n] : !/^\d{4}-\d{2}-\d{2}$/.test(st.dates[n] || ""));
+    if (undated.length) return msg(T.dueErr(undated.join(", ")));
+    saveProfile({ bills: st.picked.size });
+    [...st.picked].forEach((n, k) => { const f = st.freq[n] || "monthly";
+      st.ids["b:" + n] = store.put("bills", { id: st.ids["b:" + n], name: n, amount: parseMoney(st.amounts[n]), frequency: f, ...billDue(f, st.days[n], st.dates[n]), active: true, position: store.model.bills.length + k }).id; });
   }
   if (s === "nudges" && !later) {
     const R = store.model.settings.reminders || {};
@@ -470,25 +546,19 @@ function next(later) {
     T.FEEL.filter(([v]) => st.feel.has(v)).forEach(([, , m]) => remember(m));
   }
   if (s === "people" && !later && st.people) { saveProfile({ people: st.people }); remember(T.PEOPLE.find(([v]) => v === st.people)[2]); }
-  if (s === "goal" && !later && st.goal) {
-    const target = parseMoney(st.goalAmt);
-    if (st.goalAmt && (target == null || Number.isNaN(target) || target <= 0)) return msg(T.goalErr);
-    const name = T.GOALS[GOALS.indexOf(st.goal)] || st.goal;
-    saveProfile({ goal: { name: st.goal, target: target || null } });
-    st.ids.goal = store.put("goals", { id: st.ids.goal, name, target: target || null, saved: 0, monthly: null, targetDate: null, position: store.model.goals.length }).id;
-  }
-  if (s === "goalWhen" && !later && st.by && st.ids.goal) {
-    const target = parseMoney(st.goalAmt) || null, now = new Date();
-    let months = st.by === "none" ? null : st.by === "date" ? null : Number(st.by), by = null, monthly = null;
-    if (st.by === "date") {
-      const [y, m] = String(st.byMonth || "").split("-").map(Number);
-      months = y && m ? (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()) : 0;
-      if (!(months >= 1)) return msg(T.byErr);
-    }
-    if (months) ({ by, monthly } = goalBy(months, target, now));
-    const g = store.model.goals.find(x => x.id === st.ids.goal);
-    if (g) store.put("goals", { ...g, targetDate: by, monthly });
-    saveProfile({ goal: { ...(store.model.settings.profile || {}).goal, by, monthly } });
+  if (s === "goal") { if (later) st.goals = []; forget("g:", st.goals); if (!st.goals.length) saveProfile({ goals: [], goal: null }); }
+  if (s === "goalHow") {
+    // each goal: its amount and date are optional (Later saves the goals without them), but what's typed must make sense
+    const bad = later ? [] : st.goals.filter(g => { const v = parseMoney(st.gAmt[g]); return st.gAmt[g] && (v == null || Number.isNaN(v) || v <= 0); });
+    if (bad.length) return msg(T.goalErr(bad.map(goalName).join(", ")));
+    const soon = later ? [] : st.goals.filter(g => goalWhen(g) === false);
+    if (soon.length) return msg(T.byErr(soon.map(goalName).join(", ")));
+    const saved = st.goals.map((g, k) => {
+      const target = later ? null : parseMoney(st.gAmt[g]) || null, w = later ? null : goalWhen(g);
+      st.ids["g:" + g] = store.put("goals", { id: st.ids["g:" + g], name: goalName(g), target, saved: 0, monthly: w ? w.monthly : null, targetDate: w ? w.by : null, position: store.model.goals.length + k }).id;
+      return { name: g, target, by: w ? w.by : null, monthly: w ? w.monthly : null };
+    });
+    saveProfile({ goals: saved, goal: saved[0] || null });   // goal: the first, for what reads one
   }
   if (s === "summary") st.back = null;
   if (s === "account") { if (later) { finish(); return; } return account(); }
