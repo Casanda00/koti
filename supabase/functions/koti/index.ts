@@ -106,7 +106,8 @@ Deno.serve(async (req) => {
     // Working memory from the app: every photo in the chat (pinned), and the turns before the last ones, in short.
     const pinned = Array.isArray(body.photos) ? body.photos.filter((x: unknown) => typeof x === "string").slice(-6) : [];
     const earlier = Array.isArray(body.earlier) ? body.earlier.filter((x: unknown) => typeof x === "string").slice(-40) : [];
-    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history, can, image, about, pinned, earlier });
+    // again: the app has just sent a photo through the reader again and asks once more; it isn't sent again.
+    const out = await runAgent({ key: openaiKey, M, today, lang, mode, history, can, image, about, pinned, earlier, again: body.again === true });
     // Koti speaks only when spoken to: a recording, or words the phone heard (spoken). Never to typing.
     const voice = mode === "chat" && shouldSpeak({ audio: !!audio, spoken: body.spoken === true, settings: M.settings }) ? await speech({ key: openaiKey, text: out.reply, lang }) : null;
     return json(200, { ...out, heard: audio ? message : undefined, speech: voice ? `data:audio/mpeg;base64,${voice}` : null, model: MODEL, used, limit: LIMIT });
