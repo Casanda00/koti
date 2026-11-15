@@ -127,8 +127,8 @@ function paint() {
     ? `<div class="kmsg mine">${m.photo ? `<img class="kphoto" src="${esc(m.photo)}" alt="Your photo">` : m.pdf ? `<span class="kphoto pdf">PDF</span>` : ""}${!m.photo && !m.pdf || m.typed ? `<p>${esc(m.content)}</p>` : ""}</div>`
     : m.role === "error" ? `<div class="kmsg err"><p>${esc(m.content)}</p></div>`
     : `<div class="kmsg koti">${m.content ? `<div class="ai-says"><span class="ai-mark" aria-hidden="true">${icon("spark", "ic sm")}</span><p>${esc(m.content)}</p></div>` : ""}
-        ${tableHTML(m.table)}
-        ${(m.actions || []).map((a, j) => cardHTML(a, `${i}:${j}`)).join("")}
+        ${tableHTML(m.table, m, i)}
+        ${(m.actions || []).map((a, j) => m.table && m.table.action === a.id ? "" : cardHTML(a, `${i}:${j}`)).join("")}
         ${m.rate ? rateHTML(m.rate, i) : ""}
         ${(m.remembered || []).filter(r => r.done).map((r, j) => `<p class="kmem">${icon("spark", "ic xs")} ${esc(r.type === "forget" ? "Forgot" : "Remembered")}: ${esc(r.fact)}${r.undone ? " (undone)" : ` <button type="button" class="tlink" data-unremember="${i}:${j}">Undo</button>`}</p>`).join("")}
       </div>`).join("") + (busy ? `<div class="kmsg koti"><div class="ai-says"><span class="ai-mark" aria-hidden="true">${icon("spark", "ic sm")}</span><p class="kdots" aria-label="Koti is thinking"><i></i><i></i><i></i></p></div></div>` : "");
@@ -138,13 +138,22 @@ function paint() {
   requestAnimationFrame(() => { u.log.scrollTop = u.log.scrollHeight; });
 }
 
-/* A table Koti gave (a breakdown): its columns and rows; the last row in bold when it's a total. */
-function tableHTML(t) {
+/* A table Koti gave (a breakdown): its columns and rows; the last row in bold when it's a total. A purchase's
+   breakdown carries its card's button underneath ("Check and save"), so the lines can be saved from the table. */
+function tableHTML(t, m = null, i = 0) {
   if (!t || !t.columns || !t.rows || !t.rows.length) return "";
   const total = /^(total|yhteensä|left|jäljellä)/i.test(String(t.rows[t.rows.length - 1][0] || ""));
   const num = v => /^[−\-+]?\s?€?\s?[\d\s.,]+\s?€?$/.test(String(v).trim());
   return `<div class="ktable-w"><table class="ktable"><thead><tr>${t.columns.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead>
-    <tbody>${t.rows.map((r, k) => `<tr${total && k === t.rows.length - 1 ? ' class="tot"' : ""}>${r.map(c => `<td${num(c) ? ' class="num"' : ""}>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    <tbody>${t.rows.map((r, k) => `<tr${total && k === t.rows.length - 1 ? ' class="tot"' : ""}>${r.map(c => `<td${num(c) ? ' class="num"' : ""}>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>${tableGo(t, m, i)}</div>`;
+}
+function tableGo(t, m, i) {
+  const j = t.action && m && m.actions ? m.actions.findIndex(a => a.id === t.action) : -1;
+  if (j < 0) return "";
+  const a = m.actions[j], d = describeAction(a);
+  const state = a.status === "done" ? `<span class="kcard-done">${icon("check", "ic xs")} Saved</span>` : a.status === "opened" ? `<span class="kcard-done">Opened</span>` : a.status === "undone" ? `<span class="kcard-done">Undone</span>`
+    : `<button type="button" class="pill kcard-go" data-act="${i}:${j}">${esc(d.button || "Check and save")}</button>`;
+  return `<div class="ktable-go"><small>${esc(a.type === "purchase" ? `${a.lines.length} lines into categories and rooms` : d.sub || "")}</small>${state}</div>`;
 }
 
 /* "How did Koti do?" at the end of a chat: Good, or Could be better with a few words. */

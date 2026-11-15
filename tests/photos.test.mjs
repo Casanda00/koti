@@ -284,3 +284,39 @@ test("what this turn is about: the newest photo, the cards shown last, and amoun
   // a photo from before photos were kept is said so, instead of being invisible
   assert.match(B.photoTag({ photo: "data:image/jpeg;base64,x" }), /before Koti kept them[^]*add it again/);
 });
+
+// 15 November 2026: Koti showed the JYSK lines as a table and said "tap Save scan", with nothing to tap. "Can you add
+// button to the card?" A purchase's breakdown carries its own Check and save button.
+test("a purchase's breakdown table carries its save button; a category breakdown or a saved receipt doesn't", async () => {
+  const said = "I can give you a breakdown of that payment. 350 for sofa, 350 for bed frame, 350 for mattress, 69 to transport them. Show breakdown";
+  const table = { columns: ["Item", "Amount"], rows: [["Sofa", "€350.00"], ["Bed frame", "€350.00"], ["Mattress", "€350.00"], ["Transport", "€69.00"], ["Total", "€1,119.00"]] };
+  assert.deepEqual(A.purchaseOfTable(table, M), { total: 1119, lines: [{ name: "Sofa", price: 350, category: null, place: null }, { name: "Bed frame", price: 350, category: null, place: null }, { name: "Mattress", price: 350, category: null, place: null }, { name: "Transport", price: 69, category: null, place: null }] });
+  assert.equal(A.purchaseOfTable({ columns: ["Category", "€"], rows: [["Shopping", "1050"], ["Total", "1050"]] }, M), null);
+  assert.equal(A.purchaseOfTable({ ...table, rows: [...table.rows.slice(0, 3), ["Total", "1119"]] }, M), null, "doesn't add up");
+  // the model shows the table and says "tap Save scan" with no card: the card is made from the rows, tied to the table
+  const history = [{ role: "user", content: "Here's the JYSK receipt [added Photo p1, not read: the reader found no receipt or bill in it]" }, { role: "assistant", content: "I couldn't read it." }, { role: "user", content: said }];
+  const { f } = turnsOf([say("Here's the breakdown from your figures — tap Save scan to open and save it.", table)]);
+  const MJ = { ...M, transactions: [...M.transactions, { id: "j0", date: "2026-10-02", amount: 30, kind: "expense", categoryId: null, payee: "JYSK", lines: null }] };
+  const r = await A.runAgent({ fetch: f, key: "k", M: MJ, today: TODAY, can: B.ACTION_TYPES, history });
+  assert.equal(r.actions.length, 1);
+  assert.deepEqual([r.actions[0].type, r.actions[0].total, r.actions[0].payee, r.actions[0].scanId], ["purchase", 1119, "JYSK", "p1"], "the shop named earlier in the chat, the photo that wasn't read");
+  assert.equal(r.table.action, r.actions[0].id);
+  // a card the model made itself is the one the table carries
+  const own = turnsOf([{ tool_calls: [{ id: "c1", type: "function", function: { name: "save_purchase", arguments: JSON.stringify({ payee: "JYSK", date: null, photo: null, lines: A.purchaseOfTable(table, M).lines }) } }] }, say("Here it is.", table)]);
+  const r2 = await A.runAgent({ fetch: own.f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, history: [{ role: "user", content: said }] });
+  assert.equal(r2.actions.length, 1); assert.equal(r2.table.action, r2.actions[0].id);
+  // a spending table with no photo and no amounts typed gets no button
+  const sp = turnsOf([say("Your week.", { columns: ["Item", "€"], rows: [["Coffee", "4"], ["Lunch", "11"], ["Total", "15"]] })]);
+  const r3 = await A.runAgent({ fetch: sp.f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, history: [{ role: "user", content: "what did I spend on today" }] });
+  assert.deepEqual(r3.actions, []); assert.equal(r3.table.action, undefined);
+  // the app draws the button under the table, and not the same card again below it
+  const k = read("js/koti.js");
+  assert.match(k, /\$\{tableHTML\(m\.table, m, i\)\}/);
+  assert.match(k, /m\.table && m\.table\.action === a\.id \? "" : cardHTML/);
+  assert.match(k, /function tableGo[^]*data-act="\$\{i\}:\$\{j\}"[^]*class="ktable-go"/);
+  assert.match(read("css/app.css"), /\.ktable-go\{/);
+});
+
+test("the example in Koti's own instructions is never taken for a photo", () => {
+  assert.equal(A.photosOf([{ role: "system", content: A.systemPrompt(M, TODAY) }]).size, 0);
+});
