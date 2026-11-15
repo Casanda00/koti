@@ -128,3 +128,54 @@ test("pointing back and unclear requests: find the one thing meant, name it, or 
   assert.match(p, /Pointing back:[^]*If exactly one thing fits, use it and name it[^]*If two or more fit, don't guess: ask one short question naming them/);
   assert.match(p, /To change a bill from a photo, change_bill with the amount and due day read from it/);
 });
+
+// 15 November 2026, from the owner: "Koti should create a list from a receipt in chats. Today, uploading a photo does
+// this. In chat, Koti must be able to use the same pipeline." Asked "Can you make a break down from the receipt I
+// sent", Koti answered "I can't read individual lines" about a JYSK receipt whose lines the reader had read.
+const jysk = { ai: true, docType: "receipt", reply: "A JYSK receipt from 14 November: €1,119.", bill: null, payments: null,
+  parsed: { payee: "JYSK Sinimäentie 22, Espoo", date: TODAY, amount: 1119, lines: [{ name: "Sofa", price: 899, categoryId: null, placeId: "room" }, { name: "Cushions", price: 40, qty: 2, categoryId: cat.id }, { name: "Rug", price: 180, categoryId: null, placeId: "room" }] } };
+const turnsOf = list => { const sent = []; return { sent, f: async (url, init) => { sent.push(JSON.parse(init.body)); return { ok: true, json: async () => ({ choices: [{ message: list.shift() }] }) }; } }; };
+const say = (reply, table = null) => ({ content: JSON.stringify({ reply, follow_ups: [], done: false, table }) });
+
+test("asked for a breakdown of a photo, the answer never says it can't read the lines while showing them", async () => {
+  const { f } = turnsOf([say("I can't read individual lines — the photo shows JYSK, 14 November, total €1,119.")]);
+  const r = await A.runAgent({ fetch: f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, pinned: [B.readingText("p1", jysk)], history: [{ role: "user", content: "Can you make a break down from the receipt I sent" }] });
+  assert.deepEqual(r.table.rows.map(x => x[0]), ["Sofa", "Cushions ×2", "Rug", "Total"]);
+  assert.deepEqual(r.table.rows.at(-1), ["Total", "", "1119.00"]);
+  assert.equal(r.reply, "Here's the breakdown: 3 lines, €1119.00 in all.");
+  for (const x of ["Make a list of the items", "what did I buy?", "list of bill from the receipt", "every item please", "Mitä ostin?"]) assert.ok(A.BREAKDOWN.test(x), x);
+  assert.ok(!A.DENIES.test("Here's the JYSK receipt, line by line."));
+});
+
+test("a receipt read without its lines is read again by the app, with the same reader as Add, and asked again", async () => {
+  const bare = { ...jysk, parsed: { ...jysk.parsed, lines: [] } };
+  const { f } = turnsOf([say("I can't read individual lines.")]);
+  const r = await A.runAgent({ fetch: f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, pinned: [B.readingText("p1", bare)], history: [{ role: "user", content: "Break it down" }] });
+  assert.equal(r.reread, "p1");
+  assert.equal(r.table, null);
+  assert.match(r.reply, /Reading the photo again, line by line/);
+  assert.equal(A.breakdownOf(A.photosOf([{ role: "system", content: A.chatMemory([B.readingText("p1", bare)]) }]), "p1").reread, "p1");
+  const k = read("js/koti.js"), b = read("js/brain.js");
+  assert.match(k, /if \(r\.reread\) r = await readAgain\(/);
+  assert.match(k, /readReceipt\(prepared, null, "receipt"\)/, "the same reader as Add, told it's a receipt");
+  assert.match(b, /reread: typeof d\.reread === "string" \? d\.reread : null/);
+});
+
+test("a receipt saved with Add is broken down in the chat too, from its saved lines, and named", async () => {
+  const S = A.modelFromRows({ settings: { monthStart: 1, startDate: "2026-09-01", startBalance: 1500 }, cats: [{ id: "cat-shop", name: "Shopping", budget: null }],
+    lists: [{ id: "home", name: "New flat", kind: "project", parent_id: null }],
+    tx: [{ id: "t1", date: "2026-11-14", amount: 1119, kind: "expense", category_id: "proj:home", payee: "JYSK", source: "receipt",
+      lines: [{ name: "Sofa", price: 899, categoryId: "proj:home" }, { name: "Cushions", qty: 2, price: 40, categoryId: "cat-shop" }, { name: "Rug", price: 180, categoryId: "proj:home" }] },
+      { id: "t2", date: "2026-11-10", amount: 12.5, kind: "expense", category_id: "cat-shop", payee: "Lidl", source: "receipt", lines: [{ name: "Bread", price: 2.5, categoryId: "cat-shop" }, { name: "Cheese", price: 10, categoryId: "cat-shop" }] }] });
+  const b = A.look(S, TODAY, "receipt_breakdown", { shop: "jysk", by: "category" });
+  assert.deepEqual(b.table.rows, [["Project: New flat", "1079.00"], ["Shopping", "40.00"], ["Total", "1119.00"]]);
+  assert.equal(b.linesAddUp, true);
+  assert.equal(A.look(S, TODAY, "receipt_breakdown", {}).receipt.shop, "JYSK", "the one saved last");
+  assert.match(A.look(S, TODAY, "receipt_breakdown", { shop: "Prisma" }).error, /No saved receipt from "Prisma"[^]*JYSK 2026-11-14 €1119; Lidl/);
+  // the model forgets to look it up: no photo in this chat, they name the shop, and code finds the saved receipt
+  const { f } = turnsOf([say("Which receipt do you mean?")]);
+  const r = await A.runAgent({ fetch: f, key: "k", M: S, today: TODAY, can: B.ACTION_TYPES, history: [{ role: "user", content: "Can you break down the Lidl receipt?" }] });
+  assert.deepEqual(r.table.rows, [["Bread", "Shopping", "2.50"], ["Cheese", "Shopping", "10.00"], ["Total", "", "12.50"]]);
+  assert.equal(r.reply, "Your Lidl from 10 November, line by line.");
+  assert.ok(A.TOOLS.some(t => t.function.name === "receipt_breakdown"));
+});

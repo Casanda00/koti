@@ -229,8 +229,11 @@ async function send({ message = "", audio = null, spoken = false, quiet = false,
   ui.input.value = ""; busy = true; paint();
   try {
     const doc = mine && mine.scan ? mine : null;
-    const r = await ask({ message, audio, history, spoken: spoken && !audio && speaks(), image, doc, about: about ? { kind: about.kind, id: about.id } : null });
+    let r = await ask({ message, audio, history, spoken: spoken && !audio && speaks(), image, doc, about: about ? { kind: about.kind, id: about.id } : null });
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
+    // The photo was read without its lines: read it again with the same reader as Add (told it's a receipt), then ask
+    // again, once. After the app was closed the picture isn't on hand any more: they're asked to add it again.
+    if (r.reread) r = await readAgain(r, { message: r.heard || message, history, doc });
     // At the end of a real conversation, once a day, Koti asks how it did instead of closing straight away.
     const rate = r.done && !quiet && shouldAsk(msgs);
     msgs.push({ role: "assistant", content: r.reply, actions: r.actions, followUps: r.followUps, remembered: r.remembered, table: r.table || null, ...(rate ? { rate: "ask" } : {}) });
@@ -244,6 +247,18 @@ async function send({ message = "", audio = null, spoken = false, quiet = false,
     if (quiet) throw e;
     return null;
   } finally { busy = false; persist(); paint(); }
+}
+
+async function readAgain(r, { message, history, doc }) {
+  const m = [...history, ...(doc ? [doc] : [])].find(x => x.scan && x.scan.id === r.reread), prepared = photos.get(r.reread);
+  if (!m || !prepared) return { ...r, reply: "I don't have that photo's lines. Add the photo again and I'll read it line by line.", table: null };
+  msgs.push({ role: "assistant", content: r.reply }); paint();
+  let again = null;
+  try { again = await readReceipt(prepared, null, "receipt"); } catch { /* keeps the first reading */ }
+  if (!again || !again.ai || !((again.parsed && again.parsed.lines) || []).length) return { ...r, reply: "I still couldn't read its lines. Try a sharper photo, flat and in good light.", table: null };
+  m.scan.r = keepOf(again); persist();   // the same message object as in history: the new lines go with the question
+  const next = await ask({ message, history, doc, about: about ? { kind: about.kind, id: about.id } : null });
+  return { ...next, reread: null };
 }
 
 /* A photo or screenshot added in the chat: read by Koti's reader (the same as a scan), shown as yours, then sent with
