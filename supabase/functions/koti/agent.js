@@ -126,6 +126,12 @@ export const ACT = [
     payee: S("The shop, or null", true), date: Day("The day it was bought, YYYY-MM-DD, or null for today"), photo: S("The photo of it in this chat (p1…), or null", true),
     lines: { type: "array", items: { type: "object", additionalProperties: false, required: ["name", "price", "category", "place"], properties: {
       name: S("What it was, short"), price: Nm("Euros paid for this line"), category: S("One of their category names, or null", true), place: S("For something that stays in a home project: one of their places, or null", true) } } } }),
+  fn("open_record", "Propose opening a purchase they already saved on its edit screen, where they can change anything (shop, day, amount, lines, category) or delete it. Use it for 'open it', 'pull up the receipt', 'I want to edit it'. Find it by the purchase being worked on (its id), or by shop, day and amount.", {
+    record: S("The purchase being worked on (its id, e.g. p1), or null", true), shop: S("The shop, or null", true), date: Day("The day, YYYY-MM-DD, or null"), amount: Nm("The amount in euros, or null", true) }),
+  fn("update_purchase", "Propose replacing the lines of a purchase they already saved (it stays one record, never saved twice): e.g. a receipt saved as one amount that they've now given the lines of. Opens its edit screen with the new lines for them to check and save.", {
+    record: S("The purchase being worked on (its id), or null", true), shop: S("The shop, or null", true), date: Day("The day, YYYY-MM-DD, or null"), amount: Nm("Its saved amount in euros, or null", true),
+    lines: { type: "array", items: { type: "object", additionalProperties: false, required: ["name", "price", "category", "place"], properties: {
+      name: S("What it was, short"), price: Nm("Euros"), category: S("One of their category names, or null", true), place: S("One of their places, or null", true) } } } }),
   fn("add_to_list", "Propose putting things on one of their lists (a shopping list unless they name another).", {
     list: S("One of their list names, or null for the shopping list", true), items: { type: "array", items: { type: "object", additionalProperties: false, required: ["name", "qty"], properties: { name: S("The thing"), qty: Nm("How many, or null", true) } } } }),
   fn("add_reminder", "Propose a reminder (a notification on their phone).", {
@@ -156,7 +162,7 @@ const ACTION_NAMES = new Set(ACT.map(t => t.function.name));
 /* Which card each action becomes in the app. The app says which cards it can show (can); an older app that doesn't
    say gets the cards every version has had. Only those actions are offered, so no card arrives that the phone can't
    draw (an old copy showed "change this bill" as an empty box: 14 November 2026). */
-export const CARD_OF = { save_scan: "scan", save_purchase: "purchase", add_expense: "expense", add_to_list: "list", add_reminder: "reminder", add_bill: "bill", plan_payment: "payment", change_bill: "change_bill",
+export const CARD_OF = { save_scan: "scan", save_purchase: "purchase", open_record: "record", update_purchase: "replace", add_expense: "expense", add_to_list: "list", add_reminder: "reminder", add_bill: "bill", plan_payment: "payment", change_bill: "change_bill",
   bill_not_owed: "bill_not_owed", add_goal: "goal", set_budget: "budget", remember: "remember", forget: "forget" };
 export const OLD_CARDS = ["expense", "list", "reminder", "bill", "goal", "budget", "remember", "forget"];
 export const toolsFor = can => { const ok = new Set(Array.isArray(can) ? can : OLD_CARDS); return TOOLS.filter(t => !CARD_OF[t.function.name] || ok.has(CARD_OF[t.function.name])); };
@@ -335,6 +341,15 @@ export function action(M, today, name, a = {}, ctx = {}) {
     const date = day(a.date) && a.date <= latest ? a.date : (p && p.reading && day(p.reading.date)) || today;
     return { type: "purchase", payee: str(a.payee, 120) || (p && p.title) || null, date, total, lines, scanId: id && (p || (ctx.allPhotos || []).includes(id)) ? id : null };
   }
+  if (name === "open_record" || name === "update_purchase") {
+    const found = findRecord(M, a, ctx.drafts || []);
+    if (found.error) return fail(found.error);
+    const t = found.tx, base = { txId: t.id, payee: t.payee || null, date: t.date, ...(found.draft ? { draftId: found.draft.id } : {}) };
+    if (name === "open_record") return { type: "record", ...base, amount: Number(t.amount), lines: Array.isArray(t.lines) ? t.lines.length : 0 };
+    const p = action(M, today, "save_purchase", { payee: t.payee, date: t.date, photo: null, lines: a.lines }, {});
+    if (p.error) return fail(p.error);
+    return { type: "replace", ...base, amount: p.total, was: Number(t.amount), lines: p.lines };
+  }
   if (name === "add_to_list") {
     const items = (Array.isArray(a.items) ? a.items : []).map(x => ({ name: str(x && x.name, 120), qty: Number.isInteger(x && x.qty) && x.qty > 1 && x.qty < 1000 ? x.qty : null })).filter(x => x.name).slice(0, 40);
     if (!items.length) return fail("Name at least one thing for the list.");
@@ -462,7 +477,7 @@ Rules:
 - Dates in what you write are said as people say them ("Monday 30 November", "${fi ? "maanantaina 30.11." : "tomorrow"}"), never as YYYY-MM-DD.
 - When they ask for a breakdown, a table, or several amounts side by side, put them in table (columns and rows of short text, at most 12 rows, a total row last when it adds up) and keep reply to one sentence. Otherwise table is null.
 - Give at most three follow_ups: questions of a few words the person might tap next, in their language, each answerable with the tools. Never a follow_up that confirms or cancels a card ("Confirm change", "Cancel"): a card has its own button, and they can just ignore it.
-- The app, as it really is (never describe anything else): each card has exactly one button: ${Object.entries(BUTTONS).map(([k, v]) => `${k} card "${v}"`).join(", ")}. There is no "Confirm", "Save scan", "Edit lines" or "Delete" button. "Check and save" opens the Check it screen: every line with its price, a category or home-project room for each, the shop and the day; they change anything there and tap Save. Until they save there, nothing is saved. You can't open, edit or delete a saved record from the chat yet: say so and tell them it's in Spending, where they can tap it to edit.
+- The app, as it really is (never describe anything else): each card has exactly one button: ${Object.entries(BUTTONS).map(([k, v]) => `${k} card "${v}"`).join(", ")}. There is no "Confirm", "Save scan", "Edit lines" or "Delete" button. "Check and save" opens the Check it screen: every line with its price, a category or home-project room for each, the shop and the day; they change anything there and tap Save. Until they save there, nothing is saved. A purchase they already saved: open_record opens it on its edit screen (to change anything, or delete it there with "Delete expense"); update_purchase replaces its lines and keeps it one record. Never save it again with save_purchase: that counts it twice.
 - Asking first: when you ask whether to do something ("Save the breakdown you gave?"), set offer to the card tool you'd use. When they say yes, propose that card; don't ask again.
 - Cards save, never you: never say you saved, split, sorted, added or changed anything. Say what's on the card and what tapping it does ("Tap Check and save to put the lamp in Home setup"). The cards you showed earlier are listed under your earlier replies ("[Cards shown: …]", with whether they were done or opened): don't show the same card again unless they ask.
 - If what they want needs an action you don't have, their app may be out of date: tell them to update Koti (More, then Version), then ask again.
@@ -524,7 +539,7 @@ export function amountsIn(text) {
    1,119, the photo's total) with "Can you update it", and Koti didn't connect them to the receipt. */
 export function contextOf(M, today, messages, photos, allPhotos, lastUser, drafts = []) {
   const notes = [], eur = v => `€${(Math.round(v * 100) / 100).toFixed(2)}`, nm = namer(M);
-  for (const d of drafts.slice(-2)) notes.push(`The purchase ${d.status === "saved" ? "they saved" : "being worked on"}, ${draftWords(d)}.${d.status !== "saved" ? ` "The list", "the breakdown", "the lines", "the receipt" and "the order" mean these lines unless they name one of their lists; show them from here (a table), and "save it" is save_purchase with these lines${d.photo ? ` and photo ${d.photo}` : ""}.` : ""}`);
+  for (const d of drafts.slice(-2)) notes.push(`The purchase ${d.status === "saved" ? "they saved" : "being worked on"}, ${draftWords(d)}.${d.status === "saved" ? ` "Open it", "pull the receipt", "edit it" mean open_record with record ${d.id}; new lines for it are update_purchase.` : ""}${d.status !== "saved" ? ` "The list", "the breakdown", "the lines", "the receipt" and "the order" mean these lines unless they name one of their lists; show them from here (a table), and "save it" is save_purchase with these lines${d.photo ? ` and photo ${d.photo}` : ""}.` : ""}`);
   const newest = allPhotos[allPhotos.length - 1], p = newest ? photos.get(newest) : null;
   if (p) { const n = Array.isArray(p.reading.lines) ? p.reading.lines.length : 0;
     notes.push(`The newest photo is ${p.id}: a ${p.docType} from ${p.title || "an unknown shop"}${p.reading.date ? `, ${p.reading.date}` : ""}${p.total != null ? `, total ${eur(p.total)}` : ""}, ${n ? `${n} lines read` : p.reading.payments ? `${p.reading.payments.length} payments read` : "read without its lines"}.`); }
@@ -539,7 +554,7 @@ export function contextOf(M, today, messages, photos, allPhotos, lastUser, draft
     const since = E.addDays(today, -60), tx = M.transactions.filter(t => t.kind === "expense" && t.date >= since && Math.abs(Number(t.amount) - sum) < 0.02).sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
     if (ph) notes.push(`That is exactly the total of Photo ${ph.id} (${ph.title || ph.docType}): these are that receipt's lines, one purchase. "It", "they", "the order" mean that receipt: save_purchase with photo ${ph.id} and these lines.`);
     else if (p && typeof p.total === "number" && sum < p.total) notes.push(`Photo ${p.id}'s total is ${eur(p.total)}: ${eur(p.total - sum)} of it isn't in these amounts. Ask what it was, or make it its own line.`);
-    if (tx) notes.push(`A saved purchase has the same total: ${tx.payee || nm(tx.categoryId)} on ${tx.date}, ${eur(Number(tx.amount))}${Array.isArray(tx.lines) && tx.lines.length ? `, with ${tx.lines.length} lines` : ", saved as one amount without lines"}. If they mean that one, say it's already saved; a new save would count it twice.`);
+    if (tx) notes.push(`A saved purchase has the same total: ${tx.payee || nm(tx.categoryId)} on ${tx.date}, ${eur(Number(tx.amount))}${Array.isArray(tx.lines) && tx.lines.length ? `, with ${tx.lines.length} lines` : ", saved as one amount without lines"}. If they mean that one, it's already saved: to add or change its lines use update_purchase, to open it open_record; a new save would count it twice.`);
   }
   return notes.length ? `What this turn is about (worked out by Koti's code from this chat and their records; use it to know what "it", "they", "that" and "the order" mean):\n- ${notes.join("\n- ")}` : "";
 }
@@ -583,11 +598,14 @@ const openDraft = (drafts, photo = null) => [...drafts].reverse().find(d => d.st
 const draftWords = d => `${d.id}: ${d.payee || "a purchase"}${d.date ? `, ${d.date}` : ""}${d.total != null ? `, €${d.total.toFixed(2)}` : ""}${d.photo ? ` (Photo ${d.photo})` : ""}, ${d.lines.length} lines ${d.from === "you" ? "they gave" : "read"}: ${d.lines.slice(0, 12).map(l => `${l.name} ${l.price}`).join(", ")}; ${d.status === "saved" ? `saved${d.txId ? ` (record ${d.txId})` : ""}` : d.status === "opened" ? "its card was opened, not saved yet" : d.status === "undone" ? "saved, then undone" : "its card is shown, not saved yet"}`;
 /* The last thing Koti offered to do ("[Offered: save_purchase]"), and an answer that says yes to it. */
 export const YES = /^\s*(yes|yeah|yep|yup|ok|okay|sure|please|do it|go ahead|go on|sounds good|kyllä|joo|juu|ok+|tee se|käy)(?![\p{L}\p{N}])/iu;
+const savedDraft = drafts => [...drafts].reverse().find(d => d.status === "saved" && d.txId) || null;
+/* Asking to open, pull up or edit something they saved. */
+export const OPEN_ASK = /\b(open|pull( it)?( up)?|edit|change|fix|correct|show me)\b[^.?!]{0,30}\b(it|that|this|receipt|record|purchase|expense|order|lines?)\b|\b(open|edit) it\b|(?<![\p{L}])(avaa|muokkaa|korjaa)(?![\p{L}])/iu;
 const offerOf = messages => { const m = [...messages].reverse().find(x => x.role === "assistant" && typeof x.content === "string"); const o = m && /\[Offered: (\w+)\]/.exec(m.content); return o ? o[1] : null; };
 
 /* ---------- The honesty check ---------- */
 /* Each card's one button, exactly as the app draws it (tests check this matches js/brain.js describeAction). */
-export const BUTTONS = { scan: "Check and save", purchase: "Check and save", expense: "Save it", list: "Add", reminder: "Remind me", bill: "Add bill", payment: "Plan it",
+export const BUTTONS = { scan: "Check and save", purchase: "Check and save", record: "Open", replace: "Review", expense: "Save it", list: "Add", reminder: "Remind me", bill: "Add bill", payment: "Plan it",
   change_bill: "Review", bill_not_owed: "Not owed", goal: "Start saving", budget: "Set budget" };
 const LABELS = [...new Set(Object.values(BUTTONS))];
 /* Chips for things Koti can't do from the chat. */
@@ -705,6 +723,18 @@ export function linesTable(raw, by = "item", printed = null, what = "receipt") {
   return { table, lines: lines.length, linesAddUp: printed == null ? null : Math.abs(sum - printed) < 0.02, ...(printed != null && Math.abs(sum - printed) >= 0.02 ? { note: `The lines add up to ${money(sum)}, the ${what} says ${money(printed)}.` } : {}) };
 }
 
+/* A purchase they saved: the one the draft says it was saved as, or found by shop, day and amount (newest first). */
+export function findRecord(M, a = {}, drafts = []) {
+  const d = a.record ? drafts.find(x => x.id === String(a.record).replace(/^\[?photo\s*/i, "").replace(/\]$/, "")) : null;
+  if (d && d.txId) { const t = M.transactions.find(x => x.id === d.txId); if (t) return { tx: t, draft: d }; }
+  const q = lower(a.shop || (d && d.payee)), day = E.validDay(a.date) ? a.date : d && d.date, amt = typeof a.amount === "number" ? a.amount : d && d.status === "saved" ? d.total : null;
+  const hits = M.transactions.filter(t => (t.kind === "expense" || t.kind === "refund") && (!q || lower(t.payee).includes(q) || (lower(t.payee) && q.includes(lower(t.payee))))
+    && (!day || t.date === day) && (amt == null || Math.abs(Number(t.amount) - amt) < 0.02)).sort((x, y) => (y.date || "").localeCompare(x.date || ""));
+  if (!q && !day && amt == null) return { error: "Say which purchase: the shop, the day or the amount." };
+  if (!hits.length) return { error: `No saved purchase${q ? ` from "${a.shop || d.payee}"` : ""}${day ? ` on ${day}` : ""}${amt != null ? ` of €${amt}` : ""}. It may not be saved yet: then it's a new save (save_purchase).` };
+  if (hits.length > 1 && amt == null) return { error: `Several fit: ${hits.slice(0, 5).map(t => `${t.payee || "?"} ${t.date} €${t.amount}`).join("; ")}. Ask which.` };
+  return { tx: hits[0], draft: d && d.status === "saved" ? d : null };
+}
 /* Receipts they saved with their lines (scanned with Add, or saved from a chat), newest first. */
 const savedReceipts = M => M.transactions.filter(t => Array.isArray(t.lines) && t.lines.length && (t.kind === "expense" || t.kind === "refund"))
   .sort((x, y) => (y.date || "").localeCompare(x.date || "") || String(y.updatedAt || "").localeCompare(String(x.updatedAt || "")));
@@ -891,6 +921,9 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
     const understood = () => { const out = [], od = openDraft(drafts);
       if (od && looked.includes("lists") && /\b(list|breakdown|lines|receipt|order|lista|rivit|kuitti)\b/i.test(lastUser) && !M.lists.some(l => lower(lastUser).includes(lower(l.name))))
         out.push(`They mean the purchase they're working on (${draftWords(od)}): "the list" is its lines, not their shopping lists. Show its lines, or its card.`);
+      const sd = savedDraft(drafts);
+      if (OPEN_ASK.test(lastUser) && sd && !actions.some(x => x.type === "record" || x.type === "replace"))
+        out.push(`They want to open what they saved (${draftWords(sd)}): propose open_record with record ${sd.id}${ /\b(lines?|breakdown|add|rivit)\b/i.test(lastUser) ? ", or update_purchase with the new lines" : ""}.`);
       if (offered0 && YES.test(lastUser) && CARD_OF[offered0] && !actions.some(x => x.type === CARD_OF[offered0]))
         out.push(`They said yes to what you offered (${offered0}): propose that card now${offered0 === "save_purchase" && od ? ` with the lines of ${od.id}${od.photo ? ` and photo ${od.photo}` : ""}` : ""}.`);
       return out; };
@@ -904,6 +937,11 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
       const od = openDraft(drafts);
       if (offered0 === "save_purchase" && YES.test(lastUser) && od && !actions.some(x => x.type === "purchase") && actions.length < 6) {
         const card = action(M, today, "save_purchase", { payee: od.payee, date: od.date, photo: od.photo, lines: od.lines }, { photos, allPhotos, drafts });
+        if (!card.error) actions.push({ id: `a${actions.length + 1}`, ...card });
+      }
+      const sd = savedDraft(drafts);   // still no card to open what they saved: made from the draft's record
+      if (OPEN_ASK.test(lastUser) && sd && !actions.some(x => x.type === "record" || x.type === "replace") && actions.length < 6) {
+        const card = action(M, today, "open_record", { record: sd.id }, { drafts });
         if (!card.error) actions.push({ id: `a${actions.length + 1}`, ...card });
       }
       issues = honestyIssues(r, state);

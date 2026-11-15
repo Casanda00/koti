@@ -9,7 +9,7 @@
 import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
 import { shouldAsk, rateChat, markAsked, feedback, forgetFeedback } from "./feedback.js";
-import { parsedOfPurchase, draftsOf, ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
+import { parsedOfPurchase, linesForRecord, draftsOf, ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
 import { learned, forgetLearned } from "./learn.js";
 import { aiVoice } from "./hear.js";
@@ -189,7 +189,7 @@ const savedFor = a => saved => {
   const d = a.draftId ? draftsOf(msgs).find(x => x.id === a.draftId) : null;
   a.status = saved ? "done" : "undone";
   if (d) { d.status = saved ? "saved" : "undone"; d.txId = saved ? saved.id : null; }
-  msgs.push({ role: "note", content: saved ? `Saved ${euroOf(saved.amount)}${saved.payee ? ` at ${saved.payee}` : ""}${saved.lines ? ` with ${saved.lines} lines` : ""}` : "Save undone" });
+  msgs.push({ role: "note", content: saved ? `Saved ${euroOf(saved.amount)}${saved.payee ? ` at ${saved.payee}` : ""}${saved.lines ? ` with ${saved.lines} lines` : ""}` : saved === null && a.type === "record" ? "Deleted" : "Save undone" });
   persist(); paint();
 };
 const euroOf = v => `€${(Math.round(Number(v) * 100) / 100).toFixed(2)}`;
@@ -201,6 +201,13 @@ async function runCard(btn) {
     const m = msgs.find(x => x.scan && x.scan.id === a.scanId);
     if (!m) { toast("That photo isn't in this chat any more. Add it again."); return; }
     import("./scan.js").then(s => s.openReading({ r: m.scan.r, file: photos.get(a.scanId) || null, onSaved: savedFor(a) }));
+    a.status = "opened"; persist(); paint(); return;
+  }
+  if (a.type === "record" || a.type === "replace") {   // a purchase they saved, on its edit screen (with the new lines, for replace)
+    const tx = store.model.transactions.find(t => t.id === a.txId);
+    if (!tx) { toast("That purchase isn't in Koti any more."); return; }
+    const edit = a.type === "replace" ? { ...tx, amount: a.amount, lines: linesForRecord(a.lines) } : tx;
+    import("./money.js").then(m => m.openExpense({ tx: edit, onSaved: savedFor(a) }));
     a.status = "opened"; persist(); paint(); return;
   }
   if (a.type === "purchase") {   // one purchase with the lines they gave, on Add's "Check it" screen (with its photo when it's here)

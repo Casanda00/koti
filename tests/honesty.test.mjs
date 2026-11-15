@@ -71,7 +71,7 @@ test("the buttons Koti is told about are exactly the ones the app draws, and the
   const p = A.systemPrompt(M, TODAY);
   assert.match(p, /each card has exactly one button: scan card "Check and save"/);
   assert.match(p, /There is no "Confirm", "Save scan", "Edit lines" or "Delete" button/);
-  assert.match(p, /You can't open, edit or delete a saved record from the chat yet/);
+  assert.match(p, /A purchase they already saved: open_record opens it on its edit screen[^]*Never save it again with save_purchase/);
   for (const x of ["Delete receipt", "Edit lines", "Confirm", "Save scan"]) assert.ok(A.CANT_DO.test(x), x);
   assert.ok(!A.CANT_DO.test("Which is biggest?"));
 });

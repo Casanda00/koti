@@ -142,7 +142,15 @@ export function parsedOfPurchase(a) {
   const main = Object.entries(sums).sort((x, y) => y[1] - x[1])[0];
   return { amount: a.total, date: a.date, payee: a.payee || null, categoryId: main ? main[0] : null, lines, currency: "EUR" };
 }
-export const ACTION_TYPES = ["scan", "purchase", "expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
+/* New lines for a saved purchase, as the edit screen keeps them: a category id, or "proj:<project>" for something
+   that goes to a home project (a room counts as its project). */
+export function linesForRecord(lines) {
+  const cats = store.model.categories, lower = s => String(s || "").toLowerCase().trim();
+  const projects = topLists().filter(l => l.kind === "project");
+  return lines.map(l => { const pn = l.place ? lower(String(l.place).split("›")[0]) : null, p = pn ? projects.find(x => lower(x.name) === pn) : null;
+    return { name: l.name, nameFi: null, qty: null, price: l.price, categoryId: p ? "proj:" + p.id : (cats.find(c => lower(c.name) === lower(l.category)) || {}).id || null, itemId: null }; });
+}
+export const ACTION_TYPES = ["scan", "purchase", "record", "replace", "expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
 
 export async function ask({ message = "", audio = null, history = [], spoken = false, image = null, doc = null, about = null, again = false, drafts = [] }) {
   // spoken: the phone heard these words. With a recording it's spoken too. Only then does the answer come with a voice.
@@ -181,6 +189,8 @@ export function describeAction(a) {
   switch (a.type) {
     case "scan": { const what = { bill: "Bill", payment: "Payment", payments: "Payments" }[a.docType] || "Receipt";
       return { title: `${what}${a.title ? ` from ${a.title}` : ""}${a.total != null ? ` · ${euro(a.total)}` : ""}`, sub: a.docType === "bill" ? "Check the amount, due date and reference, then save" : a.docType === "payments" ? "Tick the ones to save" : "Check the lines and where they go, then save", button: "Check and save", icon: a.docType === "bill" ? "bill" : "cam" }; }
+    case "record": return { title: `${a.payee || "Purchase"} · ${euro(a.amount)}`, sub: `${dayWords(a.date)}${a.lines ? ` · ${a.lines} lines` : ""} · open to change it`, button: "Open", icon: "wallet" };
+    case "replace": return { title: `New lines for ${a.payee || "the purchase"} · ${euro(a.amount)}`, sub: `${a.lines.length} ${a.lines.length === 1 ? "line" : "lines"}: ${a.lines.slice(0, 4).map(l => `${l.name} ${euro(l.price)}`).join(", ")}${a.lines.length > 4 ? "…" : ""}${a.was != null && Math.abs(a.was - a.amount) >= 0.01 ? ` · was ${euro(a.was)}` : ""} · still one purchase`, button: "Review", icon: "wallet" };
     case "purchase": return { title: `${euro(a.total)}${a.payee ? ` at ${a.payee}` : ""}`, sub: `${a.lines.length} ${a.lines.length === 1 ? "line" : "lines"}: ${a.lines.slice(0, 4).map(l => `${l.name} ${euro(l.price)}`).join(", ")}${a.lines.length > 4 ? "…" : ""}${a.date !== todayISO() ? ` · ${dayWords(a.date)}` : ""}`, button: "Check and save", icon: "cam" };
     case "expense": return { title: `${euro(a.amount)}${a.payee ? ` at ${a.payee}` : ""}`, sub: [a.category, a.note, a.date !== todayISO() ? dayWords(a.date) : null, a.fromNextPay ? "from your next pay" : a.fromSavings ? `from ${a.goal || "savings"}` : null].filter(Boolean).join(" · "), button: "Save it", icon: "wallet" };
     case "list": return { title: a.items.map(i => (i.qty ? `${i.qty} × ${i.name}` : i.name)).join(", "), sub: `On ${a.list || "your shopping list"}`, button: "Add", icon: "list" };

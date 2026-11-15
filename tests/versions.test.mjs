@@ -25,7 +25,7 @@ test("Koti offers only the cards the app says it can show; an app that doesn't s
 
 test("every card the server can send, this app can draw", () => {
   for (const type of Object.values(A.CARD_OF)) assert.ok(B.ACTION_TYPES.includes(type), type);
-  const samples = { purchase: { total: 5, date: "2026-11-14", lines: [{ name: "Sofa", price: 5 }] }, expense: { amount: 5 }, list: { items: [{ name: "Milk" }] }, reminder: { title: "x", when: "once", date: "2026-11-20", hour: 9 }, bill: { name: "Rent", amount: 900, frequency: "monthly", dueDay: 1 },
+  const samples = { record: { payee: "JYSK", amount: 1119, date: "2026-11-14", lines: 4 }, replace: { payee: "JYSK", amount: 1119, was: 1119, date: "2026-11-14", lines: [{ name: "Sofa", price: 350 }] }, purchase: { total: 5, date: "2026-11-14", lines: [{ name: "Sofa", price: 5 }] }, expense: { amount: 5 }, list: { items: [{ name: "Milk" }] }, reminder: { title: "x", when: "once", date: "2026-11-20", hour: 9 }, bill: { name: "Rent", amount: 900, frequency: "monthly", dueDay: 1 },
     payment: { payee: "Tickets", amount: 80, date: "2026-11-20" }, change_bill: { bill: "Rent", changes: { amount: 7 } }, bill_not_owed: { bill: "Rent", amount: 9, due: "2026-11-01" }, goal: { name: "Trip", target: 500 },
     budget: { category: "Fun", amount: 50 }, remember: { fact: "x" }, forget: { fact: "x" } };
   for (const type of B.ACTION_TYPES) assert.ok(B.describeAction({ type, ...samples[type] }).title, type);
