@@ -34,6 +34,28 @@ export function modelFromRows({ settings = {}, bills = [], tx = [], income = [],
     beforeDays: r.before_days, aboutKind: r.about_kind, hour: r.hour, active: r.active !== false }));
   return M;
 }
+/* What they told Koti when they started (settings.profile, from the first-time questions), as how to work with
+   them: what to show first, how careful to be, what to keep in mind (15 November 2026: "Koti learns and adjusts for
+   you from the onboarding"). Data from the app; the rules are Koti's. */
+export function profileNotes(p) {
+  if (!p || typeof p !== "object") return "";
+  const why = new Set(Array.isArray(p.why) ? p.why : []), out = [];
+  if (why.has("spend")) out.push("They most want to know what they can spend each day: lead with today's amount and until payday.");
+  if (why.has("bills")) out.push("Bills catching them out is what they want to stop: mention bills due before payday early, with whether there's money for them.");
+  if (why.has("save")) out.push("They want to save: when there's spare money, say how much could go to savings.");
+  if (why.has("home")) out.push("They're setting up a home: their home project (rooms, what's bought, what's left) matters to them.");
+  if (why.has("shared")) out.push("They share costs with others: keep who paid and what's shared in mind.");
+  if (why.has("where")) out.push("They want to see where their money goes: offer breakdowns by category and shop.");
+  const FEEL = { short: "Money often runs short before payday for them: be careful with 'can I afford', warn early when it's getting tight, and suggest where to slow down. Never make them feel bad about it.",
+    just: "Their money usually just about lasts: when payday is near, say what's left and how many days to go.",
+    left: "They usually have money left at the end of the month: encourage putting the spare towards their goal or savings.",
+    varies: "How their month ends changes a lot: watch for a month running short and say so early." };
+  for (const f of [].concat(p.feel || [])) if (FEEL[f]) out.push(FEEL[f]);   // several can be true
+  const ppl = { partner: "They share money with a partner.", family: "They have a family with children: costs are for the household.", flat: "They live with flatmates and share some costs.", me: "They manage money on their own." }[p.people];
+  if (ppl) out.push(ppl);
+  if (p.goal && typeof p.goal.name === "string") out.push(`They're saving for: ${String(p.goal.name).slice(0, 60)}${typeof p.goal.target === "number" ? ` (target €${p.goal.target}` : " ("}${E.validDay(p.goal.by) ? `${typeof p.goal.target === "number" ? ", " : ""}by ${p.goal.by}` : ""}${typeof p.goal.monthly === "number" ? `, about €${p.goal.monthly} a month` : ""})`.replace(" ()", "") + ". Say whether they're on track for it when it comes up.");
+  return out.length ? `\nHow they started with Koti (their answers to the first questions; work this way with them, and let what they say later win):\n${out.map(x => `- ${x}`).join("\n")}` : "";
+}
 export const memoryOf = settings => (Array.isArray(settings && settings.memory) ? settings.memory : [])
   .filter(m => m && typeof m.text === "string" && m.text.trim()).slice(-MAX_MEMORY).map(m => ({ id: String(m.id || ""), text: m.text.trim().slice(0, MEMORY_LEN), at: m.at || null }));
 
@@ -485,7 +507,7 @@ Rules:
 - One purchase is one record: when they give the lines of one receipt or order ("350 for the sofa, 350 for the bed frame, 69 for transport", "they are one order"), call save_purchase once with every line (with the photo, if it's in this chat), never several add_expense and never the lines in a note. Things for a home project (furniture, the transport of it) go to its place. Only when they ask for separate expenses, add_expense for each.
 - Pointing back: "the photo", "that receipt", "the bill I described", "the second one", "it", "same as before" refer to this chat: the photos (pinned above), earlier turns, the cards shown. Find what they mean before acting. If exactly one thing fits, use it and name it in your reply ("Using the Elisa bill from your photo…"). If two or more fit, don't guess: ask one short question naming them, and give each as a follow_up. If nothing fits, say what you can see and ask. The same when a request is unclear (which bill, what amount, which day): ask one short question, with the likely answers as follow_ups, rather than guess. When it's clear, act; don't ask for confirmation, the card is the confirmation.
 - Never give investment, tax or legal advice beyond general common sense; never ask for card numbers or passwords.
-${name ? `\nTheir name: ${name}.` : ""}
+${name ? `\nTheir name: ${name}.` : ""}${profileNotes(M.settings.profile)}
 What you remember about them:
 ${mem.length ? mem.map(m => `- ${m.text}`).join("\n") : "- (nothing yet)"}
 ${fb.length ? `\nWhat they said could be better in earlier chats (do better at these):\n${fb.map(f => `- ${f}`).join("\n")}\n` : ""}

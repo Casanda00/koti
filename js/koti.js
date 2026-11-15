@@ -26,6 +26,20 @@ const photos = new Map();
 const BILL_STARTERS = ["When is it due next?", "How much have I paid this year?", "The amount has changed", "It's not owed this month"];
 const STARTERS = ["How am I doing this month?", "Can I afford a €60 dinner out?", "What bills are coming before payday?", "Where did my money go last week?"];
 const STARTERS_FI = ["Miten kuukausi menee?", "Onko minulla varaa 60 € illalliseen?", "Mitä laskuja tulee ennen palkkapäivää?", "Mihin rahani menivät viime viikolla?"];
+/* The first questions to tap, from how they started with Koti (settings.profile): what they said they want first. */
+export function startersFor(p, goals = []) {
+  if (fi()) return STARTERS_FI;
+  const why = new Set((p && p.why) || []), out = [];
+  if (why.has("spend") || !p) out.push("How much can I spend today?");
+  if (why.has("bills")) out.push("What bills are coming before payday?");
+  const g = (p && p.goal && p.goal.name) || (goals[0] && goals[0].name);
+  if (g && g !== "Something else") out.push(`How's my ${g.toLowerCase()} fund doing?`);
+  else if (why.has("save")) out.push("How much could I save this month?");
+  if (why.has("where")) out.push("Where did my money go last week?");
+  if (why.has("home")) out.push("What has Home setup cost so far?");
+  for (const s of STARTERS) if (out.length < 4 && !out.includes(s)) out.push(s);
+  return out.slice(0, 4);
+}
 const fi = () => String(store.model.settings.voiceLang || "").startsWith("fi");
 
 function sheet() {
@@ -120,7 +134,7 @@ function paint() {
   if (!msgs.length) {
     u.log.innerHTML = `<div class="kchat-hello"><p class="kchat-hi">${esc(fi() ? `Hei${name ? " " + name : ""}! Mitä haluat tietää?` : `Hi${name ? " " + name : ""}. What would you like to know?`)}</p>
       <p class="kchat-sub">${esc(fi() ? "Kysy rahoistasi tai kerro, mitä lisätään." : "Ask about your money, or tell me what to add.")}</p></div>`;
-    u.ups.innerHTML = (fi() ? STARTERS_FI : STARTERS).map(s => `<button type="button" class="fchip" data-up="${esc(s)}">${esc(s)}</button>`).join("");
+    u.ups.innerHTML = startersFor(store.model.settings.profile, store.model.goals).map(s => `<button type="button" class="fchip" data-up="${esc(s)}">${esc(s)}</button>`).join("");
     return;
   }
   u.log.innerHTML = aboutChip + msgs.map((m, i) => m.role === "user"

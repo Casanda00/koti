@@ -155,7 +155,9 @@ function init() {
   initSwipe();
   route();
   if (shouldOnboard() && !new URLSearchParams(location.search).get("add")) openOnboarding();
-  showConsentBanner();   // the first time on this device: what Koti keeps, and the AI choice (js/privacy.js)
+  // the first time on this device: what Koti keeps, and the AI choice (js/privacy.js). During the first-time questions
+  // it's their own step, before the account (15 November 2026), so the banner doesn't cover the first question.
+  if (!document.body.classList.contains("onb-open")) showConsentBanner();
   startInstall({ ready: () => !document.body.classList.contains("onb-open") });   // the Home Screen sheet waits for the first-time questions
   initPullToRefresh({ beforeRefresh: () => checkForUpdate(), onRefreshed: () => { uploadPending(); renderCurrent(); } });
   initUpdates();

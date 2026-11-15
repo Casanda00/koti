@@ -22,6 +22,13 @@ let deferred = null;   // the browser's install dialog, waiting for our button
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferred = e; document.dispatchEvent(new Event("koti-install-ready")); });
 window.addEventListener("appinstalled", () => { deferred = null; write({ installed: true }); closeSheet(); toast("Koti is on your Home Screen"); document.dispatchEvent(new Event("koti-install-ready")); });
 
+/* For the last step of the first-time questions (js/onboarding.js): can the browser's own dialog be opened, open
+   it, and is this a phone that should be asked at all. Showing that step counts as the first-visit sheet. */
+export const canPrompt = () => !!deferred;
+export async function promptInstall() { if (!deferred) return false; const d = deferred; deferred = null; d.prompt(); const r = await d.userChoice.catch(() => ({})); if (r.outcome === "accepted") write({ installed: true }); return r.outcome === "accepted"; }
+export const wantsHomeStep = () => !isNative() && !isInstalled() && !inAppBrowser() && (isIOS() || /Android/i.test(ua) || !!deferred);
+export const isAndroid = () => /Android/i.test(ua);
+export const markSeen = () => write({ seen: true });
 /* Show the strip on Now? Only after the sheet was seen, never once installed, and not during a week's snooze. */
 export function wantsStrip() {
   if (isNative()) return false;   // the phone app is already on the Home Screen
@@ -38,7 +45,8 @@ export function startInstall({ firstVisitDelay = 4000, ready = () => true } = {}
   if (isInstalled()) { if (!s.thanked) { write({ thanked: true, installed: true, seen: true }); setTimeout(() => toast("Koti is on your Home Screen. Welcome."), 800); } return; }
   if (new URLSearchParams(location.search).get("install") === "1") { setTimeout(() => openInstall(), 600); return; }
   if (s.seen) return;
-  const tryShow = () => { if (!ready() || document.getElementById("layer").hidden === false) { setTimeout(tryShow, 3000); return; } openInstall({ first: true }); };
+  const tryShow = () => { if (read().seen) return;   // the first-time questions showed it as their last step meanwhile
+    if (!ready() || document.getElementById("layer").hidden === false) { setTimeout(tryShow, 3000); return; } openInstall({ first: true }); };
   setTimeout(tryShow, firstVisitDelay);
 }
 
