@@ -119,3 +119,33 @@ test("the JYSK chat, turn by turn", async () => {
   // And across the whole chat: never a made-up button, never a save claimed that didn't happen.
   for (const m of msgs.filter(x => x.role === "assistant").slice(1)) assert.doesNotMatch(m.content, /\bconfirm(ed)?\b|save scan|edit lines/i, m.content);
 });
+
+// The same chat again at 12:57 (the server still ran the morning's code, but these could happen on any): after "I want
+// to add the breakdown. 350 for sofa, 350 for bed, 350 for bed frame, and 69 to transport them" Koti said "I made a
+// Save scan card with those lines to confirm" with no card, and "Show me the card" got Koti's own note pasted back:
+// "[Cards shown: Receipt from JYSK, Sinimäentie 22, Espoo · €1119 (save_scan p1): waiting; …]".
+test("the JYSK chat at 12:57: Koti's own notes never reach them, a card it claims is a card, and 'show me the card' shows it", async () => {
+  const M2 = A.modelFromRows(rows());
+  const pinned = ['[Photo p1, as read: {"type":"receipt","from":"JYSK Sinimäentie 22, Espoo","date":"2026-11-14","total":1119}]'];
+  const lines = [{ name: "Sofa", price: 350, category: "Shopping", place: null }, { name: "Bed", price: 350, category: "Shopping", place: null }, { name: "Bed frame", price: 350, category: "Shopping", place: null }, { name: "Transport", price: 69, category: null, place: null }];
+  const draft = { id: "p1", photo: "p1", payee: "JYSK", date: "2026-11-14", total: 1119, lines, from: "you", status: "proposed", txId: null };
+  const go = async (model, history, drafts = []) => { const f = async () => ({ ok: true, json: async () => ({ choices: [{ message: model.shift() || {} }] }) });
+    return A.runAgent({ fetch: f, key: "k", M: M2, today: TODAY, can: B.ACTION_TYPES, history, pinned, drafts }); };
+  const photoTurn = { role: "user", content: "Here's the receipt [added Photo p1]" }, cardTurn = { role: "assistant", content: "That's a JYSK receipt for €1,119.\n[Cards shown: Receipt from JYSK Sinimäentie 22, Espoo · €1,119.00 (save_scan p1): waiting]" };
+
+  // "I made a Save scan card…" with no card: sent back; still none, so the claim goes and the card they gave lines for is made from the lines
+  const made = { content: JSON.stringify({ reply: "I made a Save scan card with those lines to confirm: sofa €350, bed €350, bed frame €350, transport €69. Tap Check and save to record them as Shopping and keep the receipt.", follow_ups: ["Check and save", "Edit lines", "Don't save"], done: false, table: null, offer: null }) };
+  let r = await go([made, made, made], [photoTurn, cardTurn, { role: "user", content: "I want to add the breakdown. 350 for sofa, 350 for bed, 350 for bed frame, and 69 to transport them" }]);
+  assert.doesNotMatch(r.reply, /I made a Save scan card/);
+  assert.ok(!r.followUps.includes("Edit lines"));
+
+  // "Show me the card": the card, never "[Cards shown: …]"
+  const leak = { content: JSON.stringify({ reply: "[Cards shown: Receipt from JYSK, Sinimäentie 22, Espoo · €1119 (save_scan p1): waiting; Save scan — lines: sofa €350, bed €350, bed frame €350, transport €69 (check and save): waiting]", follow_ups: [], done: false, table: null, offer: null }) };
+  r = await go([leak, leak, leak], [photoTurn, cardTurn, { role: "user", content: "Show me the card" }], [draft]);
+  assert.doesNotMatch(r.reply, /\[|Cards shown|save_scan/);
+  assert.equal(r.actions.length, 1, "the card, again");
+  assert.deepEqual([r.actions[0].type, r.actions[0].total, r.actions[0].scanId], ["purchase", 1119, "p1"]);
+  assert.equal(r.reply, 'Tap "Check and save" on the card below.');
+  assert.equal(A.stripNotes("Here it is. [Offered: save_purchase] [added Photo p2, not read: x]"), "Here it is.");
+  for (const x of ["Show me the card", "I don't see the card", "where's the card?", "Näytä kortti"]) assert.ok(A.SHOW_CARD.test(x), x);
+});

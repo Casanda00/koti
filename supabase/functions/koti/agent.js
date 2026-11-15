@@ -603,6 +603,12 @@ const savedDraft = drafts => [...drafts].reverse().find(d => d.status === "saved
 export const OPEN_ASK = /\b(open|pull( it)?( up)?|edit|change|fix|correct|show me)\b[^.?!]{0,30}\b(it|that|this|receipt|record|purchase|expense|order|lines?)\b|\b(open|edit) it\b|(?<![\p{L}])(avaa|muokkaa|korjaa)(?![\p{L}])/iu;
 const offerOf = messages => { const m = [...messages].reverse().find(x => x.role === "assistant" && typeof x.content === "string"); const o = m && /\[Offered: (\w+)\]/.exec(m.content); return o ? o[1] : null; };
 
+/* Koti's own notes in the conversation ("[Cards shown: …]", "[Offered: …]", "[Photo p1, as read: …]", the app's check)
+   are never part of an answer (15 November 2026: "Show me the card" got "[Cards shown: Receipt from JYSK … waiting]"). */
+export const stripNotes = text => String(text || "").replace(/\[(Cards shown|Offered|added Photo|Photo [\w-]{1,40}|Koti's app checked)[^\]]*\]?/gi, "").replace(/\s{2,}/g, " ").trim();
+/* Asking to see a card they can't find. */
+export const SHOW_CARD = /\b(show|give|send)( me)? (the |a |that )?card\b|\b(where('?s| is) the|i (don'?t|can'?t|do not|cannot) see (the|a|any)) card\b|\bno card\b|(?<![\p{L}])(näytä|missä) (se )?kortti/iu;
+
 /* ---------- The honesty check ---------- */
 /* Each card's one button, exactly as the app draws it (tests check this matches js/brain.js describeAction). */
 export const BUTTONS = { scan: "Check and save", purchase: "Check and save", record: "Open", replace: "Review", expense: "Save it", list: "Add", reminder: "Remind me", bill: "Add bill", payment: "Plan it",
@@ -639,6 +645,8 @@ export function honestyIssues(r, { actions = [], earlier = [], saved = false } =
     if (NOT_CLAIM.test(reply.slice(Math.max(0, m.index - 40), m.index))) continue;
     issues.push(`Your answer says "${m[0]}", but nothing has been saved or changed: no card was tapped.`); break;
   }
+  // a card it says it made: only when one is on this answer
+  if (!actions.length && /\b(i'?ve|i have|i) (just )?(made|created|prepared|set up|put together|added|opened)\b[^.!?]{0,50}\bcard\b/i.test(reply)) issues.push("Your answer says you made a card, but this answer has no card: propose it (call its tool) or don't mention one.");
   // buttons: only ones on a card that's on screen (this answer's cards, or one still waiting from before)
   // (and "Save" on the Check it screen a card opens, while one is on screen or was opened)
   const screen = actions.some(a => a.type === "scan" || a.type === "purchase") || earlier.some(c => c.status === "waiting" || c.status === "opened") ? ["Save"] : [];
@@ -924,12 +932,16 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
   // Checked before it goes back: never a save that didn't happen, never a button that isn't there (15 November 2026:
   // "Confirmed — the receipt lines are saved" when nothing was, "tap Confirm on the Save scan card" with no card and
   // no Confirm button). A wrong answer goes back once with what's wrong; if it's still wrong, the code says it plainly.
+  // Only Koti's own notes in the answer: the checks below still run, and the answer is then what's really on screen.
+  let onlyNotes = false;
+  if (mode === "chat" && r && typeof r.reply === "string") { const t = stripNotes(r.reply); onlyNotes = !t && !!r.reply.trim(); r.reply = t || (onlyNotes ? "…" : t); }
   if (mode === "chat" && answered(r)) {
     const earlier = cardsOf(messages), state = { actions, earlier, saved: savedTable };
     // Understanding: "the list" in the middle of a purchase is its lines; and a "yes" to an offer gets that card.
     const understood = () => { const out = [], od = openDraft(drafts);
       if (od && looked.includes("lists") && /\b(list|breakdown|lines|receipt|order|lista|rivit|kuitti)\b/i.test(lastUser) && !M.lists.some(l => lower(lastUser).includes(lower(l.name))))
         out.push(`They mean the purchase they're working on (${draftWords(od)}): "the list" is its lines, not their shopping lists. Show its lines, or its card.`);
+      if (SHOW_CARD.test(lastUser) && !actions.some(x => BUTTONS[x.type])) out.push(`They can't see the card: propose it again now${od ? ` (save_purchase with the lines of ${od.id}${od.photo ? ` and photo ${od.photo}` : ""})` : photos.size ? ` (save_scan for photo ${[...photos.keys()].pop()})` : ""}.`);
       const sd = savedDraft(drafts);
       if (OPEN_ASK.test(lastUser) && sd && !actions.some(x => x.type === "record" || x.type === "replace"))
         out.push(`They want to open what they saved (${draftWords(sd)}): propose open_record with record ${sd.id}${ /\b(lines?|breakdown|add|rivit)\b/i.test(lastUser) ? ", or update_purchase with the new lines" : ""}.`);
@@ -941,11 +953,17 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
       messages.push({ role: "assistant", content: JSON.stringify({ reply: r.reply, follow_ups: r.follow_ups || [], done: false, table: r.table || null }) });
       messages.push({ role: "user", content: `[Koti's app checked your answer before it was shown; this isn't from them] ${issues.join(" ")} Cards save only when they tap the card's own button; you never save anything yourself. If something should be saved, propose its card now (save_purchase, save_scan, add_expense…). Then answer again in the same shape.` });
       const again2 = await think(3);
-      if (answered(again2)) { r = { ...again2, table: tableOf(again2.table) ? again2.table : r.table }; }
+      if (answered(again2)) { r = { ...again2, reply: stripNotes(again2.reply), table: tableOf(again2.table) ? again2.table : r.table }; }
       // Still no card for the "yes": made from the open draft when that's what was offered.
       const od = openDraft(drafts);
       if (offered0 === "save_purchase" && YES.test(lastUser) && od && !actions.some(x => x.type === "purchase") && actions.length < 6) {
         const card = action(M, today, "save_purchase", { payee: od.payee, date: od.date, photo: od.photo, lines: od.lines }, { photos, allPhotos, drafts });
+        if (!card.error) actions.push({ id: `a${actions.length + 1}`, ...card });
+      }
+      if (SHOW_CARD.test(lastUser) && !actions.some(x => BUTTONS[x.type]) && actions.length < 6) {   // still no card: the one they mean, again
+        const last = [...photos.keys()].pop();
+        const card = od ? action(M, today, "save_purchase", { payee: od.payee, date: od.date, photo: od.photo, lines: od.lines }, { photos, allPhotos, drafts })
+          : last ? action(M, today, "save_scan", { photo: last }, { photos, allPhotos, drafts }) : { error: "none" };
         if (!card.error) actions.push({ id: `a${actions.length + 1}`, ...card });
       }
       const sd = savedDraft(drafts);   // still no card to open what they saved: made from the draft's record
@@ -957,6 +975,7 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
       if (issues.length) { console.error("koti: answer still wrong after the check", { issues }); r.reply = plainReply(r.reply, state, lang); }
     }
   }
+  if (onlyNotes && (r.reply === "…" || !stripNotes(r.reply))) r.reply = actions.some(x => BUTTONS[x.type]) ? plainReply("", { actions }, lang) : plainReply("", { actions, earlier: cardsOf(messages) }, lang);
   // Never a chip that answers a card ("Cancel", "Confirm"), nor one for something Koti can't do (delete, edit lines).
   const ups = (Array.isArray(r.follow_ups) ? r.follow_ups : []).map(x => str(x, 90)).filter(x => x && !CARD_ANSWER.test(x) && !CANT_DO.test(x)).slice(0, 3);
   if (mode === "brief") return { notes: (Array.isArray(r.notes) ? r.notes : []).map(x => str(x, 220)).filter(Boolean).slice(0, 3), followUps: ups, actions, looked };
