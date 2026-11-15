@@ -27,9 +27,8 @@ test("everything is said in both languages, with the same keys, and the language
   assert.deepEqual(keys(OB.TX.fi.rows), keys(OB.TX.en.rows));
   for (const k of ["WHY", "FEEL", "PEOPLE"]) assert.deepEqual(OB.TX.fi[k].map(x => x[0]), OB.TX.en[k].map(x => x[0]), k);
   assert.equal(OB.TX.fi.BILLS.length, OB.TX.en.BILLS.length); assert.equal(OB.TX.fi.GOALS.length, OB.TX.en.GOALS.length); assert.equal(OB.TX.fi.TONES.length, 6);
-  assert.equal(OB.TX.fi.balT("Antti"), "Kiitos, Antti. Paljonko tililläsi on juuri nyt?");
-  assert.equal(OB.TX.en.balT("Antti"), "Thanks, Antti. What does your bank say right now?");
-  assert.equal(OB.TX.en.balT(""), "What does your bank say right now?", "no name given: no thanks");
+  assert.equal(OB.TX.fi.balT("Antti"), "Paljonko tililläsi on juuri nyt?");
+  assert.equal(OB.TX.en.balT("Antti"), "What does your bank say right now?", "no thanks: the handshake just said nice to meet you");
   assert.match(O, /const lg = t\.closest\("\[data-lang\]"\); if \(lg\) \{ st\.lang = lg\.dataset\.lang; store\.updateSettings\(\{ voiceLang:/, "and Koti speaks it");
   assert.match(O, /const L = \(\) => TX\[st && st\.lang === "fi" \? "fi" : "en"\];/);
 });
@@ -127,4 +126,13 @@ test("the goal's date: after the goal, what to put aside each month for it, and 
   assert.match(A.profileNotes(p), /saving for: Holiday \(target €1500, by 2027-05-01, about €250 a month\)\. Say whether they're on track/);
   assert.match(A.profileNotes({ goal: { name: "Car" } }), /saving for: Car\. Say whether/);
   assert.match(O, /saveProfile\(\{ goal: \{ \.\.\.\(store\.model\.settings\.profile \|\| \{\}\)\.goal, by, monthly \} \}\)/, "and Koti knows it");
+});
+
+test("shorter, plainer questions", () => {
+  assert.equal(OB.TX.en.whyT, "What should we focus on?"); assert.match(OB.TX.en.whyP, /^Hi, I'm Koti\./);
+  assert.equal(OB.TX.fi.whyT, "Mihin keskitytään?");
+  assert.equal(OB.TX.en.payP, "", "no paragraph under the pay question");
+  assert.match(O, /<label class="onb-l onb-q" for="obAmt">/, "the question itself in bold");
+  assert.match(C, /\.onb-q\{font-size:19px;font-weight:700/);
+  assert.equal(OB.TX.en.billsT, "What do you spend money on?"); assert.equal(OB.TX.fi.billsT, "Mihin käytät rahaa?");
 });

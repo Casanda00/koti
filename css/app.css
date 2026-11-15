@@ -725,6 +725,7 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-p{margin:0;font-size:17px;line-height:1.4;color:var(--ink-2);max-width:34ch}
 .onb.lake .onb-p{color:rgba(255,255,255,.9)}
 .onb-l{margin:14px 0 0;font-size:16px;color:var(--ink-2)}
+.onb-q{font-size:19px;font-weight:700;color:var(--ink)}   /* the question itself, in bold */
 .onb-amt{font:800 64px/1 var(--display);font-stretch:62%;color:inherit;background:transparent;border:0;border-bottom:3px solid currentColor;padding:0 0 6px;width:100%}
 .onb-amt.big{font-size:120px;line-height:.9;margin-top:22px;border-color:rgba(255,255,255,.5)}
 .onb-amt::placeholder{color:currentColor;opacity:.35}

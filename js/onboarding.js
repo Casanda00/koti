@@ -21,15 +21,15 @@ export const TX = {
   en: {
     later: "Later", next: "Next", back: "Back", signin: "Sign in", step: (n, all, p) => `Step ${n} of ${all}, ${p}% done`,
     langT: "Which language shall we use?", langP: "Valitaan kieli. You can change it any time in You.", langEn: "Let's talk in English", langFi: "Puhutaan suomea",
-    whyT: "Hi, I'm Koti. What would make me worth it for you?", whyP: "Pick as many as you like. I'll keep them in mind when we talk, and show you what matters to you first.", whyGo: "Next: your pay",
+    whyT: "What should we focus on?", whyP: "Hi, I'm Koti. Pick as many as you like: I'll keep them in mind and show you what matters to you first.", whyGo: "Next: your pay",
     WHY: [["spend", "Know what I can spend each day", "knowing what they can spend each day"], ["bills", "Stop bills catching me out", "not being caught out by bills"], ["save", "Save for something", "saving for something"],
       ["home", "Set up a new home", "setting up a new home"], ["shared", "Keep track of shared costs", "keeping track of shared costs"], ["where", "See where my money goes", "seeing where their money goes"]],
     whyMem: list => `Wants Koti's help with ${list}.`,
-    payT: "Let's start with your pay", payP: "Your take-home pay, after tax: what actually lands in your account. Everything I work out starts from here.",
-    payL: "What lands in your account each month", whenL: "And when does it land?", payDay: "On day", payGo: "Next: your bills",
+    payT: "Let's start with your pay", payP: "",
+    payL: "What lands in your account each month, after tax", whenL: "And when does it land?", payDay: "On day", payGo: "Next: your bills",
     whenOpts: d => [[LAST_WORKING_DAY, "Last working day of the month", `This month that's ${d}`], [LAST_DAY, "Last day of the month", ""], ["date", "The same date every month", ""], ["varies", "It changes", "I'll ask when it lands"]],
     payErr: "Type what lands, like 2400. Or tap Later.", salary: "Salary",
-    billsT: "What goes out every month?", billsP: "Tap the bills you pay, or add your own, then the amount and the day each one is due. I'll set that money aside before telling you what's yours to spend. Anything due before today starts next month.",
+    billsT: "What do you spend money on?", billsP: "Tap the bills you pay, or add your own, then the amount and the day each one is due. I'll set that money aside before telling you what's yours to spend. Anything due before today starts next month.",
     BILLS: ["Rent", "Electricity", "Water", "Phone", "Internet", "Home insurance", "Netflix", "Spotify", "Gym", "Travel card", "Loan"],
     addOwn: "+ Add your own", ownPh: "e.g. Daycare, Car loan, Union fee", ownL: "Your own bill", add: "Add", dayN: n => `Day ${n}`, amtOf: n => `${n} amount`, dueOf: n => `${n} is due on day`,
     billsErr: list => `Add an amount for ${list}, or tap it again to take it off.`, billsGo: "Next: reminders",
@@ -38,7 +38,8 @@ export const TX = {
     nameT: "Before we go on, what should I call you?", nameP: "So we can be on first-name terms. I'll use it from here on, and whenever we talk about your money.",
     namePh: "Your name", nameL: "Your first name", handL: "And your hand", TONES: ["Default", "Light", "Medium-light", "Medium", "Medium-dark", "Dark"], nameGo: "Nice to meet you", nameErr: "Type your name, or tap Later.",
     meet: f => `Nice to meet you${f ? `, ${f}` : ""}`,
-    balT: f => `${f ? `Thanks, ${f}. ` : ""}What does your bank say right now?`, balP: "Open your bank app and copy the number over. You only do this once: from here I keep count with you.",
+    // no "Thanks, Antti" on the balance: the handshake just said nice to meet you
+    balT: () => "What does your bank say right now?", balP: "Open your bank app and copy the number over. You only do this once: from here I keep count with you.",
     balL: "Money in your account today", balP2: "With your pay, your bills and this, I work out how much is yours to spend every day.", balErr: "Type the number from your bank, like 1120.",
     feelT: f => `How does the end of the month usually feel${f ? `, ${f}` : ""}?`, feelP: "Pick all that are true: some months are different. It helps me know when to cheer you on and when to give you a gentle heads-up.",
     FEEL: [["left", "There's usually some left", "Usually has some money left at the end of the month."], ["just", "It just about makes it", "Money usually just about lasts to the end of the month."],
@@ -78,15 +79,15 @@ export const TX = {
   fi: {
     later: "Myöhemmin", next: "Seuraava", back: "Takaisin", signin: "Kirjaudu", step: (n, all, p) => `Vaihe ${n}/${all}, ${p} % valmiina`,
     langT: "Millä kielellä puhutaan?", langP: "Let's pick a language. Voit vaihtaa sen milloin vain kohdasta You.", langEn: "Let's talk in English", langFi: "Puhutaan suomea",
-    whyT: "Hei, olen Koti. Missä voisin auttaa sinua eniten?", whyP: "Valitse niin monta kuin haluat. Pidän ne mielessä, kun puhumme, ja näytän sinulle tärkeimmät ensin.", whyGo: "Seuraavaksi: palkkasi",
+    whyT: "Mihin keskitytään?", whyP: "Hei, olen Koti. Valitse niin monta kuin haluat: pidän ne mielessä ja näytän sinulle tärkeimmät ensin.", whyGo: "Seuraavaksi: palkkasi",
     WHY: [["spend", "Tietää, paljonko voin käyttää päivässä", "tietää, paljonko voi käyttää päivässä"], ["bills", "Ettei laskut yllätä", "ettei laskut yllätä"], ["save", "Säästää johonkin", "säästää johonkin"],
       ["home", "Sisustaa uutta kotia", "sisustaa uutta kotia"], ["shared", "Pysyä kärryillä yhteisistä kuluista", "pysyä kärryillä yhteisistä kuluista"], ["where", "Nähdä, mihin rahat menevät", "nähdä, mihin rahat menevät"]],
     whyMem: list => `Haluaa Kotin apua: ${list}.`,
-    payT: "Aloitetaan palkastasi", payP: "Nettopalkka verojen jälkeen: se, mikä oikeasti tulee tilillesi. Kaikki laskelmani alkavat tästä.",
-    payL: "Paljonko tilillesi tulee kuukaudessa", whenL: "Ja milloin se tulee?", payDay: "Päivänä", payGo: "Seuraavaksi: laskut",
+    payT: "Aloitetaan palkastasi", payP: "",
+    payL: "Paljonko tilillesi tulee kuukaudessa verojen jälkeen", whenL: "Ja milloin se tulee?", payDay: "Päivänä", payGo: "Seuraavaksi: laskut",
     whenOpts: d => [[LAST_WORKING_DAY, "Kuun viimeisenä arkipäivänä", `Tässä kuussa se on ${d}`], [LAST_DAY, "Kuun viimeisenä päivänä", ""], ["date", "Samana päivänä joka kuukausi", ""], ["varies", "Se vaihtelee", "Kysyn, kun se tulee"]],
     payErr: "Kirjoita summa, esim. 2400. Tai napauta Myöhemmin.", salary: "Palkka",
-    billsT: "Mitä menee joka kuukausi?", billsP: "Napauta laskut, jotka maksat, tai lisää omasi, ja sitten summa ja eräpäivä. Varaan sen rahan ennen kuin kerron, paljonko on sinun käytettävissäsi. Jos eräpäivä on jo mennyt, lasku alkaa ensi kuussa.",
+    billsT: "Mihin käytät rahaa?", billsP: "Napauta laskut, jotka maksat, tai lisää omasi, ja sitten summa ja eräpäivä. Varaan sen rahan ennen kuin kerron, paljonko on sinun käytettävissäsi. Jos eräpäivä on jo mennyt, lasku alkaa ensi kuussa.",
     BILLS: ["Vuokra", "Sähkö", "Vesi", "Puhelin", "Internet", "Kotivakuutus", "Netflix", "Spotify", "Kuntosali", "Matkakortti", "Laina"],
     addOwn: "+ Lisää oma", ownPh: "esim. Päiväkoti, Autolaina, Liiton jäsenmaksu", ownL: "Oma lasku", add: "Lisää", dayN: n => `${n}. pv`, amtOf: n => `${n}, summa`, dueOf: n => `${n}, eräpäivä`,
     billsErr: list => `Lisää summa: ${list}, tai poista se napauttamalla uudelleen.`, billsGo: "Seuraavaksi: muistutukset",
@@ -95,7 +96,7 @@ export const TX = {
     nameT: "Ennen kuin jatketaan: miten sinua kutsun?", nameP: "Ollaan sinut. Käytän nimeäsi tästä eteenpäin, aina kun puhumme raha-asioistasi.",
     namePh: "Nimesi", nameL: "Etunimesi", handL: "Ja kätesi", TONES: ["Oletus", "Vaalea", "Keskivaalea", "Keskisävy", "Keskitumma", "Tumma"], nameGo: "Hauska tutustua", nameErr: "Kirjoita nimesi tai napauta Myöhemmin.",
     meet: f => `Hauska tutustua${f ? `, ${f}` : ""}`,
-    balT: f => `${f ? `Kiitos, ${f}. ` : ""}Paljonko tililläsi on juuri nyt?`, balP: "Avaa pankkisovellus ja kopioi luku tähän. Teet tämän vain kerran: tästä eteenpäin pidän kirjaa kanssasi.",
+    balT: () => "Paljonko tililläsi on juuri nyt?", balP: "Avaa pankkisovellus ja kopioi luku tähän. Teet tämän vain kerran: tästä eteenpäin pidän kirjaa kanssasi.",
     balL: "Rahaa tililläsi tänään", balP2: "Palkastasi, laskuistasi ja tästä lasken, paljonko on sinun käytettävissäsi joka päivä.", balErr: "Kirjoita luku pankistasi, esim. 1120.",
     feelT: f => `Miltä kuun loppu yleensä tuntuu${f ? `, ${f}` : ""}?`, feelP: "Valitse kaikki, jotka pitävät paikkansa: kuukaudet ovat erilaisia. Näin tiedän, milloin kannustaa ja milloin varoittaa ajoissa.",
     FEEL: [["left", "Yleensä jää jotain yli", "Rahaa jää yleensä yli kuun lopussa."], ["just", "Juuri ja juuri riittää", "Rahat riittävät yleensä juuri ja juuri kuun loppuun."],
@@ -252,9 +253,9 @@ function paint() {
   } else if (s === "pay") {
     const d = payDateFor(LAST_WORKING_DAY, now.getFullYear(), now.getMonth()).toLocaleDateString(st.lang === "fi" ? "fi-FI" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
     el.innerHTML = head(T.payT, T.payP)
-      + `<label class="onb-l" for="obAmt">${T.payL}</label>
+      + `<label class="onb-l onb-q" for="obAmt">${T.payL}</label>
       <input class="onb-amt num" id="obAmt" inputmode="decimal" placeholder="€0" value="${esc(st.amount)}" autocomplete="off">
-      <p class="onb-l" id="obWhen">${T.whenL}</p>${radios(T.whenL, T.whenOpts(d), st.when)}
+      <p class="onb-l onb-q" id="obWhen">${T.whenL}</p>${radios(T.whenL, T.whenOpts(d), st.when)}
       <label class="onb-day" id="obDayRow" ${st.when === "date" ? "" : "hidden"}>${T.payDay} <select id="obDay">${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === st.day ? " selected" : ""}>${k + 1}</option>`).join("")}</select></label>`
       + tail(T.payGo);
     focus("#obAmt");
