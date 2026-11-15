@@ -6,12 +6,12 @@ import { readFileSync } from "node:fs";
 const read = f => readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
 const O = read("js/onboarding.js"), C = read("css/app.css");
 
-test("eight questions, then the name, then the account, last", () => {
-  assert.match(O, /export const STEPS = \["why", "pay", "bills", "balance", "feel", "people", "goal", "nudges", "name", "learned", "account"\];/);
+test("three questions, then the name (early, making friends), five more, then the account, last", () => {
+  assert.match(O, /export const STEPS = \["why", "pay", "bills", "name", "balance", "feel", "people", "goal", "nudges", "learned", "account"\];/);
   const at = s => { const k = O.indexOf(s); assert.ok(k > 0, s); return k; };
-  const titles = ["Hi, I'm Koti. What would make me worth it for you?", "Let's start with your pay", "What goes out every month?", "What does your bank say right now?",
-    "How does the end of the month usually feel?", "Who shares your money life?", "Saving for something?", "How should I keep you on track?", "That's everything. What should I call you?", "} Here's how I'll work for you</h1>", "Let's keep it safe"];
-  titles.reduce((k, t) => { const n = at(t); assert.ok(n > k, `${t} comes after the one before`); return n; }, 0);
+  const titles = ["Hi, I'm Koti. What would make me worth it for you?", "Let's start with your pay", "What goes out every month?", "Before we go on, what should I call you?", "What does your bank say right now?",
+    "How does the end of the month usually feel", "Who shares your money life?", "Saving for something", "How should I keep you on track?", "<h1>Here's how I'll work for you", "Let's keep it safe"];
+  titles.forEach(at);   // each step's heading; their order is STEPS above
   assert.match(O, /const steps = \(\) => \(sync\.user \|\| !sync\.configured \? STEPS\.filter\(s => s !== "account"\) : STEPS\);/, "signed in already, or no server: no account step");
   assert.match(O, /data-later>Not now</, "the account can wait: everything stays on this phone");
   assert.match(O, /data-signin-first>Sign in</, "someone with an account can sign in before answering anything");
@@ -65,4 +65,14 @@ test("what Koti will do is worked out from their answers, and Koti is told to wo
   assert.match(K, /startersFor\(store\.model\.settings\.profile, store\.model\.goals\)/, "the first questions to tap follow what they want");
   assert.match(K, /out\.push\(`How's my \$\{g\.toLowerCase\(\)\} fund doing\?`\)/);
   assert.match(O, /const saveProfile = patch => store\.updateSettings\(\{ profile:/);
+});
+
+test("once they've given their name, Koti uses it, now and then", () => {
+  assert.match(O, /head\(`\$\{by\("Thanks, ", "\. "\)\}What does your bank say right now\?`/);
+  assert.match(O, /head\(`How does the end of the month usually feel\$\{by\(", "\)\}\?`/);
+  assert.match(O, /head\("Saving for something\?",/, "not on every heading: it would feel forced");
+  assert.match(O, /<h1>Here's how I'll work for you\$\{f \? `, \$\{f\}` : ""\}<\/h1>/);
+  assert.match(O, /const first = \(\) => esc\(/, "the name is escaped once, where it's taken");
+  assert.doesNotMatch(O, /esc\(f\)/, "and never twice");
+  assert.doesNotMatch(O, /That's everything/, "the name isn't the last question any more");
 });

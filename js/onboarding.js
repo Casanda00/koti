@@ -1,4 +1,5 @@
-// First time: eight questions, then Koti asks your name (making friends), and last, creating the account
+// First time: three questions, then Koti asks your name (making friends: from there it calls you by it), five more
+// questions, what Koti will do for you, and last, creating the account
 // (15 November 2026: the questions come before signing up, signing up is the last step, and the questions are
 // fuller: what you want from Koti, your pay, your bills, your balance, how the month usually ends, who shares your
 // money, what you're saving for, and how Koti should keep you on track).
@@ -22,7 +23,7 @@ export const FEEL = [["left", "There's usually some left", "Usually has some mon
 export const PEOPLE = [["me", "Just me", "Manages money on their own."], ["partner", "Me and a partner", "Shares money with a partner."], ["family", "A family with children", "Has a family with children."], ["flat", "Flatmates", "Lives with flatmates and shares some costs."]];
 export const GOALS = ["Holiday", "Emergency fund", "New home", "Car", "Something else"];
 /* The steps, in order. */
-export const STEPS = ["why", "pay", "bills", "balance", "feel", "people", "goal", "nudges", "name", "learned", "account"];
+export const STEPS = ["why", "pay", "bills", "name", "balance", "feel", "people", "goal", "nudges", "learned", "account"];
 /* What Koti will do for them, from their answers: shown on "Here's how I'll work for you", at most five lines. The
    same answers (settings.profile) go to Koti with every question, so it really works this way. */
 export function planFor(p = {}) {
@@ -75,7 +76,9 @@ const chips = (opts, on, key) => `<div class="onb-chips">${opts.map(([v, t]) => 
 const toggle = (key, t, s, on) => `<button type="button" role="switch" class="onb-tog" data-nudge="${key}" aria-checked="${on}"><span><b>${esc(t)}</b><small>${esc(s)}</small></span><i aria-hidden="true"></i></button>`;
 const foot = label => `<div class="onb-foot"><button type="button" class="onb-later" data-later>Later</button><button type="button" class="onb-go" data-next>${label}</button></div>`;
 const tail = label => `<p class="onb-msg" id="obMsg" aria-live="polite"></p>${foot(label)}</div>`;
-const first = () => String(st.name || "").trim().split(/\s+/)[0];
+const first = () => esc(String(st.name || "").trim().split(/\s+/)[0]);
+/* Their name in a heading once they've given it: "Thanks, Antti." / ", Antti?" (nothing before). */
+const by = (before, after = "") => (first() ? `${before}${first()}${after}` : "");
 const focus = sel => setTimeout(() => { const f = el && $(sel, el); if (f) f.focus(); }, 60);
 
 function paint() {
@@ -100,13 +103,13 @@ function paint() {
       + `<div class="onb-rows">${[...st.picked].map(n => `<div class="onb-row"><span>${esc(n)}</span><input inputmode="decimal" placeholder="€0" aria-label="${esc(n)} amount" data-amt="${esc(n)}" value="${esc(st.amounts[n] || "")}"><select aria-label="${esc(n)} is due on day" data-dday="${esc(n)}">${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === (st.days[n] || 1) ? " selected" : ""}>Day ${k + 1}</option>`).join("")}</select></div>`).join("")}</div>`
       + tail("Next: your balance");
   } else if (s === "balance") {
-    el.innerHTML = head("What does your bank say right now?", "Open your bank app and copy the number over. You only do this once: from here I keep count with you.")
+    el.innerHTML = head(`${by("Thanks, ", ". ")}What does your bank say right now?`, "Open your bank app and copy the number over. You only do this once: from here I keep count with you.")
       + `<label class="sr" for="obBal">Money in your account today</label>
       <input class="onb-amt big num" id="obBal" inputmode="decimal" placeholder="€0" value="${esc(st.balance)}" autocomplete="off">
       <p class="onb-p">With your pay, your bills and this, I work out how much is yours to spend every day.</p>` + tail("Next");
     focus("#obBal");
   } else if (s === "feel") {
-    el.innerHTML = head("How does the end of the month usually feel?", "No wrong answer. It helps me know when to cheer you on and when to give you a gentle heads-up.")
+    el.innerHTML = head(`How does the end of the month usually feel${by(", ")}?`, "No wrong answer. It helps me know when to cheer you on and when to give you a gentle heads-up.")
       + radios("How the month usually ends", FEEL.map(([v, t]) => [v, t]), st.feel) + tail("Next");
   } else if (s === "people") {
     el.innerHTML = head("Who shares your money life?", "So I can talk about shared bills and costs the way they really work in your home.")
@@ -126,17 +129,17 @@ function paint() {
   } else if (s === "name") {
     el.innerHTML = `<div class="onb-in">${progress()}${back()}
       <div class="onb-hi" aria-hidden="true"><span class="onb-wave">👋</span></div>
-      <h1>That's everything. What should I call you?</h1>
-      <p class="onb-p">So we can be on first-name terms. I'll use it when we talk about your money.</p>
+      <h1>Before we go on, what should I call you?</h1>
+      <p class="onb-p">So we can be on first-name terms. I'll use it from here on, and whenever we talk about your money.</p>
       <label class="sr" for="obName">Your first name</label>
       <input class="onb-amt onb-name" id="obName" placeholder="Your name" value="${esc(st.name)}" maxlength="40" autocomplete="given-name" autocapitalize="words" enterkeyhint="next">`
-      + tail("Nice to meet you");
+      + tail("Nice to meet you");   // then the balance: "Thanks, Antti. What does your bank say right now?"
     focus("#obName");
     $("#obName", el).addEventListener("keydown", e => { if (e.key === "Enter") { keepRows(); next(false); } });
   } else if (s === "learned") {
     const f = first(), plan = planFor(store.model.settings.profile || {});
     el.innerHTML = `<div class="onb-in">${progress()}${back()}
-      <h1>${f ? `Nice to meet you, ${esc(f)}.` : "Nice to meet you."} Here's how I'll work for you</h1>
+      <h1>Here's how I'll work for you${f ? `, ${f}` : ""}</h1>
       <p class="onb-p">From what you've told me. I'll keep learning as we go, and you can change any of it in You.</p>
       <ul class="onb-plan">${plan.map((t, k) => `<li style="--k:${k}"><i aria-hidden="true"></i><span>${esc(t)}</span></li>`).join("")}</ul>
       <div class="onb-foot"><button type="button" class="onb-go" data-next>${steps().includes("account") ? "Sounds good" : "Show me my month"}</button></div></div>`;
@@ -144,12 +147,12 @@ function paint() {
     const f = first();
     el.innerHTML = st.sent ? `<div class="onb-in">${progress()}
       <div class="onb-hi" aria-hidden="true"><span class="onb-pop">✉️</span></div>
-      <h1>Check your email${f ? `, ${esc(f)}` : ""}</h1>
+      <h1>Check your email${f ? `, ${f}` : ""}</h1>
       <p class="onb-p">Open the link we sent to <b>${esc(st.email)}</b> to confirm it. Then sign in on any device and everything you've set up comes with you.</p>
       <p class="onb-p">Until then, I keep it all on this phone.</p>
       <div class="onb-foot"><button type="button" class="onb-go" data-done>Show me my month</button></div></div>`
     : `<div class="onb-in">${progress()}${back()}
-      <h1>${st.mode === "up" ? `Let's keep it safe${f ? `, ${esc(f)}` : ""}` : `Welcome back${f ? `, ${esc(f)}` : ""}`}</h1>
+      <h1>${st.mode === "up" ? `Let's keep it safe${f ? `, ${f}` : ""}` : `Welcome back${f ? `, ${f}` : ""}`}</h1>
       <p class="onb-p">${st.mode === "up" ? "Create your account and everything you've told me is saved, on every device you sign in on." : "Sign in, and what's in your account comes to this phone."}</p>
       <div class="onb-form">
         <label class="onb-l" for="obEmail">Email</label>
