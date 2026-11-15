@@ -9,7 +9,7 @@
 // The screens are in koti.js.
 import { store, todayISO, newId, topLists, listOf } from "./data.js";
 import { sync, flush } from "./sync.js";
-import { aiPossible } from "./receipts.js";
+import { aiPossible, places } from "./receipts.js";
 import { shopFor, categoryFor } from "./learn.js";
 
 export const MEMORY_MAX = 40;
@@ -129,7 +129,17 @@ async function invoke(body) {
 /* One turn: what you said (text or a recording) and the conversation before it. */
 /* The cards this version of the app can show. Sent with every question, so Koti only offers those: a phone running
    an older copy got a "change this bill" card it couldn't draw (14 November 2026). */
-export const ACTION_TYPES = ["scan", "expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
+/* A purchase Koti put together from the lines they gave: what Add's "Check it" screen reads, with category and
+   place names turned into their ids. */
+export function parsedOfPurchase(a) {
+  const cats = store.model.categories, P = places(), lower = s => String(s || "").toLowerCase();
+  const catId = n => (cats.find(c => lower(c.name) === lower(n)) || {}).id || null, placeId = n => (P.find(p => lower(p.name) === lower(n)) || {}).id || null;
+  const lines = a.lines.map(l => ({ name: l.name, nameFi: null, qty: null, price: l.price, categoryId: catId(l.category), itemId: null, placeId: placeId(l.place) }));
+  const sums = {}; lines.forEach(l => { if (l.categoryId) sums[l.categoryId] = (sums[l.categoryId] || 0) + l.price; });
+  const main = Object.entries(sums).sort((x, y) => y[1] - x[1])[0];
+  return { amount: a.total, date: a.date, payee: a.payee || null, categoryId: main ? main[0] : null, lines, currency: "EUR" };
+}
+export const ACTION_TYPES = ["scan", "purchase", "expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
 
 export async function ask({ message = "", audio = null, history = [], spoken = false, image = null, doc = null, about = null, again = false }) {
   // spoken: the phone heard these words. With a recording it's spoken too. Only then does the answer come with a voice.
@@ -168,6 +178,7 @@ export function describeAction(a) {
   switch (a.type) {
     case "scan": { const what = { bill: "Bill", payment: "Payment", payments: "Payments" }[a.docType] || "Receipt";
       return { title: `${what}${a.title ? ` from ${a.title}` : ""}${a.total != null ? ` · ${euro(a.total)}` : ""}`, sub: a.docType === "bill" ? "Check the amount, due date and reference, then save" : a.docType === "payments" ? "Tick the ones to save" : "Check the lines and where they go, then save", button: "Check and save", icon: a.docType === "bill" ? "bill" : "cam" }; }
+    case "purchase": return { title: `${euro(a.total)}${a.payee ? ` at ${a.payee}` : ""}`, sub: `${a.lines.length} ${a.lines.length === 1 ? "line" : "lines"}: ${a.lines.slice(0, 4).map(l => `${l.name} ${euro(l.price)}`).join(", ")}${a.lines.length > 4 ? "…" : ""}${a.date !== todayISO() ? ` · ${dayWords(a.date)}` : ""}`, button: "Check and save", icon: "cam" };
     case "expense": return { title: `${euro(a.amount)}${a.payee ? ` at ${a.payee}` : ""}`, sub: [a.category, a.note, a.date !== todayISO() ? dayWords(a.date) : null, a.fromNextPay ? "from your next pay" : a.fromSavings ? `from ${a.goal || "savings"}` : null].filter(Boolean).join(" · "), button: "Save it", icon: "wallet" };
     case "list": return { title: a.items.map(i => (i.qty ? `${i.qty} × ${i.name}` : i.name)).join(", "), sub: `On ${a.list || "your shopping list"}`, button: "Add", icon: "list" };
     case "reminder": return { title: a.title, sub: a.when === "once" ? `${dayWords(a.date)} at ${a.hour}:00` : a.when === "monthly" ? `Every month on the ${ord(a.monthDay)} at ${a.hour}:00` : `Every ${DAYS[a.weekday]} at ${a.hour}:00`, button: "Remind me", icon: "bell" };

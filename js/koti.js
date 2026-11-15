@@ -9,7 +9,7 @@
 import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
 import { shouldAsk, rateChat, markAsked, feedback, forgetFeedback } from "./feedback.js";
-import { ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
+import { parsedOfPurchase, ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
 import { learned, forgetLearned } from "./learn.js";
 import { aiVoice } from "./hear.js";
@@ -181,6 +181,11 @@ async function runCard(btn) {
     const m = msgs.find(x => x.scan && x.scan.id === a.scanId);
     if (!m) { toast("That photo isn't in this chat any more. Add it again."); return; }
     import("./scan.js").then(s => s.openReading({ r: m.scan.r, file: photos.get(a.scanId) || null }));
+    a.status = "opened"; persist(); paint(); return;
+  }
+  if (a.type === "purchase") {   // one purchase with the lines they gave, on Add's "Check it" screen (with its photo when it's here)
+    const parsed = parsedOfPurchase(a), file = a.scanId ? photos.get(a.scanId) || null : null;
+    import("./scan.js").then(s => file ? s.openReading({ r: { ai: true, docType: "receipt", reply: null, bill: null, payments: null, parsed }, file }) : s.openParsed(parsed));
     a.status = "opened"; persist(); paint(); return;
   }
   btn.disabled = true;

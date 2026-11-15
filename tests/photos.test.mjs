@@ -215,3 +215,41 @@ test("the app: every photo keeps its id, the reader is told what they typed, and
   assert.equal(B.photoTag({ photoId: "p2", scan: { id: "p2" } }), " [added Photo p2]");
   assert.equal(B.historyOf([{ role: "user", content: "the receipt", photoId: "p1" }])[0].content, "the receipt [added Photo p1, not read: the reader found no receipt or bill in it]");
 });
+
+// 15 November 2026: the JYSK photo still wasn't read (a chat from before the fix), so they typed it: "350e for the
+// sofa, 350 for bed frame, 350e for mattress and 69e for transportation. Can you update it". Koti offered four
+// expenses; "No no. They are one order", and Koti put the lines in a note. One purchase is one record with lines,
+// on the same "Check it" screen as Add.
+test("the lines they give for one order become one purchase with lines, never four expenses or a note", async () => {
+  const H = A.modelFromRows({ settings: { monthStart: 1, startDate: "2026-09-01", startBalance: 1500 }, cats: [{ id: "cat-shop", name: "Shopping", budget: null }, { id: "cat-tr", name: "Transport", budget: null }],
+    lists: [{ id: "home", name: "Home setup", kind: "project", parent_id: null }, { id: "bed", name: "Bedroom", kind: "room", parent_id: "home" }] });
+  assert.deepEqual(A.placesOf(H), ["Home setup", "Home setup › Bedroom"]);
+  const lines = [{ name: "Sofa", price: 350, category: "Shopping", place: "Home setup" }, { name: "Bed frame", price: 350, category: "Shopping", place: "bedroom" }, { name: "Mattress", price: 350, category: "Shopping", place: "Bedroom" }, { name: "Transport", price: 69, category: "Transport", place: null }];
+  const card = A.action(H, TODAY, "save_purchase", { payee: "JYSK", date: TODAY, photo: null, lines });
+  assert.equal(card.type, "purchase"); assert.equal(card.total, 1119);
+  assert.deepEqual(card.lines.map(l => l.place), ["Home setup", "Home setup › Bedroom", "Home setup › Bedroom", null]);
+  assert.match(A.action(H, TODAY, "save_purchase", { lines: [{ name: "Sofa", price: 1, category: null, place: "Garage" }] }).error, /No place called "Garage"/);
+  const photos = A.photosOf([{ role: "system", content: A.chatMemory([B.readingText("p1", jysk)]) }]);
+  assert.match(A.action(H, TODAY, "save_purchase", { photo: "p1", lines: lines.slice(0, 3) }, { photos }).error, /add up to 1050\.00, the receipt says 1119\.00/);
+  assert.equal(A.action(H, TODAY, "save_purchase", { photo: "p1", lines }, { photos }).scanId, "p1");
+  // the model offers four expenses anyway: one purchase goes back, unless they asked for them separately
+  const four = ["Sofa", "Bed frame", "Mattress", "Transportation"].map((n, i) => ({ id: "c" + i, type: "function", function: { name: "add_expense", arguments: JSON.stringify({ amount: i === 3 ? 69 : 350, payee: "JYSK", date: TODAY, category: "Shopping", note: n, from_next_pay: false, from_savings: false, goal: null }) } }));
+  const { f } = turnsOf([{ tool_calls: four }, say("Tap each card to save them.")]);
+  const r = await A.runAgent({ fetch: f, key: "k", M: H, today: TODAY, can: B.ACTION_TYPES, history: [{ role: "user", content: "350e for the sofa. 350 for bed frame, 350e for mattress and 69e for transportation. Can you update it" }] });
+  assert.equal(r.actions.length, 1); assert.equal(r.actions[0].type, "purchase"); assert.equal(r.actions[0].total, 1119);
+  assert.deepEqual(r.actions[0].lines.map(l => l.name), ["Sofa", "Bed frame", "Mattress", "Transportation"]);
+  const g = turnsOf([{ tool_calls: four }, say("Four cards.")]);
+  assert.equal((await A.runAgent({ fetch: g.f, key: "k", M: H, today: TODAY, can: B.ACTION_TYPES, history: [{ role: "user", content: "Save them as separate expenses" }] })).actions.length, 4);
+  assert.match(A.systemPrompt(H, TODAY), /One purchase is one record[^]*save_purchase once with every line/);
+  assert.match(A.systemPrompt(H, TODAY), /Their places \(home projects and rooms\): Home setup, Home setup › Bedroom/);
+});
+
+test("the app: a purchase card opens Add's Check it screen with the lines, categories and rooms filled in", () => {
+  const d = B.describeAction({ type: "purchase", payee: "JYSK", total: 1119, date: TODAY, lines: [{ name: "Sofa", price: 350 }, { name: "Bed frame", price: 350 }, { name: "Mattress", price: 350 }, { name: "Transport", price: 69 }] });
+  assert.equal(d.button, "Check and save"); assert.match(d.title, /JYSK/); assert.match(d.sub, /^4 lines: Sofa/);
+  const P = B.parsedOfPurchase({ payee: "JYSK", total: 23.4, date: TODAY, lines: [{ name: "Milk", price: 1.4, category: cat.name, place: null }, { name: "Lamp", price: 22, category: null, place: "Nowhere" }] });
+  assert.deepEqual(P.lines.map(l => [l.name, l.categoryId, l.placeId]), [["Milk", cat.id, null], ["Lamp", null, null]]);
+  assert.equal(P.amount, 23.4); assert.equal(P.categoryId, cat.id);
+  const k = read("js/koti.js");
+  assert.match(k, /a\.type === "purchase"[^]*s\.openReading\(\{ r: \{ ai: true, docType: "receipt"[^]*s\.openParsed\(parsed\)/);
+});
