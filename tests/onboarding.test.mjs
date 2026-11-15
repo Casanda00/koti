@@ -15,9 +15,9 @@ const OB = await import("../js/onboarding.js");
 const A = await import("../supabase/functions/koti/agent.js");
 
 test("the order: language, four questions, the name, five more, a summary, what Koti will do, privacy, the account", () => {
-  assert.deepEqual(OB.STEPS, ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account", "home"]);
-  assert.match(O, /!\(s === "account" && \(sync\.user \|\| !sync\.configured\)\) && !\(s === "goalWhen" && st && !st\.goal\)/, "no account step when signed in or with no server; the goal's date only with a goal");
-  assert.match(O, /if \(steps\(\)\[step \+ 1\] === "home" \|\| step >= steps\(\)\.length - 1\) finish\(\); else advance\(\);/, "with no account step, privacy leads to the Home Screen or the end");
+  assert.deepEqual(OB.STEPS, ["lang", "why", "pay", "bills", "billsHow", "nudges", "name", "balance", "feel", "people", "goal", "goalHow", "summary", "learned", "privacy", "account", "home"]);
+  assert.match(O, /!\(s === "account" && \(sync\.user \|\| !sync\.configured\)\) && !\(s === "billsHow" && st && !st\.picked\.size\) && !\(s === "goalHow" && st && !st\.goals\.length\)/, "no account step when signed in or with no server; amounts and dates only for what was picked");
+  assert.match(O, /if \(steps\(\)\[step \+ 1\] === "home" \|\| step >= steps\(\)\.length - 1\) \{ save\(\); finish\(\); \} else advance\(\);/, "with no account step, privacy is the end: the answers are saved, then the Home Screen or the app");
 });
 
 test("everything is said in both languages, with the same keys, and the language picked first is the one used after", () => {
@@ -29,7 +29,8 @@ test("everything is said in both languages, with the same keys, and the language
   assert.equal(OB.TX.fi.BILLS.length, OB.TX.en.BILLS.length); assert.equal(OB.TX.fi.GOALS.length, OB.TX.en.GOALS.length); assert.equal(OB.TX.fi.TONES.length, 6);
   assert.equal(OB.TX.fi.balT("Antti"), "Paljonko tililläsi on juuri nyt?");
   assert.equal(OB.TX.en.balT("Antti"), "What does your bank say right now?", "no thanks: the handshake just said nice to meet you");
-  assert.match(O, /const lg = t\.closest\("\[data-lang\]"\); if \(lg\) \{ st\.lang = lg\.dataset\.lang; store\.updateSettings\(\{ voiceLang:/, "and Koti speaks it");
+  assert.match(O, /const lg = t\.closest\("\[data-lang\]"\); if \(lg\) \{ st\.lang = lg\.dataset\.lang; again\(\);/);
+  assert.match(O, /function save\(\) \{[^]*store\.updateSettings\(\{ voiceLang: st\.lang === "fi" \? "fi-FI" : "en-GB" \}\)/, "and Koti speaks it, once the questions are done");
   assert.match(O, /const L = \(\) => TX\[st && st\.lang === "fi" \? "fi" : "en"\];/);
 });
 
@@ -54,8 +55,8 @@ test("Koti uses the name now and then once it's given, and says what it will do,
 test("each answer lands somewhere Koti uses, and Koti is told how they started", () => {
   assert.match(O, /remember\(T\.whyMem\(/, "what they want from Koti");
   assert.match(O, /T\.FEEL\.filter\(\(\[v\]\) => st\.feel\.has\(v\)\)\.forEach\(\(\[, , m\]\) => remember\(m\)\)/, "how the month ends, every one that's true");
-  assert.match(O, /saveProfile\(\{ people: st\.people \}\); remember\(/, "who shares it");
-  assert.match(O, /store\.put\("goals", \{ id: st\.ids\.goal, name, target: target \|\| null/, "a goal, named in their language");
+  assert.match(O, /if \(ok\.people && st\.people\) p\.people = st\.people;/); assert.match(O, /if \(ok\.people && st\.people\) remember\(/, "who shares it");
+  assert.match(O, /store\.put\("goals", \{ saved: 0, [^}]*\.\.\.g, id: st\.ids\["g:" \+ x\.name\], name: goalName\(x\.name\), target: x\.target/, "each goal, named in their language");
   assert.match(O, /reminders: \{ \.\.\.R, bills: st\.nudge\.bills, payday: st\.nudge\.payday, weekly: st\.nudge\.weekly \}/, "the reminders");
   assert.match(O, /store\.updateSettings\(\{ name, skinTone: st\.tone \}\)/, "the name and their hand");
   assert.match(O, /store\.put\("income", /); assert.match(O, /store\.put\("bills", /); assert.match(O, /setBalanceNow\(/);
@@ -82,7 +83,7 @@ test("their hand in their skin tone, and a handshake after their name", () => {
 
 test("a summary to check, each answer editable (back to the question, then back to the summary)", () => {
   assert.match(O, /const ed = t\.closest\("\[data-edit\]"\); if \(ed\) \{ keepRows\(\); st\.back = "summary"; go\(ed\.dataset\.edit\);/);
-  assert.match(O, /function advance\(\) \{ if \(st\.back && !\(id\(\) === "goal" && st\.goal\)\) \{ go\(st\.back\); st\.back = null; \} else step\+\+;/, "a goal changed from the summary goes through its date, then back");
+  assert.match(O, /function advance\(\) \{ if \(st\.back && !\(id\(\) === "goal" && st\.goals\.length\) && !\(id\(\) === "bills" && st\.picked\.size\)\) \{ go\(st\.back\); st\.back = null; \} else step\+\+;/, "bills or goals changed from the summary go through their amounts and dates, then back");
   assert.deepEqual(Object.keys(OB.TX.en.rows), ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal"], "every answer is on it");
 });
 
@@ -122,10 +123,10 @@ test("the goal's date: after the goal, what to put aside each month for it, and 
   const p = { goal: { name: "Holiday", target: 1500, by: "2027-05-01", monthly: 250 } };
   assert.match(OB.planFor(p).join(" "), /Track your holiday fund to €1,500 by May 2027: about €250 a month\./);
   assert.match(OB.planFor(p, "fi").join(" "), /\(loma\), 1\s500\s€, toukokuu 2027 mennessä: noin 250\s€ kuukaudessa/);
-  assert.match(O, /if \(g\) store\.put\("goals", \{ \.\.\.g, targetDate: by, monthly \}\);/, "the goal gets its date and monthly amount");
+  assert.match(O, /target: x\.target, monthly: x\.monthly, targetDate: x\.by/, "each goal gets its date and monthly amount");
   assert.match(A.profileNotes(p), /saving for: Holiday \(target €1500, by 2027-05-01, about €250 a month\)\. Say whether they're on track/);
   assert.match(A.profileNotes({ goal: { name: "Car" } }), /saving for: Car\. Say whether/);
-  assert.match(O, /saveProfile\(\{ goal: \{ \.\.\.\(store\.model\.settings\.profile \|\| \{\}\)\.goal, by, monthly \} \}\)/, "and Koti knows it");
+  assert.match(O, /const goals = goalsOf\(\); p\.goals = goals; p\.goal = goals\[0\] \|\| null;/, "and Koti knows them");
 });
 
 test("shorter, plainer questions", () => {
@@ -142,10 +143,37 @@ test("last: Koti on the Home Screen, with a guide that shows how, only where it 
   const I = read("js/install.js");
   assert.match(I, /export const wantsHomeStep = \(\) => !isNative\(\) && !isInstalled\(\) && !inAppBrowser\(\) && \(isIOS\(\) \|\| \/Android\/i\.test\(ua\) \|\| !!deferred\);/, "not in the phone app, not once installed, not on a computer that can't");
   assert.match(O, /!\(s === "home" && !\(st && st\.home\)\)/);
-  assert.match(O, /function finish\(\) \{ if \(steps\(\)\.includes\("home"\) && id\(\) !== "home"\) \{ go\("home"\);/, "after the account (made, confirmed or left for later)");
+  assert.match(O, /function finish\(\) \{ store\.updateSettings\(\{ setupDone: true \}\); if \(steps\(\)\.includes\("home"\) && id\(\) !== "home"\) \{ go\("home"\);/, "after the account (made, confirmed or left for later)");
   assert.match(O, /class="onb-guide \$\{ios \? "ios" : "and"\}" role="img" aria-label=/, "the guide, for iPhone or Android, described for screen readers");
   assert.match(O, /data-home="\$\{prompt \? "prompt" : "done"\}"/, "Android: the browser's own dialog, from our button");
   assert.match(C, /@keyframes gSheet/); assert.match(C, /@keyframes gIcon/);
   assert.match(O, /markSeen\(\);/); assert.match(I, /const tryShow = \(\) => \{ if \(read\(\)\.seen\) return;/, "and the install sheet doesn't come again after");
   assert.equal(OB.TX.fi.homeIos.length, 3); assert.equal(OB.TX.en.homeT, "One last thing: let's put Koti on your Home Screen");
+});
+
+// "What's the day list for? … options if the payments are recurring, one time or others, on another screen."
+test("bills: picked on one screen; how much, how often and when on the next", () => {
+  assert.equal(OB.TX.en.howT, "How much, and how often?");
+  assert.deepEqual(OB.TX.en.FREQ.map(x => x[0]), ["monthly", "quarterly", "yearly", "once"]);
+  assert.deepEqual(OB.TX.fi.FREQ.map(x => x[0]), OB.TX.en.FREQ.map(x => x[0]));
+  assert.doesNotMatch(O.slice(O.indexOf('} else if (s === "bills")'), O.indexOf('} else if (s === "billsHow")')), /data-amt|data-dday/, "no amounts or days on the picking screen");
+  const today = new Date(2026, 10, 15);
+  assert.deepEqual(OB.billDue("monthly", 20, "", today), { dueDay: 20, anchorMonth: 11, dueDate: null, startDate: null });
+  assert.deepEqual(OB.billDue("monthly", 3, "", today), { dueDay: 3, anchorMonth: 11, dueDate: null, startDate: "2026-12-01" }, "a day already gone: from next month");
+  assert.deepEqual(OB.billDue("yearly", 0, "2027-03-10", today), { dueDay: 10, anchorMonth: 3, dueDate: null, startDate: "2027-03-01" });
+  assert.deepEqual(OB.billDue("quarterly", 0, "2026-12-05", today), { dueDay: 5, anchorMonth: 12, dueDate: null, startDate: "2026-12-01" });
+  assert.deepEqual(OB.billDue("once", 0, "2026-12-24", today), { dueDay: 24, anchorMonth: 12, dueDate: "2026-12-24", startDate: null });
+  assert.match(O, /if \(undated\.length\) return msg\(T\.dueErr\(/, "no made-up Day 1: they say when it's due");
+  assert.match(O, /<option value=""\$\{cur \? "" : " selected"\}>\$\{T\.pickDay\}<\/option>/);
+});
+
+// "When other is clicked, allow the user to give it a name. Allow multiple goals … each should ask … when … and how much on another screen."
+test("goals: as many as they have, their own named, and how much and by when for each on the next screen", () => {
+  assert.match(O, /data-addgoal>\+ \$\{esc\(T\.GOALS\[GOALS\.length - 1\]\)\}/, "Something else opens a field to name it");
+  assert.match(O, /st\.goals = st\.goals\.includes\(v\) \? st\.goals\.filter\(x => x !== v\) : \[\.\.\.st\.goals, v\]/, "several can be picked");
+  assert.equal(OB.TX.en.goalHowT, "How much, and by when?");
+  const p = { goals: [{ name: "Holiday", target: 1500 }, { name: "Wedding", target: 8000, by: "2027-11-01", monthly: 667 }] };
+  assert.equal(OB.planFor(p).find(l => /savings goals/.test(l)), "Track your 2 savings goals (Holiday, Wedding), and what to put aside each month for each.");
+  assert.match(OB.planFor(p, "fi").join(" "), /\(Loma, Wedding\)/, "the listed one in Finnish, their own as they wrote it");
+  assert.match(A.profileNotes(p), /saving for: Holiday \(target €1500\); Wedding \(target €8000, by 2027-11-01, about €667 a month\)\. Say whether they're on track for each/);
 });

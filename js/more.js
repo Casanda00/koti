@@ -157,9 +157,9 @@ export function bindMore() {
 }
 
 /* ---------- Account ---------- */
-export function openAuth(mode = "in") {
+export function openAuth(mode = "in", { onClose } = {}) {   // onClose: the sheet closed, signed in or not
   openSheet({
-    title: mode === "up" ? "Create account" : "Sign in",
+    title: mode === "up" ? "Create account" : "Sign in", onClose,
     body: B => {
       B.innerHTML = `
         <div class="field"><label for="auEmail">Email</label><input class="inp" id="auEmail" type="email" autocomplete="email" inputmode="email" spellcheck="false" autofocus></div>
@@ -188,7 +188,7 @@ export function openAuth(mode = "in") {
       };
       $("#auGo", B).onclick = go;
       $("#auPass", B).addEventListener("keydown", e => { if (e.key === "Enter") go(); });
-      $("#auSwitch", B).onclick = () => { closeSheet(); setTimeout(() => openAuth(mode === "up" ? "in" : "up"), 260); };
+      $("#auSwitch", B).onclick = () => { closeSheet(); setTimeout(() => openAuth(mode === "up" ? "in" : "up", { onClose }), 260); };
       const fg = $("#auForgot", B); if (fg) fg.onclick = async () => {
         const email = $("#auEmail", B).value.trim(); if (!/^\S+@\S+\.\S+$/.test(email)) return msg("Type your email first, then select Forgot password.", "error");
         try { await sendReset(email); msg("Check your email for a link to set a new password.", "ok"); } catch (err) { msg(String(err.message || err), "error"); }
