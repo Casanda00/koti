@@ -1054,6 +1054,9 @@ label#kcPicL{cursor:pointer}
 .ktable td.num,.ktable th:last-child{text-align:right;font-variant-numeric:tabular-nums}
 .ktable tr:last-child td{border-bottom:0}
 .ktable tr.tot td{font-weight:700;border-top:1.5px solid var(--ink)}
+.ktable-go{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+.ktable-go small{color:var(--muted);font-size:13px;min-width:0}
+.ktable-go .pill{flex:none}
 .krate{margin:8px 0 0 44px;display:grid;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px}
 .krate p,.krate label{margin:0;font-weight:600}
 .krate .btns{display:flex;gap:8px;flex-wrap:wrap}
