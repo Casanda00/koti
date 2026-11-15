@@ -53,7 +53,7 @@ export function profileNotes(p) {
   for (const f of [].concat(p.feel || [])) if (FEEL[f]) out.push(FEEL[f]);   // several can be true
   const ppl = { partner: "They share money with a partner.", family: "They have a family with children: costs are for the household.", flat: "They live with flatmates and share some costs.", me: "They manage money on their own." }[p.people];
   if (ppl) out.push(ppl);
-  if (p.goal && typeof p.goal.name === "string") out.push(`They're saving for: ${String(p.goal.name).slice(0, 60)}${typeof p.goal.target === "number" ? ` (target €${p.goal.target})` : ""}.`);
+  if (p.goal && typeof p.goal.name === "string") out.push(`They're saving for: ${String(p.goal.name).slice(0, 60)}${typeof p.goal.target === "number" ? ` (target €${p.goal.target}` : " ("}${E.validDay(p.goal.by) ? `${typeof p.goal.target === "number" ? ", " : ""}by ${p.goal.by}` : ""}${typeof p.goal.monthly === "number" ? `, about €${p.goal.monthly} a month` : ""})`.replace(" ()", "") + ". Say whether they're on track for it when it comes up.");
   return out.length ? `\nHow they started with Koti (their answers to the first questions; work this way with them, and let what they say later win):\n${out.map(x => `- ${x}`).join("\n")}` : "";
 }
 export const memoryOf = settings => (Array.isArray(settings && settings.memory) ? settings.memory : [])

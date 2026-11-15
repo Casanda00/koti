@@ -20,7 +20,7 @@ import { consent, setConsent, showConsentBanner } from "./privacy.js";
 export const TX = {
   en: {
     later: "Later", next: "Next", back: "Back", signin: "Sign in", step: (n, all, p) => `Step ${n} of ${all}, ${p}% done`,
-    langT: "Which language should I speak?", langP: "Valitse kieli. You can change it any time in You.",
+    langT: "Which language shall we use?", langP: "Valitaan kieli. You can change it any time in You.", langEn: "Let's talk in English", langFi: "Puhutaan suomea",
     whyT: "Hi, I'm Koti. What would make me worth it for you?", whyP: "Pick as many as you like. I'll keep them in mind when we talk, and show you what matters to you first.", whyGo: "Next: your pay",
     WHY: [["spend", "Know what I can spend each day", "knowing what they can spend each day"], ["bills", "Stop bills catching me out", "not being caught out by bills"], ["save", "Save for something", "saving for something"],
       ["home", "Set up a new home", "setting up a new home"], ["shared", "Keep track of shared costs", "keeping track of shared costs"], ["where", "See where my money goes", "seeing where their money goes"]],
@@ -33,7 +33,7 @@ export const TX = {
     BILLS: ["Rent", "Electricity", "Water", "Phone", "Internet", "Home insurance", "Netflix", "Spotify", "Gym", "Travel card", "Loan"],
     addOwn: "+ Add your own", ownPh: "e.g. Daycare, Car loan, Union fee", ownL: "Your own bill", add: "Add", dayN: n => `Day ${n}`, amtOf: n => `${n} amount`, dueOf: n => `${n} is due on day`,
     billsErr: list => `Add an amount for ${list}, or tap it again to take it off.`, billsGo: "Next: reminders",
-    nudgeT: "How should I keep you on track?", nudgeP: "I'll only nudge you for what you switch on here, and you can change it any time in You.",
+    nudgeT: "How shall we stay on track?", nudgeP: "I'll only nudge you for what you switch on here, and you can change it any time in You.",
     nBills: ["Before a bill is due", "A reminder the morning before, so nothing catches you out"], nPay: ["On payday", "What's yours to spend for the month ahead"], nWeek: ["A Sunday summary", "How the week went, in one short note"],
     nameT: "Before we go on, what should I call you?", nameP: "So we can be on first-name terms. I'll use it from here on, and whenever we talk about your money.",
     namePh: "Your name", nameL: "Your first name", handL: "And your hand", TONES: ["Default", "Light", "Medium-light", "Medium", "Medium-dark", "Dark"], nameGo: "Nice to meet you", nameErr: "Type your name, or tap Later.",
@@ -46,12 +46,15 @@ export const TX = {
     pplT: "Who shares your money life?", pplP: "So I can talk about shared bills and costs the way they really work in your home.",
     PEOPLE: [["me", "Just me", "Manages money on their own."], ["partner", "Me and a partner", "Shares money with a partner."], ["family", "A family with children", "Has a family with children."], ["flat", "Flatmates", "Lives with flatmates and shares some costs."]],
     goalT: "Saving for something?", goalP: "Pick one and, if you know it, how much you'd like to have. I'll show how close you are and what to put aside each month.",
+    whenGoalT: "When would you like to reach it?", whenGoalP: "I'll work out what to put aside each month to get there, and tell you if we're falling behind.",
+    BY: [["3", "In 3 months"], ["6", "In 6 months"], ["12", "In a year"], ["24", "In 2 years"], ["date", "By a month I choose"], ["none", "No set date"]], byMonth: "Which month?", byErr: "Pick a month after this one, or another answer.",
+    monthly: (m, by) => `${m} a month, ready by ${by}`, byWord: by => `by ${by}`,
     GOALS: ["Holiday", "Emergency fund", "New home", "Car", "Something else"], goalAmt: g => `How much for ${g === "Something else" ? "it" : g.toLowerCase()}?`, goalNone: "Not right now", goalErr: "Type an amount like 1500, or leave it empty.",
     sumT: f => `Here's what you told me${f ? `, ${f}` : ""}`, sumP: "Check it's all right. Tap Edit to change anything.", edit: "Edit", sumGo: "Looks good",
     rows: { lang: "Language", why: "What matters to you", pay: "Pay", bills: "Bills", nudges: "Reminders", name: "Name", balance: "Balance", feel: "End of the month", people: "Money at home", goal: "Saving for" },
     whenWord: { [LAST_WORKING_DAY]: "last working day", [LAST_DAY]: "last day of the month", varies: "it changes", date: d => `on day ${d}` }, perMonth: "a month",
     rBills: "bills", rPay: "payday", rWeek: "Sunday summary", off: "None", notSaid: "Not answered",
-    learnT: f => `Here's how I'll work for you${f ? `, ${f}` : ""}`, learnP: "From what you've told me. I'll keep learning as we go, and you can change any of it in You.", learnGo: "Sounds good", done: "Show me my month",
+    learnT: f => `Here's how we'll work together${f ? `, ${f}` : ""}`, learnP: "From what you've told me. I'll keep learning as we go, and you can change any of it in You.", learnGo: "Sounds good", done: "Show me my month",
     privT: "Your data, your choice", privP: "I keep your records to work out your money: on this phone, and in your account if you create one. No ads, no tracking, and your data is never sold.",
     privAiT: "My AI", privAi: "Reading receipts, talking with me and today's note send what you scan, say or ask, with the records needed to answer, to OpenAI. Nothing is sent unless you allow it, and you can change your mind any time in You → Privacy.",
     privLink: "Read the privacy policy", privNo: "Only necessary", privYes: "Allow AI",
@@ -67,14 +70,14 @@ export const TX = {
       bills: (n, r) => `Set ${n ? `your ${n} ${n === 1 ? "bill" : "bills"}` : "your bills"} aside before anything else${r ? ", and remind you the morning before each one" : ""}.`,
       short: "Give you an early heads-up when money's getting tight, and help you find where to slow down.", varies: "Watch for the months that run short, and warn you before they do.",
       just: "Tell you when payday is close and what's left until then.", left: g => `Point out spare money${g ? ` that could go to your ${g.toLowerCase()} fund` : " you could put aside"}.`,
-      goal: (g, t) => `Track your ${g === "Something else" ? "savings goal" : `${g.toLowerCase()} fund`}${t ? ` to ${t}` : ""}, and show what to put aside each month.`,
+      goal: (g, t, by, m) => `Track your ${g === "Something else" ? "savings goal" : `${g.toLowerCase()} fund`}${t ? ` to ${t}` : ""}${by ? ` by ${by}` : ""}${m ? `: about ${m} a month` : ", and show what to put aside each month"}.`,
       partner: "Keep shared costs with your partner in mind when we talk.", family: "Keep the whole family's costs in mind when we talk.", flat: "Keep costs you share with flatmates in mind when we talk.",
       home: "Keep your Home setup close: rooms, what's bought and what's left.", where: "Show you where your money goes, by category, every week.", weekly: "Send you a short summary on Sunday evenings.",
     },
   },
   fi: {
     later: "Myöhemmin", next: "Seuraava", back: "Takaisin", signin: "Kirjaudu", step: (n, all, p) => `Vaihe ${n}/${all}, ${p} % valmiina`,
-    langT: "Millä kielellä puhun?", langP: "Choose a language. Voit vaihtaa sen milloin vain kohdasta You.",
+    langT: "Millä kielellä puhutaan?", langP: "Let's pick a language. Voit vaihtaa sen milloin vain kohdasta You.", langEn: "Let's talk in English", langFi: "Puhutaan suomea",
     whyT: "Hei, olen Koti. Missä voisin auttaa sinua eniten?", whyP: "Valitse niin monta kuin haluat. Pidän ne mielessä, kun puhumme, ja näytän sinulle tärkeimmät ensin.", whyGo: "Seuraavaksi: palkkasi",
     WHY: [["spend", "Tietää, paljonko voin käyttää päivässä", "tietää, paljonko voi käyttää päivässä"], ["bills", "Ettei laskut yllätä", "ettei laskut yllätä"], ["save", "Säästää johonkin", "säästää johonkin"],
       ["home", "Sisustaa uutta kotia", "sisustaa uutta kotia"], ["shared", "Pysyä kärryillä yhteisistä kuluista", "pysyä kärryillä yhteisistä kuluista"], ["where", "Nähdä, mihin rahat menevät", "nähdä, mihin rahat menevät"]],
@@ -87,7 +90,7 @@ export const TX = {
     BILLS: ["Vuokra", "Sähkö", "Vesi", "Puhelin", "Internet", "Kotivakuutus", "Netflix", "Spotify", "Kuntosali", "Matkakortti", "Laina"],
     addOwn: "+ Lisää oma", ownPh: "esim. Päiväkoti, Autolaina, Liiton jäsenmaksu", ownL: "Oma lasku", add: "Lisää", dayN: n => `${n}. pv`, amtOf: n => `${n}, summa`, dueOf: n => `${n}, eräpäivä`,
     billsErr: list => `Lisää summa: ${list}, tai poista se napauttamalla uudelleen.`, billsGo: "Seuraavaksi: muistutukset",
-    nudgeT: "Miten pidän sinut ajan tasalla?", nudgeP: "Muistutan vain siitä, minkä kytket päälle, ja voit muuttaa sitä milloin vain kohdasta You.",
+    nudgeT: "Miten pysytään kärryillä?", nudgeP: "Muistutan vain siitä, minkä kytket päälle, ja voit muuttaa sitä milloin vain kohdasta You.",
     nBills: ["Ennen laskun eräpäivää", "Muistutus edellisenä aamuna, ettei mikään yllätä"], nPay: ["Palkkapäivänä", "Paljonko on käytettävissäsi seuraavaksi kuukaudeksi"], nWeek: ["Sunnuntain yhteenveto", "Miten viikko meni, yhdessä lyhyessä viestissä"],
     nameT: "Ennen kuin jatketaan: miten sinua kutsun?", nameP: "Ollaan sinut. Käytän nimeäsi tästä eteenpäin, aina kun puhumme raha-asioistasi.",
     namePh: "Nimesi", nameL: "Etunimesi", handL: "Ja kätesi", TONES: ["Oletus", "Vaalea", "Keskivaalea", "Keskisävy", "Keskitumma", "Tumma"], nameGo: "Hauska tutustua", nameErr: "Kirjoita nimesi tai napauta Myöhemmin.",
@@ -100,12 +103,15 @@ export const TX = {
     pplT: "Kenen kanssa jaat raha-asiat?", pplP: "Jotta puhun yhteisistä laskuista ja kuluista niin kuin ne kotonasi oikeasti menevät.",
     PEOPLE: [["me", "Vain minä", "Hoitaa raha-asiansa yksin."], ["partner", "Minä ja kumppani", "Jakaa raha-asiat kumppanin kanssa."], ["family", "Lapsiperhe", "Lapsiperhe."], ["flat", "Kämppikset", "Asuu kämppisten kanssa ja jakaa osan kuluista."]],
     goalT: "Säästätkö johonkin?", goalP: "Valitse yksi ja, jos tiedät, paljonko haluaisit säästää. Näytän, kuinka lähellä olet ja paljonko kannattaa laittaa sivuun joka kuukausi.",
+    whenGoalT: "Milloin haluaisit olla perillä?", whenGoalP: "Lasken, paljonko laittaa sivuun joka kuukausi, ja kerron, jos jäämme jälkeen.",
+    BY: [["3", "3 kuukaudessa"], ["6", "6 kuukaudessa"], ["12", "Vuodessa"], ["24", "Kahdessa vuodessa"], ["date", "Valitsemaani kuukauteen mennessä"], ["none", "Ei tiettyä aikaa"]], byMonth: "Mihin kuukauteen mennessä?", byErr: "Valitse tätä myöhempi kuukausi tai toinen vaihtoehto.",
+    monthly: (m, by) => `${m} kuukaudessa, valmis ${by}`, byWord: by => `${by} mennessä`,
     GOALS: ["Loma", "Puskurirahasto", "Uusi koti", "Auto", "Jokin muu"], goalAmt: () => "Paljonko tavoittelet?", goalNone: "Ei nyt", goalErr: "Kirjoita summa, esim. 1500, tai jätä tyhjäksi.",
     sumT: f => `Tässä mitä kerroit${f ? `, ${f}` : ""}`, sumP: "Tarkista, että kaikki on oikein. Napauta Muuta, jos jotain pitää vaihtaa.", edit: "Muuta", sumGo: "Näyttää hyvältä",
     rows: { lang: "Kieli", why: "Mikä on sinulle tärkeää", pay: "Palkka", bills: "Laskut", nudges: "Muistutukset", name: "Nimi", balance: "Saldo", feel: "Kuun loppu", people: "Talous", goal: "Säästötavoite" },
     whenWord: { [LAST_WORKING_DAY]: "viimeisenä arkipäivänä", [LAST_DAY]: "kuun viimeisenä päivänä", varies: "vaihtelee", date: d => `${d}. päivänä` }, perMonth: "kuukaudessa",
     rBills: "laskut", rPay: "palkkapäivä", rWeek: "sunnuntain yhteenveto", off: "Ei mitään", notSaid: "Ei vastattu",
-    learnT: f => `Näin teen töitä puolestasi${f ? `, ${f}` : ""}`, learnP: "Sen perusteella, mitä kerroit. Opin lisää matkan varrella, ja voit muuttaa mitä tahansa kohdasta You.", learnGo: "Kuulostaa hyvältä", done: "Näytä kuukauteni",
+    learnT: f => `Näin teemme tätä yhdessä${f ? `, ${f}` : ""}`, learnP: "Sen perusteella, mitä kerroit. Opin lisää matkan varrella, ja voit muuttaa mitä tahansa kohdasta You.", learnGo: "Kuulostaa hyvältä", done: "Näytä kuukauteni",
     privT: "Tietosi, valintasi", privP: "Säilytän tietosi, jotta voin laskea raha-asiasi: tällä puhelimella ja tililläsi, jos luot sellaisen. Ei mainoksia, ei seurantaa, eikä tietojasi myydä koskaan.",
     privAiT: "Tekoälyni", privAi: "Kuittien lukeminen, keskustelu kanssani ja päivän muistiinpano lähettävät skannaamasi, sanomasi tai kysymäsi ja vastaamiseen tarvittavat tiedot OpenAI:lle. Mitään ei lähetetä ilman lupaasi, ja voit muuttaa mielesi milloin vain kohdasta You → Privacy.",
     privLink: "Lue tietosuojaseloste", privNo: "Vain välttämättömät", privYes: "Salli tekoäly",
@@ -121,7 +127,7 @@ export const TX = {
       bills: (n, r) => `Varaan ${n ? `${n} ${n === 1 ? "laskusi" : "laskuasi"}` : "laskusi"} ennen mitään muuta${r ? " ja muistutan edellisenä aamuna jokaisesta" : ""}.`,
       short: "Varoitan ajoissa, kun rahat alkavat käydä vähiin, ja autan löytämään, mistä hidastaa.", varies: "Seuraan kuukausia, jotka jäävät vajaiksi, ja varoitan ennen kuin niin käy.",
       just: "Kerron, kun palkkapäivä on lähellä ja paljonko on jäljellä siihen asti.", left: g => `Kerron, kun rahaa jää yli${g ? ` ja sen voisi laittaa tavoitteeseen ${g.toLowerCase()}` : " ja sen voisi laittaa sivuun"}.`,
-      goal: (g, t) => `Seuraan säästötavoitettasi${g === "Jokin muu" ? "" : ` (${g.toLowerCase()})`}${t ? `, ${t}` : ""}, ja näytän, paljonko laittaa sivuun joka kuukausi.`,
+      goal: (g, t, by, m) => `Seuraan säästötavoitettasi${g === "Jokin muu" ? "" : ` (${g.toLowerCase()})`}${t ? `, ${t}` : ""}${by ? `, ${by} mennessä` : ""}${m ? `: noin ${m} kuukaudessa` : ", ja näytän, paljonko laittaa sivuun joka kuukausi"}.`,
       partner: "Pidän yhteiset kulut kumppanisi kanssa mielessä, kun puhumme.", family: "Pidän koko perheen kulut mielessä, kun puhumme.", flat: "Pidän kämppisten kanssa jaetut kulut mielessä, kun puhumme.",
       home: "Pidän kotiprojektisi lähellä: huoneet, mitä on ostettu ja mitä puuttuu.", where: "Näytän joka viikko, mihin rahasi menevät, luokittain.", weekly: "Lähetän lyhyen yhteenvedon sunnuntai-iltaisin.",
     },
@@ -132,7 +138,7 @@ export const WHY = TX.en.WHY, FEEL = TX.en.FEEL, PEOPLE = TX.en.PEOPLE, GOALS = 
 /* Skin tones for their hand (the wave, and the handshake after their name): the default yellow, then five tones. */
 export const TONES = ["", "\u{1F3FB}", "\u{1F3FC}", "\u{1F3FD}", "\u{1F3FE}", "\u{1F3FF}"].map((m, k) => [m, TX.en.TONES[k]]);
 /* The steps, in order. */
-export const STEPS = ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "summary", "learned", "privacy", "account"];
+export const STEPS = ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account"];
 
 /* What Koti will do for them, from their answers: shown on "Here's how I'll work for you", at most five lines. The
    same answers (settings.profile) go to Koti with every question, so it really works this way. */
@@ -145,12 +151,19 @@ export function planFor(p = {}, lang = "en") {
   const feels = [].concat(p.feel || []), careful = ["short", "varies", "just"].find(f => feels.includes(f));
   if (careful) out.push(P[careful]);
   if (feels.includes("left")) out.push(P.left(goal));
-  if (goal) out.push(P.goal(goal, p.goal.target ? money(p.goal.target) : null));
+  if (goal) out.push(P.goal(goal, p.goal.target ? money(p.goal.target) : null, p.goal.by ? monthName(p.goal.by, lang) : null, p.goal.monthly ? money(p.goal.monthly) : null));
   if (p.people && p.people !== "me" && P[p.people]) out.push(P[p.people]);
   if (why.has("home")) out.push(P.home);
   if (why.has("where")) out.push(P.where);
   if (p.nudges && p.nudges.weekly) out.push(P.weekly);
   return out.filter(Boolean).slice(0, 5);
+}
+/* "June 2027" / "kesäkuu 2027" for a goal's YYYY-MM-DD. */
+export const monthName = (d, lang = "en") => new Date(d + "T12:00:00Z").toLocaleDateString(lang === "fi" ? "fi-FI" : "en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+/* The day a goal is for, in this many months (the first of that month), and what to put aside each month for it. */
+export function goalBy(months, target, today = new Date()) {
+  const d = new Date(Date.UTC(today.getFullYear(), today.getMonth() + months, 1)), by = d.toISOString().slice(0, 10);
+  return { by, monthly: target ? Math.ceil(target / months) : null };
 }
 const moneyIn = lang => v => new Intl.NumberFormat(lang === "fi" ? "fi-FI" : "en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v);
 
@@ -158,7 +171,7 @@ const nextMonthStart = () => { const d = new Date(); const n = new Date(d.getFul
 let el = null, step = 0, st = null, dir = 1;
 const L = () => TX[st && st.lang === "fi" ? "fi" : "en"];
 /* The steps shown: the account is left out when signed in already, or with no server. */
-const steps = () => (sync.user || !sync.configured ? STEPS.filter(s => s !== "account") : STEPS);
+const steps = () => STEPS.filter(s => !(s === "account" && (sync.user || !sync.configured)) && !(s === "goalWhen" && st && !st.goal));   // the date only with a goal
 export const stepCount = () => steps().length;
 const id = () => steps()[step];
 const go = s => { step = steps().indexOf(s); };
@@ -171,7 +184,7 @@ export function openOnboarding() {
   const S = store.model.settings, R = S.reminders || {};
   el = $("#onb"); step = 0; dir = 1;
   st = { lang: String(S.voiceLang || "en-GB").startsWith("fi") ? "fi" : "en", why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), custom: [], adding: false, newBill: "", amounts: {}, days: {},
-    balance: "", feel: new Set(), people: null, goal: null, goalAmt: "", nudge: { bills: R.bills !== false, payday: R.payday !== false, weekly: !!R.weekly },
+    balance: "", feel: new Set(), people: null, goal: null, goalAmt: "", by: null, byMonth: "", nudge: { bills: R.bills !== false, payday: R.payday !== false, weekly: !!R.weekly },
     name: S.name || "", tone: Math.max(0, Math.min(5, Number(S.skinTone) || 0)), email: "", mode: "up", sent: false, back: null, ids: {} };
   el.hidden = false; document.body.classList.add("onb-open"); paint();
 }
@@ -221,7 +234,8 @@ function summaryRows() {
   rows.push(["feel", st.feel.size ? T.FEEL.filter(([v]) => st.feel.has(v)).map(([, t]) => esc(t)).join(", ") : none]);
   rows.push(["people", st.people ? esc(label(T.PEOPLE, st.people)) : none]);
   const gi = GOALS.indexOf(st.goal), gt = parseMoney(st.goalAmt);
-  rows.push(["goal", st.goal ? `${esc(T.GOALS[gi] || st.goal)}${gt ? ` · ${money(gt)}` : ""}` : none]);
+  const pg = (store.model.settings.profile || {}).goal || {};
+  rows.push(["goal", st.goal ? `${esc(T.GOALS[gi] || st.goal)}${gt ? ` · ${money(gt)}` : ""}${pg.by ? ` · ${esc(pg.monthly ? T.monthly(money(pg.monthly), monthName(pg.by, st.lang)) : T.byWord(monthName(pg.by, st.lang)))}` : ""}` : none]);
   return rows;
 }
 
@@ -231,7 +245,7 @@ function paint() {
   el.dataset.dir = dir > 0 ? "fwd" : dir < 0 ? "back" : "stay";   // a redraw within a step doesn't slide
   document.documentElement.lang = st.lang;
   if (s === "lang") {
-    el.innerHTML = head(T.langT, T.langP) + `<div class="onb-langs" role="radiogroup" aria-label="${esc(T.langT)}">${[["en", "English", "I'll speak English"], ["fi", "Suomi", "Puhun suomea"]].map(([v, t, sub]) => `<button type="button" role="radio" class="onb-lang" data-lang="${v}" aria-checked="${st.lang === v}" lang="${v}"><b>${t}</b><small>${sub}</small></button>`).join("")}</div>`
+    el.innerHTML = head(T.langT, T.langP) + `<div class="onb-langs" role="radiogroup" aria-label="${esc(T.langT)}">${[["en", "English", T.langEn], ["fi", "Suomi", T.langFi]].map(([v, t, sub]) => `<button type="button" role="radio" class="onb-lang" data-lang="${v}" aria-checked="${st.lang === v}" lang="${v}"><b>${t}</b><small>${sub}</small></button>`).join("")}</div>`
       + `<div class="onb-foot"><button type="button" class="onb-go" data-next>${T.next}</button></div></div>`;   // no Later: there's always a language
   } else if (s === "why") {
     el.innerHTML = head(T.whyT, T.whyP) + chips(T.WHY.map(([v, t]) => [v, t]), v => st.why.has(v), "why") + tail(T.whyGo);
@@ -278,6 +292,10 @@ function paint() {
       + (st.goal ? `<label class="onb-l" for="obGoalAmt">${esc(T.goalAmt(st.goal))}</label><input class="onb-amt num" id="obGoalAmt" inputmode="decimal" placeholder="€0" value="${esc(st.goalAmt)}" autocomplete="off">` : "")
       + tail(st.goal ? T.next : T.goalNone);
     if (st.goal && dir === 0) focus("#obGoalAmt");
+  } else if (s === "goalWhen") {
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1), min = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}`;
+    el.innerHTML = head(T.whenGoalT, T.whenGoalP) + radios(T.whenGoalT, T.BY, st.by)
+      + `<label class="onb-day" id="obByRow" ${st.by === "date" ? "" : "hidden"}>${T.byMonth} <input type="month" id="obByMonth" min="${min}" value="${esc(st.byMonth)}"></label>` + tail(T.next);
   } else if (s === "summary") {
     el.innerHTML = head(T.sumT(f), T.sumP)
       + `<dl class="onb-sum">${summaryRows().map(([k, v]) => `<div class="onb-sumrow"><dt>${T.rows[k]}</dt><dd>${v}</dd><button type="button" class="onb-edit" data-edit="${k}" aria-label="${esc(`${T.edit}: ${T.rows[k]}`)}">${T.edit}</button></div>`).join("")}</dl>`
@@ -342,7 +360,9 @@ function onClick(e) {
   const p = t.closest("[data-pick]");
   if (p) {
     const v = p.dataset.pick, s = id();
-    if (s === "pay") { st.when = isNaN(Number(v)) ? v : Number(v); $("#obDayRow", el).hidden = st.when !== "date"; } else st[s] = v;
+    if (s === "pay") { st.when = isNaN(Number(v)) ? v : Number(v); $("#obDayRow", el).hidden = st.when !== "date"; }
+    else if (s === "goalWhen") { st.by = v; $("#obByRow", el).hidden = v !== "date"; }
+    else st[s] = v;
     $$("[data-pick]", p.parentElement).forEach(x => x.setAttribute("aria-checked", x === p));
     if (s === "people") setTimeout(() => { if (id() === s) next(false); }, 320);   // one choice: on to the next question
     return;
@@ -367,7 +387,7 @@ function shake() {
   setTimeout(advance, reduce ? 1100 : 2000);
 }
 /* On to the next step, or back to the summary when they came from it to change something. */
-function advance() { if (st.back) { go(st.back); st.back = null; } else step++; dir = 1; paint(); }
+function advance() { if (st.back && !(id() === "goal" && st.goal)) { go(st.back); st.back = null; } else step++; dir = 1; paint(); }   // a goal changed from the summary: its date next, then back
 /* What they told Koti, as a profile Koti reads with every question (settings.profile). */
 const saveProfile = patch => store.updateSettings({ profile: { ...(store.model.settings.profile || {}), ...patch, at: new Date().toISOString().slice(0, 10) } });
 function msg(t) { const m = $("#obMsg", el); if (m) m.textContent = t; }
@@ -377,6 +397,7 @@ function keepRows() {
   if (v("#obDay") != null) st.day = Number(v("#obDay"));
   if (v("#obBal") != null) st.balance = v("#obBal");
   if (v("#obGoalAmt") != null) st.goalAmt = v("#obGoalAmt");
+  if (v("#obByMonth") != null) st.byMonth = v("#obByMonth");
   if (v("#obName") != null) st.name = v("#obName");
   if (v("#obNewBill") != null) st.newBill = v("#obNewBill");
   if (v("#obEmail") != null) st.email = v("#obEmail").trim();
@@ -430,6 +451,19 @@ function next(later) {
     const name = T.GOALS[GOALS.indexOf(st.goal)] || st.goal;
     saveProfile({ goal: { name: st.goal, target: target || null } });
     st.ids.goal = store.put("goals", { id: st.ids.goal, name, target: target || null, saved: 0, monthly: null, targetDate: null, position: store.model.goals.length }).id;
+  }
+  if (s === "goalWhen" && !later && st.by && st.ids.goal) {
+    const target = parseMoney(st.goalAmt) || null, now = new Date();
+    let months = st.by === "none" ? null : st.by === "date" ? null : Number(st.by), by = null, monthly = null;
+    if (st.by === "date") {
+      const [y, m] = String(st.byMonth || "").split("-").map(Number);
+      months = y && m ? (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()) : 0;
+      if (!(months >= 1)) return msg(T.byErr);
+    }
+    if (months) ({ by, monthly } = goalBy(months, target, now));
+    const g = store.model.goals.find(x => x.id === st.ids.goal);
+    if (g) store.put("goals", { ...g, targetDate: by, monthly });
+    saveProfile({ goal: { ...(store.model.settings.profile || {}).goal, by, monthly } });
   }
   if (s === "summary") st.back = null;
   if (s === "account") { if (later) { close(); return; } return account(); }

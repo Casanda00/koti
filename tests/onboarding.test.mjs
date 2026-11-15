@@ -15,8 +15,8 @@ const OB = await import("../js/onboarding.js");
 const A = await import("../supabase/functions/koti/agent.js");
 
 test("the order: language, four questions, the name, five more, a summary, what Koti will do, privacy, the account", () => {
-  assert.deepEqual(OB.STEPS, ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "summary", "learned", "privacy", "account"]);
-  assert.match(O, /const steps = \(\) => \(sync\.user \|\| !sync\.configured \? STEPS\.filter\(s => s !== "account"\) : STEPS\);/, "signed in already, or no server: no account step");
+  assert.deepEqual(OB.STEPS, ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account"]);
+  assert.match(O, /const steps = \(\) => STEPS\.filter\(s => !\(s === "account" && \(sync\.user \|\| !sync\.configured\)\) && !\(s === "goalWhen" && st && !st\.goal\)\);/, "no account step when signed in or with no server; the goal's date only with a goal");
   assert.match(O, /if \(step >= steps\(\)\.length - 1\) close\(\); else advance\(\);/, "then privacy is the last step");
 });
 
@@ -37,7 +37,7 @@ test("everything is said in both languages, with the same keys, and the language
 test("Koti uses the name now and then once it's given, and says what it will do, in their language", () => {
   assert.equal(OB.TX.en.feelT("Antti"), "How does the end of the month usually feel, Antti?");
   assert.equal(OB.TX.en.goalT, "Saving for something?", "not on every heading: it would feel forced");
-  assert.equal(OB.TX.en.learnT("Antti"), "Here's how I'll work for you, Antti");
+  assert.equal(OB.TX.en.learnT("Antti"), "Here's how we'll work together, Antti");
   assert.equal(OB.TX.en.meet("Antti"), "Nice to meet you, Antti");
   const p = { why: ["spend", "bills", "home"], bills: 3, feel: ["short", "left"], people: "partner", goal: { name: "Holiday", target: 1500 }, nudges: { bills: true, payday: true, weekly: true } };
   const en = OB.planFor(p);
@@ -83,7 +83,7 @@ test("their hand in their skin tone, and a handshake after their name", () => {
 
 test("a summary to check, each answer editable (back to the question, then back to the summary)", () => {
   assert.match(O, /const ed = t\.closest\("\[data-edit\]"\); if \(ed\) \{ keepRows\(\); st\.back = "summary"; go\(ed\.dataset\.edit\);/);
-  assert.match(O, /function advance\(\) \{ if \(st\.back\) \{ go\(st\.back\); st\.back = null; \} else step\+\+;/);
+  assert.match(O, /function advance\(\) \{ if \(st\.back && !\(id\(\) === "goal" && st\.goal\)\) \{ go\(st\.back\); st\.back = null; \} else step\+\+;/, "a goal changed from the summary goes through its date, then back");
   assert.deepEqual(Object.keys(OB.TX.en.rows), ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal"], "every answer is on it");
 });
 
@@ -103,4 +103,28 @@ test("the blue progress bar fills as you go with the percentage counting up, and
   assert.match(O, /pct\.textContent = `\$\{Math\.round\(a \+ \(b - a\) \* e\)\}%`/);
   assert.match(C, /@keyframes onbIn/); assert.match(C, /@keyframes onbBack/);
   assert.match(C, /@media \(prefers-reduced-motion:reduce\)\{\*\{transition:none!important;animation:none!important\}\}/);
+});
+
+// "Remember, it's not Koti only. It's both the user and Koti": we, where it's the two of them.
+test("we, where Koti and the user decide together", () => {
+  assert.equal(OB.TX.en.langT, "Which language shall we use?"); assert.equal(OB.TX.fi.langT, "Millä kielellä puhutaan?");
+  assert.equal(OB.TX.en.langEn, "Let's talk in English"); assert.equal(OB.TX.fi.langFi, "Puhutaan suomea");
+  assert.equal(OB.TX.en.nudgeT, "How shall we stay on track?"); assert.equal(OB.TX.fi.learnT("Antti"), "Näin teemme tätä yhdessä, Antti");
+});
+
+// "Next logical screen should ask when do you want to reach this goal?"
+test("the goal's date: after the goal, what to put aside each month for it, and where it shows", () => {
+  const today = new Date(2026, 10, 15);
+  assert.deepEqual(OB.goalBy(6, 1500, today), { by: "2027-05-01", monthly: 250 });
+  assert.deepEqual(OB.goalBy(12, 1000, today), { by: "2027-11-01", monthly: 84 }, "rounded up, so it's reached");
+  assert.deepEqual(OB.goalBy(3, null, today), { by: "2027-02-01", monthly: null }, "no amount: a date only");
+  assert.equal(OB.monthName("2027-05-01"), "May 2027"); assert.equal(OB.monthName("2027-05-01", "fi"), "toukokuu 2027");
+  assert.deepEqual(OB.TX.fi.BY.map(x => x[0]), OB.TX.en.BY.map(x => x[0]));
+  const p = { goal: { name: "Holiday", target: 1500, by: "2027-05-01", monthly: 250 } };
+  assert.match(OB.planFor(p).join(" "), /Track your holiday fund to €1,500 by May 2027: about €250 a month\./);
+  assert.match(OB.planFor(p, "fi").join(" "), /\(loma\), 1\s500\s€, toukokuu 2027 mennessä: noin 250\s€ kuukaudessa/);
+  assert.match(O, /if \(g\) store\.put\("goals", \{ \.\.\.g, targetDate: by, monthly \}\);/, "the goal gets its date and monthly amount");
+  assert.match(A.profileNotes(p), /saving for: Holiday \(target €1500, by 2027-05-01, about €250 a month\)\. Say whether they're on track/);
+  assert.match(A.profileNotes({ goal: { name: "Car" } }), /saving for: Car\. Say whether/);
+  assert.match(O, /saveProfile\(\{ goal: \{ \.\.\.\(store\.model\.settings\.profile \|\| \{\}\)\.goal, by, monthly \} \}\)/, "and Koti knows it");
 });
