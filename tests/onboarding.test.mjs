@@ -19,21 +19,24 @@ test("three questions, then the name (early, making friends), five more, then th
 
 test("each answer lands somewhere Koti uses", () => {
   assert.match(O, /remember\(`Wants Koti's help with /, "what they want from Koti: remembered");
-  assert.match(O, /remember\(FEEL\.find/, "how the month ends: remembered");
+  assert.match(O, /FEEL\.filter\(\(\[v\]\) => st\.feel\.has\(v\)\)\.forEach\(\(\[, , m\]\) => remember\(m\)\)/, "how the month ends, every one that's true: remembered");
   assert.match(O, /remember\(PEOPLE\.find/, "who shares it: remembered");
   assert.match(O, /store\.put\("goals", \{ id: st\.ids\.goal, name: st\.goal, target: target \|\| null/, "what they save for: a goal");
   assert.match(O, /reminders: \{ \.\.\.R, bills: st\.nudge\.bills, payday: st\.nudge\.payday, weekly: st\.nudge\.weekly \}, voiceLang:/, "reminders and the language");
-  assert.match(O, /if \(name\) store\.updateSettings\(\{ name \}\);/, "the name is what Koti calls them");
+  assert.match(O, /if \(name\) store\.updateSettings\(\{ name, skinTone: st\.tone \}\);/, "the name is what Koti calls them");
   assert.match(O, /store\.put\("income", /); assert.match(O, /store\.put\("bills", /); assert.match(O, /setBalanceNow\(/);
   assert.match(O, /if \(st\.mode === "up"\) \{ const r = await signUp\(email, pw\); if \(r\.needsConfirm\) \{ st\.sent = true;/);
 });
 
-test("the gold progress bar fills as you go, and each step slides in (not with Reduce motion)", () => {
-  assert.match(C, /--gold:linear-gradient\(90deg,#F2A900 0%,#FFC93C 30%,#FFE58F 50%/, "honey gold, no brown ends");
-  assert.match(C, /\.onb-prog i\{[^}]*background:var\(--gold\)[^}]*transition:width \.7s/);
-  assert.match(C, /\.onb-tog\[aria-checked="true"\] i\{background:var\(--gold\)\}/);
-  assert.match(O, /role="progressbar" aria-label="Step \$\{n \+ 1\} of \$\{all\}"/);
-  assert.match(O, /bar\.style\.width = bar\.dataset\.to \+ "%"/);
+test("the blue progress bar fills as you go with the percentage counting up, and each step slides in (not with Reduce motion)", () => {
+  assert.match(C, /--bar:linear-gradient\(90deg,#2442D6 0%,#3D63FF 35%,#8FA8FF 50%/, "Koti's blue (it was gold)");
+  assert.doesNotMatch(C, /--gold/, "no gold left");
+  assert.match(C, /\.onb-prog i\{[^}]*background:var\(--bar\)[^}]*transition:width \.7s/);
+  assert.match(C, /\.onb\.lake \.onb-prog i\{background:linear-gradient\(90deg,#DCE3FF,#FFFFFF 50%/, "white on the blue screen");
+  assert.match(C, /\.onb-tog\[aria-checked="true"\] i\{background:var\(--bar\)\}/);
+  assert.match(O, /aria-label="Step \$\{n \+ 1\} of \$\{all\}, \$\{to\}% done"/);
+  assert.match(O, /<span class="onb-pct" aria-hidden="true" data-from="\$\{from\}">\$\{from\}%<\/span>/, "the percentage, beside the bar");
+  assert.match(O, /pct\.textContent = `\$\{Math\.round\(a \+ \(b - a\) \* e\)\}%`/, "counting up with the bar");
   assert.match(C, /@keyframes onbIn/); assert.match(C, /@keyframes onbBack/); assert.match(C, /@keyframes onbWave/);
   assert.match(C, /@media \(prefers-reduced-motion:reduce\)\{\*\{transition:none!important;animation:none!important\}\}/);
 });
@@ -82,4 +85,23 @@ test("bills: their own, not only the ones listed", () => {
   assert.match(O, /chips\(\[\.\.\.BILLS, \.\.\.st\.custom\]/, "their own bills sit with the others");
   assert.match(O, /function addBill\(\) \{[^]*if \(!same\) st\.custom\.push\(name\);[^]*st\.picked\.add\(same \|\| name\)/, "added and picked; the same name twice is one bill");
   assert.match(O, /if \(e\.key === "Enter"\) \{ e\.preventDefault\(\); addBill\(\); \}/);
+});
+
+test("the end of the month: all that are true; their hand in their skin tone, and a handshake after their name", async () => {
+  assert.match(O, /chips\(FEEL\.map\(\(\[v, t\]\) => \[v, t\]\), v => st\.feel\.has\(v\), "feel"\)/, "several can be picked");
+  assert.match(O, /Pick all that are true/);
+  assert.doesNotMatch(O, /s === "feel" \|\| s === "people"\) setTimeout/, "it doesn't move on after one tap any more");
+  const { planFor } = await import("../js/onboarding.js");
+  const both = planFor({ feel: ["left", "short"], goal: { name: "Car" } });
+  assert.match(both[1], /early heads-up/); assert.match(both[2], /spare money that could go to your car fund/);
+  const A = await import("../supabase/functions/koti/agent.js");
+  const n = A.profileNotes({ feel: ["left", "varies"] });
+  assert.match(n, /money left at the end of the month/); assert.match(n, /changes a lot/);
+  assert.match(A.profileNotes({ feel: "short" }), /runs short/, "a profile from before (one answer) still reads");
+  const { TONES } = await import("../js/onboarding.js");
+  assert.deepEqual(TONES.map(t => t[1]), ["Default", "Light", "Medium-light", "Medium", "Medium-dark", "Dark"]);
+  assert.match(O, /role="radio" class="onb-tone" data-tone="\$\{k\}" aria-checked="\$\{k === st\.tone\}" aria-label="\$\{label\}"/);
+  assert.match(O, /store\.updateSettings\(\{ name, skinTone: st\.tone \}\)/);
+  assert.match(O, /<span class="h-you">\$\{hand\("\\u\{1FAF1\}"\)\}<\/span><span class="h-koti">\\u\{1FAF2\}<\/span>/, "their hand in their tone meets Koti's");
+  assert.match(C, /@keyframes onbYou/); assert.match(C, /@keyframes onbKoti/);
 });

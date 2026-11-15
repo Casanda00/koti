@@ -46,11 +46,11 @@ export function profileNotes(p) {
   if (why.has("home")) out.push("They're setting up a home: their home project (rooms, what's bought, what's left) matters to them.");
   if (why.has("shared")) out.push("They share costs with others: keep who paid and what's shared in mind.");
   if (why.has("where")) out.push("They want to see where their money goes: offer breakdowns by category and shop.");
-  const feel = { short: "Money often runs short before payday for them: be careful with 'can I afford', warn early when it's getting tight, and suggest where to slow down. Never make them feel bad about it.",
+  const FEEL = { short: "Money often runs short before payday for them: be careful with 'can I afford', warn early when it's getting tight, and suggest where to slow down. Never make them feel bad about it.",
     just: "Their money usually just about lasts: when payday is near, say what's left and how many days to go.",
     left: "They usually have money left at the end of the month: encourage putting the spare towards their goal or savings.",
-    varies: "How their month ends changes a lot: watch for a month running short and say so early." }[p.feel];
-  if (feel) out.push(feel);
+    varies: "How their month ends changes a lot: watch for a month running short and say so early." };
+  for (const f of [].concat(p.feel || [])) if (FEEL[f]) out.push(FEEL[f]);   // several can be true
   const ppl = { partner: "They share money with a partner.", family: "They have a family with children: costs are for the household.", flat: "They live with flatmates and share some costs.", me: "They manage money on their own." }[p.people];
   if (ppl) out.push(ppl);
   if (p.goal && typeof p.goal.name === "string") out.push(`They're saving for: ${String(p.goal.name).slice(0, 60)}${typeof p.goal.target === "number" ? ` (target €${p.goal.target})` : ""}.`);

@@ -634,18 +634,22 @@ body[data-mood] .views{padding-bottom:0}
 .onb.lake{background:#2442D6;color:#fff}
 body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-in{max-width:560px;margin:0 auto;min-height:100%;padding:calc(var(--safe-top) + 26px) 20px calc(var(--safe-bottom) + 120px);display:grid;gap:12px;align-content:start;position:relative}
-/* The gold progress bar: a gold gradient that fills as you go, with a light sweeping across it. */
-/* Honey gold: bright and warm, no brown ends (15 November 2026: "Change that gold color"). */
-:root{--gold:linear-gradient(90deg,#F2A900 0%,#FFC93C 30%,#FFE58F 50%,#FFC93C 70%,#F2A900 100%);--gold-solid:#F2B01E;--gold-ring:rgba(242,176,30,.28)}
-.onb-prog{position:relative;height:8px;border-radius:99px;background:var(--line);overflow:hidden;max-width:260px}
+/* The progress bar: Koti's blue, filling as you go with a light sweeping across, and how far along in percent.
+   White on the blue balance screen. (15 November 2026: gold, then "change the gold color to blue".) */
+:root{--bar:linear-gradient(90deg,#2442D6 0%,#3D63FF 35%,#8FA8FF 50%,#3D63FF 65%,#2442D6 100%);--bar-solid:#2442D6;--bar-ring:rgba(36,66,214,.28)}
+.onb-progw{display:flex;align-items:center;gap:12px;max-width:min(310px,calc(100% - 96px))}
+.onb-prog{position:relative;flex:1;height:8px;border-radius:99px;background:var(--line);overflow:hidden}
 .onb.lake .onb-prog{background:rgba(255,255,255,.28)}
-.onb-prog i{position:absolute;inset:0 auto 0 0;border-radius:inherit;background:var(--gold);background-size:200% 100%;box-shadow:0 0 10px var(--gold-ring);transition:width .7s cubic-bezier(.22,1,.36,1);animation:onbGold 2.6s linear infinite}
+.onb-prog i{position:absolute;inset:0 auto 0 0;border-radius:inherit;background:var(--bar);background-size:200% 100%;box-shadow:0 0 10px var(--bar-ring);transition:width .7s cubic-bezier(.22,1,.36,1);animation:onbGold 2.6s linear infinite}
+.onb.lake .onb-prog i{background:linear-gradient(90deg,#DCE3FF,#FFFFFF 50%,#DCE3FF);background-size:200% 100%;box-shadow:0 0 10px rgba(255,255,255,.45)}
 .onb-prog i::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.75) 50%,transparent 70%);background-size:220% 100%;animation:onbShine 2.2s ease-in-out infinite}
+.onb-pct{font:700 14px var(--body);font-variant-numeric:tabular-nums;min-width:3.2ch;color:var(--ink-2)}
+.onb.lake .onb-pct{color:#fff}
 @keyframes onbGold{to{background-position:-200% 0}}
 @keyframes onbShine{0%{background-position:160% 0}100%{background-position:-60% 0}}
 /* Each step slides in: from the right going forward, from the left going back. */
-.onb[data-dir="fwd"] .onb-in>:not(.onb-foot):not(.onb-prog){animation:onbIn .5s cubic-bezier(.22,1,.36,1) both}
-.onb[data-dir="back"] .onb-in>:not(.onb-foot):not(.onb-prog){animation:onbBack .45s cubic-bezier(.22,1,.36,1) both}
+.onb[data-dir="fwd"] .onb-in>:not(.onb-foot):not(.onb-progw){animation:onbIn .5s cubic-bezier(.22,1,.36,1) both}
+.onb[data-dir="back"] .onb-in>:not(.onb-foot):not(.onb-progw){animation:onbBack .45s cubic-bezier(.22,1,.36,1) both}
 .onb .onb-in>:nth-child(2){animation-delay:.03s!important}.onb .onb-in>:nth-child(3){animation-delay:.08s!important}.onb .onb-in>:nth-child(4){animation-delay:.13s!important}
 .onb .onb-in>:nth-child(5){animation-delay:.18s!important}.onb .onb-in>:nth-child(6){animation-delay:.23s!important}.onb .onb-in>:nth-child(n+7){animation-delay:.28s!important}
 @keyframes onbIn{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
@@ -658,31 +662,45 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 @keyframes onbWave{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(16deg)}20%,40%{transform:rotate(-8deg)}}
 .onb-pop{display:inline-block;animation:onbPop .5s cubic-bezier(.34,1.56,.64,1) .2s both}
 .onb-name{font-size:52px;margin-top:10px}
-.onb-name:focus{border-color:var(--gold-solid)}
+.onb-name:focus{border-color:var(--bar-solid)}
 /* Creating the account, the last step. */
 .onb-form{display:grid;gap:6px;margin-top:6px}
 .onb-field{font:600 18px var(--body);color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:14px;padding:14px 14px;width:100%}
-.onb-field:focus{outline:none;border-color:var(--gold-solid);box-shadow:0 0 0 3px var(--gold-ring)}
+.onb-field:focus{outline:none;border-color:var(--bar-solid);box-shadow:0 0 0 3px var(--bar-ring)}
 .onb-hint{margin:2px 0 0;font-size:14px;color:var(--ink-2)}
 .onb-switch{justify-self:start;margin-top:6px;font-weight:600;color:var(--spruce);padding:6px 0}
 .onb-go:disabled{opacity:.6}
+/* Their hand: six tones, the chosen one ringed. */
+.onb-tones{display:flex;flex-wrap:wrap;gap:8px}
+.onb-tone{width:48px;height:48px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);font-size:24px;line-height:1;display:grid;place-items:center}
+.onb-tone[aria-checked="true"]{border:2px solid var(--bar-solid);box-shadow:0 0 0 3px var(--bar-ring)}
+/* The handshake after their name: the two hands meet and shake, then "Nice to meet you". */
+.onb-shake{position:fixed;inset:0;z-index:2;display:grid;place-content:center;justify-items:center;gap:18px;background:var(--bg);animation:onbFade .25s ease both}
+.onb-hands{display:flex;font-size:84px;line-height:1}
+.onb-hands .h-you{animation:onbYou 1.7s cubic-bezier(.22,1,.36,1) both}
+.onb-hands .h-koti{animation:onbKoti 1.7s cubic-bezier(.22,1,.36,1) both}
+.onb-shake p{margin:0;font:800 40px/1 var(--display);font-stretch:62%;animation:onbIn .5s cubic-bezier(.22,1,.36,1) .55s both}
+@keyframes onbFade{from{opacity:0}}
+@keyframes onbYou{0%{transform:translateX(-90px);opacity:0}30%{transform:translateX(22px);opacity:1}42%{transform:translate(22px,-10px)}54%{transform:translate(22px,6px)}66%{transform:translate(22px,-8px)}78%,100%{transform:translate(22px,0)}}
+@keyframes onbKoti{0%{transform:translateX(90px);opacity:0}30%{transform:translateX(-22px);opacity:1}42%{transform:translate(-22px,-10px)}54%{transform:translate(-22px,6px)}66%{transform:translate(-22px,-8px)}78%,100%{transform:translate(-22px,0)}}
+.onb-hands .h-you{position:relative;z-index:1}
 /* Their own bill: a dashed chip that opens a field. */
 .onb-add{border-style:dashed;color:var(--ink-2)}
 .onb-newbill{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:4px}
 .onb-addgo{min-height:52px;padding:0 20px;border-radius:14px;background:var(--ink);color:var(--bg);font:700 16px var(--body)}
-/* Reminders: one switch each, gold when on. */
+/* Reminders: one switch each, blue when on. */
 .onb-togs{display:grid;gap:8px;margin-top:6px}
 .onb-tog{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;min-height:64px;padding:12px 16px;border-radius:18px;border:1.5px solid var(--line);background:var(--paper);color:var(--ink)}
 .onb-tog b{display:block;font-size:17px}.onb-tog small{display:block;font-size:14px;color:var(--ink-2)}
 .onb-tog i{flex:none;width:50px;height:30px;border-radius:99px;background:var(--line);position:relative;transition:background .25s}
 .onb-tog i::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
-.onb-tog[aria-checked="true"] i{background:var(--gold)}
+.onb-tog[aria-checked="true"] i{background:var(--bar)}
 .onb-tog[aria-checked="true"] i::after{transform:translateX(20px)}
-/* "Here's how I'll work for you": one line at a time, each with a gold check. */
+/* "Here's how I'll work for you": one line at a time, each with a blue check. */
 .onb-plan{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:12px}
 .onb-plan li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;font-size:17px;line-height:1.4;animation:onbIn .5s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(.35s + var(--k) * .35s)!important}
-.onb-plan i{width:28px;height:28px;border-radius:50%;background:var(--gold);position:relative;box-shadow:0 2px 8px var(--gold-ring)}
-.onb-plan i::after{content:"";position:absolute;left:9px;top:5px;width:7px;height:13px;border:solid #15161A;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
+.onb-plan i{width:28px;height:28px;border-radius:50%;background:var(--bar);position:relative;box-shadow:0 2px 8px var(--bar-ring)}
+.onb-plan i::after{content:"";position:absolute;left:9px;top:5px;width:7px;height:13px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
 .onb-back{position:absolute;right:20px;top:calc(var(--safe-top) + 16px);font-weight:600;color:inherit;padding:6px 0}
 .onb h1{font:800 52px/.95 var(--display);font-stretch:62%;margin:22px 0 4px;max-width:14ch}
 .onb-p{margin:0;font-size:17px;line-height:1.4;color:var(--ink-2);max-width:34ch}

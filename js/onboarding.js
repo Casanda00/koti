@@ -30,9 +30,12 @@ export function planFor(p = {}) {
   const out = [], why = new Set(p.why || []), goal = p.goal && p.goal.name;
   out.push(why.has("spend") || !why.size ? "Keep your daily number up top: what's yours to spend each day until payday." : "Work out what's yours to spend each day until payday.");
   if (p.bills || why.has("bills")) out.push(`Set ${p.bills ? `your ${p.bills} ${p.bills === 1 ? "bill" : "bills"}` : "your bills"} aside before anything else${p.nudges && p.nudges.bills ? ", and remind you the morning before each one" : ""}.`);
-  const feel = { short: "Give you an early heads-up when money's getting tight, and help you find where to slow down.", just: "Tell you when payday is close and what's left until then.",
-    left: `Point out spare money${goal ? ` that could go to your ${goal.toLowerCase()} fund` : " you could put aside"}.`, varies: "Watch for the months that run short, and warn you before they do." }[p.feel];
-  if (feel) out.push(feel);
+  // how the month ends: several can be true; the most careful one first, and spare money too when there's some
+  const feels = [].concat(p.feel || []), FEELS = { short: "Give you an early heads-up when money's getting tight, and help you find where to slow down.", varies: "Watch for the months that run short, and warn you before they do.",
+    just: "Tell you when payday is close and what's left until then.", left: `Point out spare money${goal ? ` that could go to your ${goal.toLowerCase()} fund` : " you could put aside"}.` };
+  const careful = ["short", "varies", "just"].find(f => feels.includes(f));
+  if (careful) out.push(FEELS[careful]);
+  if (feels.includes("left")) out.push(FEELS.left);
   if (goal) out.push(`Track your ${goal === "Something else" ? "savings goal" : `${goal.toLowerCase()} fund`}${p.goal.target ? ` to €${Number(p.goal.target).toLocaleString("en-GB")}` : ""}, and show what to put aside each month.`);
   if (p.people && p.people !== "me") out.push({ partner: "Keep shared costs with your partner in mind when we talk.", family: "Keep the whole family's costs in mind when we talk.", flat: "Keep costs you share with flatmates in mind when we talk." }[p.people]);
   if (why.has("home")) out.push("Keep your Home setup close: rooms, what's bought and what's left.");
@@ -55,9 +58,9 @@ export function shouldOnboard() {
 export function openOnboarding() {
   const S = store.model.settings, R = S.reminders || {};
   el = $("#onb"); step = 0; dir = 1;
-  st = { why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), custom: [], adding: false, newBill: "", amounts: {}, days: {}, balance: "", feel: null, people: null, goal: null, goalAmt: "",
+  st = { why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), custom: [], adding: false, newBill: "", amounts: {}, days: {}, balance: "", feel: new Set(), people: null, goal: null, goalAmt: "",
     nudge: { bills: R.bills !== false, payday: R.payday !== false, weekly: !!R.weekly }, lang: String(S.voiceLang || "en-GB").startsWith("fi") ? "fi" : "en",
-    name: S.name || "", email: "", mode: "up", sent: false, ids: {} };
+    name: S.name || "", tone: Math.max(0, Math.min(5, Number(S.skinTone) || 0)), email: "", mode: "up", sent: false, ids: {} };
   el.hidden = false; document.body.classList.add("onb-open"); paint();
 }
 /* Data arrived from another device while the questions were open: they're already answered there. */
@@ -68,7 +71,14 @@ export function dismissIfAnswered() {
 function close() { el.hidden = true; el.innerHTML = ""; document.body.classList.remove("onb-open"); store.updateSettings({ setupDone: true }); location.hash = "#now"; }
 
 /* The gold bar: how far along, filling smoothly from the step before (the width is set after it's drawn). */
-function progress() { const all = stepCount(), n = step; return `<div class="onb-prog" role="progressbar" aria-label="Step ${n + 1} of ${all}" aria-valuemin="1" aria-valuemax="${all}" aria-valuenow="${n + 1}"><i style="width:${Math.round(((n + 1 - dir) / all) * 100)}%" data-to="${Math.round(((n + 1) / all) * 100)}"></i></div>`; }
+/* The bar, and how far along as a percentage that counts up with it ("40%"). */
+function progress() {
+  const all = stepCount(), n = step, from = Math.round(((n + 1 - dir) / all) * 100), to = Math.round(((n + 1) / all) * 100);
+  return `<div class="onb-progw"><div class="onb-prog" role="progressbar" aria-label="Step ${n + 1} of ${all}, ${to}% done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${to}"><i style="width:${from}%" data-to="${to}"></i></div><span class="onb-pct" aria-hidden="true" data-from="${from}">${from}%</span></div>`;
+}
+/* Skin tones for their hand (the wave, and the handshake after their name): the default yellow, then five tones. */
+export const TONES = [["", "Default"], ["\u{1F3FB}", "Light"], ["\u{1F3FC}", "Medium-light"], ["\u{1F3FD}", "Medium"], ["\u{1F3FE}", "Medium-dark"], ["\u{1F3FF}", "Dark"]];
+const hand = (base, t = st.tone) => base + TONES[t][0];
 const back = () => (step > 0 ? `<button type="button" class="onb-back" data-back>Back</button>` : sync.configured && !sync.user ? `<button type="button" class="onb-back" data-signin-first>Sign in</button>` : "");
 const head = (title, sub) => `<div class="onb-in">${progress()}${back()}<h1>${title}</h1>${sub ? `<p class="onb-p">${sub}</p>` : ""}`;
 const radios = (name, opts, cur) => `<div class="onb-opts" role="radiogroup" aria-label="${esc(name)}">${opts.map(([v, t, s]) => `<button type="button" role="radio" class="onb-opt" data-pick="${esc(String(v))}" aria-checked="${String(cur) === String(v)}"><i aria-hidden="true"></i><span><b>${esc(t)}</b>${s ? `<small>${esc(s)}</small>` : ""}</span></button>`).join("")}</div>`;
@@ -111,8 +121,8 @@ function paint() {
       <p class="onb-p">With your pay, your bills and this, I work out how much is yours to spend every day.</p>` + tail("Next");
     focus("#obBal");
   } else if (s === "feel") {
-    el.innerHTML = head(`How does the end of the month usually feel${by(", ")}?`, "No wrong answer. It helps me know when to cheer you on and when to give you a gentle heads-up.")
-      + radios("How the month usually ends", FEEL.map(([v, t]) => [v, t]), st.feel) + tail("Next");
+    el.innerHTML = head(`How does the end of the month usually feel${by(", ")}?`, "Pick all that are true: some months are different. It helps me know when to cheer you on and when to give you a gentle heads-up.")
+      + chips(FEEL.map(([v, t]) => [v, t]), v => st.feel.has(v), "feel") + tail("Next");
   } else if (s === "people") {
     el.innerHTML = head("Who shares your money life?", "So I can talk about shared bills and costs the way they really work in your home.")
       + radios("Who you share money with", PEOPLE.map(([v, t]) => [v, t]), st.people) + tail("Next");
@@ -130,11 +140,13 @@ function paint() {
       + tail("Next");
   } else if (s === "name") {
     el.innerHTML = `<div class="onb-in">${progress()}${back()}
-      <div class="onb-hi" aria-hidden="true"><span class="onb-wave">👋</span></div>
+      <div class="onb-hi" aria-hidden="true"><span class="onb-wave">${hand("\u{1F44B}")}</span></div>
       <h1>Before we go on, what should I call you?</h1>
       <p class="onb-p">So we can be on first-name terms. I'll use it from here on, and whenever we talk about your money.</p>
       <label class="sr" for="obName">Your first name</label>
-      <input class="onb-amt onb-name" id="obName" placeholder="Your name" value="${esc(st.name)}" maxlength="40" autocomplete="given-name" autocapitalize="words" enterkeyhint="next">`
+      <input class="onb-amt onb-name" id="obName" placeholder="Your name" value="${esc(st.name)}" maxlength="40" autocomplete="given-name" autocapitalize="words" enterkeyhint="next">
+      <p class="onb-l" id="obToneL">And your hand</p>
+      <div class="onb-tones" role="radiogroup" aria-labelledby="obToneL">${TONES.map(([, label], k) => `<button type="button" role="radio" class="onb-tone" data-tone="${k}" aria-checked="${k === st.tone}" aria-label="${label}"><span aria-hidden="true">${hand("\u{270B}", k)}</span></button>`).join("")}</div>`
       + tail("Nice to meet you");   // then the balance: "Thanks, Antti. What does your bank say right now?"
     focus("#obName");
     $("#obName", el).addEventListener("keydown", e => { if (e.key === "Enter") { keepRows(); next(false); } });
@@ -169,7 +181,13 @@ function paint() {
     if (!st.sent) { focus(st.email ? "#obPass" : "#obEmail"); $("#obPass", el).addEventListener("keydown", e => { if (e.key === "Enter") { keepRows(); next(false); } }); }
   }
   // the gold bar fills to this step, and the step slides in
-  requestAnimationFrame(() => { const bar = el && $(".onb-prog i", el); if (bar) bar.style.width = bar.dataset.to + "%"; });
+  requestAnimationFrame(() => {
+    const bar = el && $(".onb-prog i", el), pct = el && $(".onb-pct", el); if (!bar) return;
+    bar.style.width = bar.dataset.to + "%";
+    const a = Number(pct.dataset.from), b = Number(bar.dataset.to), t0 = performance.now();
+    const tick = now => { const k = Math.min(1, (now - t0) / 700), e = 1 - Math.pow(1 - k, 3); pct.textContent = `${Math.round(a + (b - a) * e)}%`; if (k < 1) requestAnimationFrame(tick); };
+    if (a !== b) requestAnimationFrame(tick); else pct.textContent = `${b}%`;
+  });
   el.onclick = onClick;
   if (dir !== 0) el.scrollTop = 0;
 }
@@ -180,6 +198,8 @@ function onClick(e) {
   if (t.closest("[data-signin-first]")) { el.hidden = true; el.innerHTML = ""; document.body.classList.remove("onb-open"); import("./more.js").then(m => m.openAuth("in")); return; }
   if (t.closest("[data-done]")) { close(); return; }
   if (t.closest("[data-switch]")) { st.mode = st.mode === "up" ? "in" : "up"; again(); return; }
+  const fe = t.closest("[data-feel]"); if (fe) { const v = fe.dataset.feel; st.feel.has(v) ? st.feel.delete(v) : st.feel.add(v); again(v); return; }
+  const tn = t.closest("[data-tone]"); if (tn) { st.tone = Number(tn.dataset.tone); $$("[data-tone]", el).forEach(x => x.setAttribute("aria-checked", x === tn)); const w = $(".onb-wave", el); if (w) w.textContent = hand("\u{1F44B}"); return; }
   const w = t.closest("[data-why]"); if (w) { const v = w.dataset.why; st.why.has(v) ? st.why.delete(v) : st.why.add(v); again(v); return; }
   if (t.closest("[data-addbill]")) { st.adding = true; again(); return; }
   if (t.closest("[data-savebill]")) { addBill(); return; }
@@ -193,12 +213,19 @@ function onClick(e) {
     else if (s === "nudges") st.lang = v;
     else st[s] = v;
     $$("[data-pick]", p.parentElement).forEach(x => x.setAttribute("aria-checked", x === p));
-    if (s === "feel" || s === "people") setTimeout(() => { if (id() === s) next(false); }, 320);   // one choice: on to the next question
+    if (s === "people") setTimeout(() => { if (id() === s) next(false); }, 320);   // one choice: on to the next question
     return;
   }
   if (t.closest("[data-back]")) { keepRows(); step--; dir = -1; paint(); return; }
   if (t.closest("[data-later]")) { keepRows(); next(true); return; }
   if (t.closest("[data-next]")) { keepRows(); next(false); }
+}
+/* After their name: Koti's hand and theirs (in their tone) meet and shake, "Nice to meet you, Antti", then on. */
+function shake() {
+  const f = first();
+  el.insertAdjacentHTML("beforeend", `<div class="onb-shake" role="status"><div class="onb-hands" aria-hidden="true"><span class="h-you">${hand("\u{1FAF1}")}</span><span class="h-koti">\u{1FAF2}</span></div><p>Nice to meet you${f ? `, ${f}` : ""}</p></div>`);
+  const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  setTimeout(() => { step++; dir = 1; paint(); }, reduce ? 1100 : 2000);
 }
 /* What they told Koti, as a profile Koti reads with every question (settings.profile). */
 const saveProfile = patch => store.updateSettings({ profile: { ...(store.model.settings.profile || {}), ...patch, at: new Date().toISOString().slice(0, 10) } });
@@ -246,8 +273,10 @@ function next(later) {
     if (v == null || Number.isNaN(v)) return msg("Type the number from your bank, like 1120.");
     setBalanceNow(/^\s*-/.test(raw) ? -v : v);
   }
-  if (s === "feel" && !later && st.feel) saveProfile({ feel: st.feel });
-  if (s === "feel" && !later && st.feel) remember(FEEL.find(([v]) => v === st.feel)[2]);
+  if (s === "feel" && !later && st.feel.size) {
+    saveProfile({ feel: [...st.feel] });
+    FEEL.filter(([v]) => st.feel.has(v)).forEach(([, , m]) => remember(m));
+  }
   if (s === "people" && !later && st.people) saveProfile({ people: st.people });
   if (s === "people" && !later && st.people) remember(PEOPLE.find(([v]) => v === st.people)[2]);
   if (s === "goal" && !later && st.goal) {
@@ -264,7 +293,8 @@ function next(later) {
   if (s === "name") {
     const name = String(st.name || "").trim().slice(0, 40);
     if (!later && !name) return msg("Type your name, or tap Later.");
-    if (name) store.updateSettings({ name });
+    if (name) store.updateSettings({ name, skinTone: st.tone });
+    if (name && !later) { shake(name); return; }
   }
   if (s === "learned" && !steps().includes("account")) { close(); return; }
   if (s === "account") { if (later) { close(); return; } return account(); }
