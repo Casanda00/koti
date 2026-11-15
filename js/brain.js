@@ -140,7 +140,7 @@ export async function ask({ message = "", audio = null, history = [], spoken = f
   else body.message = String(message).trim() + (doc ? ` [added Photo ${doc.scan.id}]` : "");
   const d = await invoke(body);
   autoApply(d.actions || []);
-  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, done: d.done === true, table: d.table && Array.isArray(d.table.columns) && Array.isArray(d.table.rows) ? d.table : null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
+  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, done: d.done === true, reread: typeof d.reread === "string" ? d.reread : null, table: d.table && Array.isArray(d.table.columns) && Array.isArray(d.table.rows) ? d.table : null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
 }
 
 /* Remembering and forgetting happen as soon as Koti says so: the chat shows it, with Undo. */
