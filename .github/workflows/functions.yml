@@ -38,4 +38,6 @@ jobs:
         if: steps.secrets.outputs.ready == 'true'
         run: |
           # _shared holds code the functions import (the model and how it's asked); it isn't a function itself.
-          for f in supabase/functions/*/; do n="$(basename "$f")"; case "$n" in _*) continue;; esac; supabase functions deploy "$n" --project-ref "$SUPABASE_PROJECT_REF"; done
+          # --yes: the CLI asks before deploying and a workflow can't answer (15 November 2026: "Confirmation required …
+          # Nothing was changed"). --remote replaces the deprecated --project-ref.
+          for f in supabase/functions/*/; do n="$(basename "$f")"; case "$n" in _*) continue;; esac; supabase functions deploy "$n" --remote="$SUPABASE_PROJECT_REF" --yes; done
