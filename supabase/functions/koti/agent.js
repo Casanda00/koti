@@ -495,6 +495,47 @@ const allPhotosOf = messages => { const ids = [];
   for (const m of messages) { const t = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(c => c.text || "").join("") : "";
     for (const x of t.matchAll(/\[(?:added )?Photo ([\w-]{1,40})[,\]]/g)) if (!ids.includes(x[1])) ids.push(x[1]); }
   return ids; };
+/* Amounts in what they typed: "350e for the sofa, 350 for the bed frame, 69 € transport", "1 119,00 €". Days (14.11.),
+   times, years and quantities (2 x, 3 kpl, 20 %) aren't amounts. */
+export function amountsIn(text) {
+  const out = [], t = String(text || "");
+  const re = /(€\s*)?(\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,](\d{1,2}))?(?![\d.:\/])(\s*(?:€|e\b|eur(?:o|os)?\b|euros?\b))?/gi;
+  for (const m of t.matchAll(re)) {
+    const before = t.slice(Math.max(0, m.index - 1), m.index), after = t.slice(m.index + m[0].length, m.index + m[0].length + 6);
+    if (/[\d.,:\/]/.test(before) || /^\s*(x\b|kpl|pcs|%|\.|:)/i.test(after)) continue;
+    const money = !!(m[1] || m[4]), grouped = /[ \u00a0]/.test(m[2]);
+    if (grouped && !money && !m[3]) continue;   // "14 350" is two numbers, not 14,350
+    const v = Number(m[2].replace(/[ \u00a0]/g, "") + (m[3] ? "." + m[3] : ""));
+    if (!(v > 0 && v < 1e6) || (!money && !m[3] && v >= 1900 && v <= 2100)) continue;
+    out.push(v);
+  }
+  return out;
+}
+
+/* What this turn is about, worked out in code so "it", "they", "update it" and "the order" land on the right thing:
+   the newest photo, the cards shown last, and the amounts they just typed (with what they add up to, and the photo
+   or saved purchase that total belongs to). 15 November 2026: they typed the JYSK lines (350 + 350 + 350 + 69 =
+   1,119, the photo's total) with "Can you update it", and Koti didn't connect them to the receipt. */
+export function contextOf(M, today, messages, photos, allPhotos, lastUser) {
+  const notes = [], eur = v => `€${(Math.round(v * 100) / 100).toFixed(2)}`, nm = namer(M);
+  const newest = allPhotos[allPhotos.length - 1], p = newest ? photos.get(newest) : null;
+  if (p) { const n = Array.isArray(p.reading.lines) ? p.reading.lines.length : 0;
+    notes.push(`The newest photo is ${p.id}: a ${p.docType} from ${p.title || "an unknown shop"}${p.reading.date ? `, ${p.reading.date}` : ""}${p.total != null ? `, total ${eur(p.total)}` : ""}, ${n ? `${n} lines read` : p.reading.payments ? `${p.reading.payments.length} payments read` : "read without its lines"}.`); }
+  else if (newest) notes.push(`The newest photo is ${newest}: the reader didn't read it (read_photo sends it).`);
+  const lastCards = [...messages].reverse().find(m => m.role === "assistant" && typeof m.content === "string" && /\[Cards shown: /.test(m.content));
+  if (lastCards) notes.push(`Cards shown last: ${(lastCards.content.match(/\[Cards shown: ([^\]]*)\]/) || [])[1]}.`);
+  const xs = amountsIn(lastUser);
+  if (xs.length >= 2) {
+    const sum = xs.reduce((s, v) => s + E.cents(v), 0) / 100;
+    notes.push(`The amounts in their message: ${xs.map(eur).join(" + ")} = ${eur(sum)}.`);
+    const ph = [...photos.values()].reverse().find(x => typeof x.total === "number" && Math.abs(x.total - sum) < 0.02);
+    const since = E.addDays(today, -60), tx = M.transactions.filter(t => t.kind === "expense" && t.date >= since && Math.abs(Number(t.amount) - sum) < 0.02).sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+    if (ph) notes.push(`That is exactly the total of Photo ${ph.id} (${ph.title || ph.docType}): these are that receipt's lines, one purchase. "It", "they", "the order" mean that receipt: save_purchase with photo ${ph.id} and these lines.`);
+    else if (p && typeof p.total === "number" && sum < p.total) notes.push(`Photo ${p.id}'s total is ${eur(p.total)}: ${eur(p.total - sum)} of it isn't in these amounts. Ask what it was, or make it its own line.`);
+    if (tx) notes.push(`A saved purchase has the same total: ${tx.payee || nm(tx.categoryId)} on ${tx.date}, ${eur(Number(tx.amount))}${Array.isArray(tx.lines) && tx.lines.length ? `, with ${tx.lines.length} lines` : ", saved as one amount without lines"}. If they mean that one, say it's already saved; a new save would count it twice.`);
+  }
+  return notes.length ? `What this turn is about (worked out by Koti's code from this chat and their records; use it to know what "it", "they", "that" and "the order" mean):\n- ${notes.join("\n- ")}` : "";
+}
 export const SEPARATE = /separate|each (one )?(as|on) its own|one by one|erikseen|erillis/i;
 export const SAVE_ASK = /\b(save|tallenna|keep it|add it)\b/i;
 const lastUserText = messages => { const m = [...messages].reverse().find(x => x.role === "user"); return !m ? "" : typeof m.content === "string" ? m.content.split("\n\n[Photo")[0] : (m.content.find(c => c.type === "text") || {}).text || ""; };
@@ -602,6 +643,9 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
   const memory = chatMemory(pinned, earlier);
   const messages = [{ role: "system", content: systemPrompt(M, today, { lang, mode, focus }) }, ...(memory ? [{ role: "system", content: memory }] : []), ...cleanHistory(history)];
   const photos = photosOf(messages), shownScans = shownScansOf(messages), lastUser = lastUserText(messages), allPhotos = allPhotosOf(messages);
+  // What this turn is about, just before what they said.
+  const turnAbout = mode === "chat" ? contextOf(M, today, messages, photos, allPhotos, lastUser) : "";
+  if (turnAbout && messages[messages.length - 1] && messages[messages.length - 1].role === "user") messages.splice(messages.length - 1, 0, { role: "system", content: turnAbout });
   let photoTable = null, reread = null, rereadAs = "receipt", codeTable = false;
   // The photo they just added: Koti looks at it too, on this turn (a question about it, or a photo that isn't a receipt).
   const last = messages[messages.length - 1];

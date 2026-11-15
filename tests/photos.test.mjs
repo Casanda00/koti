@@ -253,3 +253,34 @@ test("the app: a purchase card opens Add's Check it screen with the lines, categ
   const k = read("js/koti.js");
   assert.match(k, /a\.type === "purchase"[^]*s\.openReading\(\{ r: \{ ai: true, docType: "receipt"[^]*s\.openParsed\(parsed\)/);
 });
+
+// "Better context is needed": Koti works out what this turn is about in code, before the model reads it.
+test("amounts are picked out of what they typed, without days, years or quantities", () => {
+  assert.deepEqual(A.amountsIn("I can give you a breakdown of the payment. 350e for the sofa. 350 for bed frame, 350e for mattress and 69e for transportation. Can you update it"), [350, 350, 350, 69]);
+  assert.deepEqual(A.amountsIn("YHTEENSÄ 1 119,00 € on 14.11. at 14:02, 2 x lamp, 2026"), [1119]);
+  assert.deepEqual(A.amountsIn("€12.50 and 3,40"), [12.5, 3.4]);
+  assert.deepEqual(A.amountsIn("bought 3 kpl, 20 % off"), []);
+});
+
+test("what this turn is about: the newest photo, the cards shown last, and amounts that add up to the photo's total", async () => {
+  const msgs = [{ role: "system", content: A.chatMemory([B.readingText("p1", { ...jysk, parsed: { ...jysk.parsed, lines: [] } })]) },
+    { role: "assistant", content: "A JYSK receipt.\n[Cards shown: Receipt from JYSK · €1,119.00 (save_scan p1): opened]" }];
+  const photos = A.photosOf(msgs), said = "350e for the sofa. 350 for bed frame, 350e for mattress and 69e for transportation. Can you update it";
+  const c = A.contextOf(M, TODAY, msgs, photos, ["p1"], said);
+  assert.match(c, /The newest photo is p1: a receipt from JYSK.*, 2026-11-14, total €1119\.00, read without its lines/);
+  assert.match(c, /Cards shown last: Receipt from JYSK · €1,119\.00 \(save_scan p1\): opened/);
+  assert.match(c, /€350\.00 \+ €350\.00 \+ €350\.00 \+ €69\.00 = €1119\.00/);
+  assert.match(c, /exactly the total of Photo p1[^]*save_purchase with photo p1/);
+  assert.match(A.contextOf(M, TODAY, msgs, photos, ["p1"], "350 sofa and 350 bed"), /€419\.00 of it isn't in these amounts/);
+  assert.match(A.contextOf(M, TODAY, [], new Map(), ["p2"], "hi"), /p2: the reader didn't read it/);
+  // a saved purchase with the same total: they may mean that one (saving again would count it twice)
+  assert.match(A.contextOf(M, TODAY, [], new Map(), [], "it was 30 + 31"), /A saved purchase has the same total: [^]*2026-10-20, €61\.00[^]*count it twice/);
+  // it goes to the model just before what they said
+  const { f, sent } = turnsOf([say("Got it.")]);
+  await A.runAgent({ fetch: f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, pinned: [B.readingText("p1", jysk)], history: [{ role: "user", content: "Here's the receipt [added Photo p1]" }, { role: "assistant", content: "A JYSK receipt." }, { role: "user", content: said }] });
+  const m = sent[0].messages;
+  assert.equal(m.at(-1).role, "user");
+  assert.match(m.at(-2).content, /^What this turn is about[^]*exactly the total of Photo p1/);
+  // a photo from before photos were kept is said so, instead of being invisible
+  assert.match(B.photoTag({ photo: "data:image/jpeg;base64,x" }), /before Koti kept them[^]*add it again/);
+});

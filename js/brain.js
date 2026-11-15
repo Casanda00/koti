@@ -88,7 +88,8 @@ const tableText = t => (t && t.columns ? "\n" + [t.columns, ...t.rows].map(r => 
 const cardsText = actions => { const a = (actions || []).filter(x => x && x.type); if (!a.length) return "";
   return `\n[Cards shown: ${a.map(x => `${describeAction(x).title || x.type}${x.scanId ? ` (save_scan ${x.scanId})` : ""}: ${x.status || "waiting"}`).join("; ")}]`; };
 /* A turn as Koti reads it: words, and on a photo's turn which photo it was; a reply with its table and its cards. */
-export const photoTag = m => m.scan ? ` [added Photo ${m.scan.id}]` : m.photoId ? ` [added Photo ${m.photoId}, not read: the reader found no receipt or bill in it]` : "";
+export const photoTag = m => m.scan ? ` [added Photo ${m.scan.id}]` : m.photoId ? ` [added Photo ${m.photoId}, not read: the reader found no receipt or bill in it]`
+  : m.photo || m.pdf ? " [added a photo before Koti kept them: it can't be read again; ask them to add it again]" : "";
 const turnText = m => m.content + (m.role === "assistant" ? tableText(m.table) + cardsText(m.actions) : photoTag(m));
 const turns = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content);
 export const WINDOW = 16;
