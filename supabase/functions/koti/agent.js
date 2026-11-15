@@ -626,7 +626,7 @@ const NOT_CLAIM = /(not|n't|nothing|never|no|until|before|once|when|if|to be|wil
 function buttonsNamed(text) {
   const out = [], t = String(text || "");
   for (const m of t.matchAll(/\b(?:tap|press|click|hit|use|napauta|paina)\s+(?:on\s+)?(?:the\s+)?["“'‘]?([A-Za-zÄÖÅäöå][\wÄÖÅäöå'’ -]{0,30}?)["”'’]?(?=\s+(?:button|card|on|to|and|in|under|below|for|so|then|if)\b|[.,;:!?)—–-]|$)/gi)) out.push(m[1].trim());
-  for (const m of t.matchAll(/\b(?:the\s+)?["“]?([A-Z][a-z]+(?: [a-z]+){0,2})["”]? (?:card|button)\b/g)) out.push(m[1].trim());
+  for (const m of t.matchAll(/\b(?:the\s+)?["“]?([A-Z][a-z]+(?: [a-z]+){0,2})["”]? (?:card|button)\b/g)) if (!/ (on|the|to|a|an|of|for|in|at)\b/i.test(m[1])) out.push(m[1].trim());
   return out.filter(b => !/^(tap|press|click|use|open|the|a|an|this|that|each|your|its|on|napauta|paina)\b/i.test(b) || GENERIC.test(b));
 }
 const GENERIC = /^(it|this|that|the card|card|cards|each card|the button|button|the cards|below|here|kortti|korttia)$/i;
@@ -646,7 +646,7 @@ export function honestyIssues(r, { actions = [], earlier = [], saved = false } =
   for (const b of buttonsNamed(reply)) {
     if (GENERIC.test(b)) { if (!actions.length && !waiting.length) { issues.push("Your answer tells them to tap a card, but no card is shown."); break; } continue; }
     const k = b.toLowerCase();
-    if (![...ok].some(x => k === x || k.startsWith(x) || x.startsWith(k))) {
+    if (![...ok].some(x => k === x || x.startsWith(k + " ") || k === x + " button")) {   // the button, or a shortening of it ("Check")
       issues.push(`Your answer tells them to use "${b}", but ${here.size ? `the buttons on screen are: ${[...here].map(x => `"${x.replace(/^\w/, c => c.toUpperCase())}"`).join(", ")}` : "no card is shown, so there's nothing to tap"}.`); break;
     }
   }
@@ -658,6 +658,7 @@ export function plainReply(reply, { actions = [], earlier = [] } = {}, lang = "e
   const fi = lang === "fi", st = { actions, earlier, saved: false };
   const keep = String(reply || "").split(/(?<=[.!?])\s+/).filter(s => s && !honestyIssues({ reply: s }, st).length).join(" ").trim();
   const a = actions.find(x => BUTTONS[x.type]), tail = a ? (fi ? `Napauta kortin "${BUTTONS[a.type]}"-painiketta.` : `Tap "${BUTTONS[a.type]}" on the card below.`)
+    : earlier.some(c => c.status === "waiting" || c.status === "opened") ? (fi ? "Mitään ei ole vielä tallennettu: napauta yllä olevaa korttia, tarkista ja tallenna." : "Nothing is saved yet: tap the card above to check it and save.")
     : (fi ? "Mitään ei ole vielä tallennettu." : "Nothing is saved yet: tell me what to save and I'll put it on a card.");
   return keep ? `${keep} ${tail}` : tail;
 }
@@ -850,7 +851,10 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
   let r = await think(maxRounds);
   // Checked before it goes back (a verifier, not a hope): asked for a breakdown of a photo, the answer carries the
   // breakdown, worked out in code; and a save card already shown for a photo isn't shown again unless they asked to save.
-  const askedBreakdown = mode === "chat" && BREAKDOWN.test(lastUser) && !looked.some(n => n === "spending" || n === "month_ahead");
+  // Giving lines ("a breakdown of the payment: 350 for the sofa, 350…") isn't asking for one (15 November 2026: that
+  // message sent the photo to be read again, which dropped the purchase card made from those very lines).
+  const givesLines = amountsIn(lastUser).length >= 2;
+  const askedBreakdown = mode === "chat" && BREAKDOWN.test(lastUser) && !givesLines && !looked.some(n => n === "spending" || n === "month_ahead");
   if (mode === "chat" && !tableOf(r.table) && (photoTable || askedBreakdown)) {
     const by = /categor|kategori|where|mihin/i.test(lastUser) ? "category" : "item";
     // A photo in this chat first; otherwise a receipt they saved (with Add) that they named, or "the receipt" saved last.
@@ -873,6 +877,7 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
     if (b && b.table) { r.table = b.table; codeTable = true; } else { reread = id; rereadAs = /\b(bill|invoice|lasku)\b/i.test(lastUser) || (p && p.docType === "bill") ? "bill" : "receipt"; }
   }
   // Read without its lines: the app reads the photo again with the same reader as Add, and asks again by itself.
+  if (reread && actions.some(x => x.type === "purchase")) reread = null;   // a purchase from their lines: nothing to read again
   if (mode === "chat" && reread && !tableOf(r.table)) { r.reply = lang === "fi" ? "Luen kuvan uudelleen rivi riviltä…" : "Reading the photo again, line by line…"; actions.length = 0; }
   // Never "I can't read the lines" next to the lines: the sentence is the code's when the answer denies its own table.
   const tb = tableOf(r.table);
@@ -885,7 +890,11 @@ export async function runAgent({ fetch: f = fetch, key, M, today, lang = "en", m
     const groups = new Map(); actions.forEach(x => { if (x.type === "expense" && x.payee) { const k = lower(x.payee) + "|" + x.date; groups.set(k, [...(groups.get(k) || []), x]); } });
     for (const g of groups.values()) if (g.length > 1) {
       const lines = g.map(x => ({ name: x.note || x.category || x.payee, price: x.amount, category: x.category, place: null }));
-      const merged = { id: g[0].id, type: "purchase", payee: g[0].payee, date: g[0].date, total: lines.reduce((s, l) => s + E.cents(l.price), 0) / 100, lines, scanId: null };
+      // as save_purchase makes it, with the photo whose total it is (the receipt these lines belong to)
+      const sum = lines.reduce((s, l) => s + E.cents(l.price), 0) / 100, ph = [...photos.values()].reverse().find(p => typeof p.total === "number" && Math.abs(p.total - sum) < 0.02);
+      const made = action(M, today, "save_purchase", { payee: g[0].payee, date: g[0].date, photo: ph ? ph.id : null, lines }, { photos, allPhotos, drafts });
+      const merged = made.error ? { type: "purchase", payee: g[0].payee, date: g[0].date, total: sum, lines, scanId: null } : made;
+      merged.id = g[0].id;
       actions.splice(actions.indexOf(g[0]), 1, merged); g.slice(1).forEach(x => actions.splice(actions.indexOf(x), 1));
     }
   }

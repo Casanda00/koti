@@ -30,7 +30,7 @@ test("a save that didn't happen goes back to the model with what's wrong, and it
 test("still claiming a save after the check: the code says plainly that nothing is saved", async () => {
   const claim = say("Confirmed — the receipt lines are saved, sorted into Shopping and Home setup.");
   const { r } = await run([claim, claim, claim], [opened, { role: "user", content: "add them to the Jysk receipt" }]);
-  assert.equal(r.reply, "Nothing is saved yet: tell me what to save and I'll put it on a card.");
+  assert.equal(r.reply, "Nothing is saved yet: tap the card above to check it and save.", "the card opened before is the one to save");
 });
 
 test("a button that isn't there: 'tap Confirm', 'the Save scan card', with no card on screen", async () => {
@@ -56,6 +56,8 @@ test("what passes: not-yet saves, real buttons, a card still waiting, and saves 
   for (const reply of ["Nothing is saved yet — tap Check and save on the card to save it.", "Once you save it, it shows in Spending.", "It isn't saved until you tap Save on the Check it screen.", "Tap the card to check the lines."])
     assert.deepEqual(A.honestyIssues({ reply }, { actions: scan }), [], reply);
   assert.deepEqual(A.honestyIssues({ reply: "Tap Save it on the card." }, { earlier: [{ title: "€5 at Lidl", status: "waiting" }] }), [], "a card from before is still waiting");
+  assert.equal(A.honestyIssues({ reply: "Tap Save scan to open and save it." }, { earlier: [{ title: "€1,119.00 at JYSK", status: "waiting" }] }).length, 1, "'Save scan' isn't 'Save'");
+  assert.deepEqual(A.honestyIssues({ reply: "Tap Check on the card." }, { actions: [{ type: "scan" }] }), [], "a shortening of the real button");
   assert.deepEqual(A.honestyIssues({ reply: "Saved: your JYSK purchase is in Spending." }, { earlier: [{ title: "€1,119.00 at JYSK", status: "done" }] }), [], "they saved it themselves");
   assert.deepEqual(A.honestyIssues({ reply: "Your JYSK receipt is saved with 4 lines." }, { saved: true }), [], "a saved receipt that was looked up");
   assert.equal(A.honestyIssues({ reply: "I've added the sofa to your list." }, { actions: [{ type: "list" }] }).length, 1, "a card is waiting, not done");
