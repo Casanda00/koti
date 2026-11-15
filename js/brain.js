@@ -88,7 +88,8 @@ const tableText = t => (t && t.columns ? "\n" + [t.columns, ...t.rows].map(r => 
 const cardsText = actions => { const a = (actions || []).filter(x => x && x.type); if (!a.length) return "";
   return `\n[Cards shown: ${a.map(x => `${describeAction(x).title || x.type}${x.scanId ? ` (save_scan ${x.scanId})` : ""}: ${x.status || "waiting"}`).join("; ")}]`; };
 /* A turn as Koti reads it: words, and on a photo's turn which photo it was; a reply with its table and its cards. */
-const turnText = m => m.content + (m.role === "assistant" ? tableText(m.table) + cardsText(m.actions) : m.scan ? ` [added Photo ${m.scan.id}]` : "");
+export const photoTag = m => m.scan ? ` [added Photo ${m.scan.id}]` : m.photoId ? ` [added Photo ${m.photoId}, not read: the reader found no receipt or bill in it]` : "";
+const turnText = m => m.content + (m.role === "assistant" ? tableText(m.table) + cardsText(m.actions) : photoTag(m));
 const turns = messages => messages.filter(m => (m.role === "user" || m.role === "assistant") && m.content);
 export const WINDOW = 16;
 export const historyOf = messages => turns(messages).slice(-WINDOW).map(m => ({ role: m.role, content: turnText(m) }));
@@ -130,17 +131,17 @@ async function invoke(body) {
    an older copy got a "change this bill" card it couldn't draw (14 November 2026). */
 export const ACTION_TYPES = ["scan", "expense", "list", "reminder", "bill", "payment", "change_bill", "bill_not_owed", "goal", "budget", "remember", "forget"];
 
-export async function ask({ message = "", audio = null, history = [], spoken = false, image = null, doc = null, about = null }) {
+export async function ask({ message = "", audio = null, history = [], spoken = false, image = null, doc = null, about = null, again = false }) {
   // spoken: the phone heard these words. With a recording it's spoken too. Only then does the answer come with a voice.
   // image and doc: a photo added in the chat (doc is its message, with the reading). about: a chat opened from a bill.
   const photos = photosOfChat(doc ? [...history, doc] : history), earlier = earlierOf(history);
   const body = { mode: "chat", history: historyOf(history), can: ACTION_TYPES, ...(spoken && !audio ? { spoken: true } : {}), ...(image ? { image } : {}), ...(about ? { about } : {}),
-    ...(photos.length ? { photos } : {}), ...(earlier.length ? { earlier } : {}) };
+    ...(photos.length ? { photos } : {}), ...(earlier.length ? { earlier } : {}), ...(again ? { again: true } : {}) };
   if (audio) { if (audio.size < 1200) throw Object.assign(new Error("Didn't hear anything. Hold the button a moment longer."), { code: "short" }); body.audio = await blobToDataURL(audio); }
-  else body.message = String(message).trim() + (doc ? ` [added Photo ${doc.scan.id}]` : "");
+  else body.message = String(message).trim() + (doc ? photoTag(doc) : "");
   const d = await invoke(body);
   autoApply(d.actions || []);
-  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, done: d.done === true, reread: typeof d.reread === "string" ? d.reread : null, table: d.table && Array.isArray(d.table.columns) && Array.isArray(d.table.rows) ? d.table : null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
+  return { heard: d.heard || null, reply: d.reply || "", speech: d.speech || null, done: d.done === true, reread: typeof d.reread === "string" ? d.reread : null, rereadAs: d.rereadAs === "bill" ? "bill" : "receipt", table: d.table && Array.isArray(d.table.columns) && Array.isArray(d.table.rows) ? d.table : null, followUps: d.followUps || [], actions: (d.actions || []).filter(a => !AUTO.has(a.type)), remembered: (d.actions || []).filter(a => AUTO.has(a.type)) };
 }
 
 /* Remembering and forgetting happen as soon as Koti says so: the chat shows it, with Undo. */

@@ -84,7 +84,7 @@ test("the app: photos in the chat go into the conversation, and a bill has Ask K
   assert.match(k, /addEventListener\("change", e => \{ const f = e\.target\.files\[0\]; e\.target\.value = ""; if \(f\) sendPhoto\(f\); \}\)/);
   assert.match(k, /openReading\(\{ r: m\.scan\.r/);
   assert.match(p, /openKoti\(\{ about: \{ kind: "bill", id: bill\.id, name: bill\.name \} \}\)/);
-  assert.match(i, /runAgent\(\{[^}]*image, about, pinned, earlier \}\)/);
+  assert.match(i, /runAgent\(\{[^}]*image, about, pinned, earlier, again: body\.again === true \}\)/);
 });
 
 test("a breakdown of a photo is a table from its reading, cards are never claimed as done, and chips never answer a card", () => {
@@ -157,7 +157,7 @@ test("a receipt read without its lines is read again by the app, with the same r
   assert.equal(A.breakdownOf(A.photosOf([{ role: "system", content: A.chatMemory([B.readingText("p1", bare)]) }]), "p1").reread, "p1");
   const k = read("js/koti.js"), b = read("js/brain.js");
   assert.match(k, /if \(r\.reread\) r = await readAgain\(/);
-  assert.match(k, /readReceipt\(prepared, null, "receipt"\)/, "the same reader as Add, told it's a receipt");
+  assert.match(k, /readReceipt\(prepared, null, as\)/, "the same reader as Add, told what it is");
   assert.match(b, /reread: typeof d\.reread === "string" \? d\.reread : null/);
 });
 
@@ -178,4 +178,40 @@ test("a receipt saved with Add is broken down in the chat too, from its saved li
   assert.deepEqual(r.table.rows, [["Bread", "Shopping", "2.50"], ["Cheese", "Shopping", "10.00"], ["Total", "", "12.50"]]);
   assert.equal(r.reply, "Your Lidl from 10 November, line by line.");
   assert.ok(A.TOOLS.some(t => t.function.name === "receipt_breakdown"));
+});
+
+// 15 November 2026, again: a JYSK photo in the chat came back "I couldn't read the individual lines", with no card.
+// The chat called the same reader as Add, but without saying what it was (Add does: Receipt or Bill), the reader said
+// "not a receipt", and the chat quietly left the picture to the chat model at low resolution. Now every photo keeps
+// its id, the reader is told what they typed, and Koti can send any photo to the reader itself (read_photo).
+test("Koti sends a photo the reader didn't read to the reader itself, as a receipt or a bill, once", async () => {
+  const history = [{ role: "user", content: "Here's the receipt [added Photo p1, not read: the reader found no receipt or bill in it]" }];
+  const { f, sent } = turnsOf([{ tool_calls: [{ id: "c1", type: "function", function: { name: "read_photo", arguments: JSON.stringify({ photo: null, as: "receipt" }) } }] }, say("Reading it now.")]);
+  const r = await A.runAgent({ fetch: f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, image: "data:image/jpeg;base64,AAAA", history });
+  assert.equal(r.reread, "p1"); assert.equal(r.rereadAs, "receipt");
+  assert.equal(sent[0].messages.at(-1).content[1].image_url.detail, "high", "a photo that wasn't read is seen at full resolution");
+  assert.ok(A.TOOLS.some(t => t.function.name === "read_photo"));
+  // the model gives up instead: the check sends it to the reader all the same
+  const g = turnsOf([say("This is a JYSK receipt for €1,119 — I couldn't read the individual lines; send a clearer close-up.")]);
+  const r2 = await A.runAgent({ fetch: g.f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, history });
+  assert.equal(r2.reread, "p1");
+  assert.match(r2.reply, /Reading the photo again/);
+  // after the app read it again, it isn't sent again (no loop)
+  const h = turnsOf([say("I couldn't read the lines.")]);
+  const r3 = await A.runAgent({ fetch: h.f, key: "k", M, today: TODAY, can: B.ACTION_TYPES, history, again: true });
+  assert.equal(r3.reread, undefined);
+  assert.match(A.look(M, TODAY, "read_photo", { photo: "p1" }, { allPhotos: ["p1"], again: true }).error, /just read again/);
+  assert.match(A.look(M, TODAY, "read_photo", { photo: "p4" }, { allPhotos: ["p1"] }).error, /No photo called "p4"/);
+});
+
+test("the app: every photo keeps its id, the reader is told what they typed, and its failures aren't hidden", () => {
+  const k = read("js/koti.js");
+  assert.match(k, /photoId: id \}/);
+  assert.match(k, /photos\.set\(id, prepared\);\n    let r = null;/, "kept on hand whether it was read or not");
+  assert.match(k, /readReceipt\(prepared, null, hintOf\(typed\)\)/);
+  assert.match(k, /r\.aiError\.code === "limit"\) throw r\.aiError/);
+  assert.match(k, /ask\(\{ message, history, doc, again: true/);
+  assert.equal(B.photoTag({ photoId: "p2" }), " [added Photo p2, not read: the reader found no receipt or bill in it]");
+  assert.equal(B.photoTag({ photoId: "p2", scan: { id: "p2" } }), " [added Photo p2]");
+  assert.equal(B.historyOf([{ role: "user", content: "the receipt", photoId: "p1" }])[0].content, "the receipt [added Photo p1, not read: the reader found no receipt or bill in it]");
 });

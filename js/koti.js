@@ -228,11 +228,12 @@ async function send({ message = "", audio = null, spoken = false, quiet = false,
   if (message && !mine) msgs.push({ role: "user", content: message });
   ui.input.value = ""; busy = true; paint();
   try {
-    const doc = mine && mine.scan ? mine : null;
+    const doc = mine && (mine.scan || mine.photoId) ? mine : null;
     let r = await ask({ message, audio, history, spoken: spoken && !audio && speaks(), image, doc, about: about ? { kind: about.kind, id: about.id } : null });
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
-    // The photo was read without its lines: read it again with the same reader as Add (told it's a receipt), then ask
-    // again, once. After the app was closed the picture isn't on hand any more: they're asked to add it again.
+    // Koti asked for the photo to go through the reader again (the same as Add, told what it is: a receipt or a bill),
+    // because it wasn't read, or was read without its lines. The app reads it and asks again, once. After the app was
+    // closed the picture isn't on hand any more: they're asked to add it again.
     if (r.reread) r = await readAgain(r, { message: r.heard || message, history, doc });
     // At the end of a real conversation, once a day, Koti asks how it did instead of closing straight away.
     const rate = r.done && !quiet && shouldAsk(msgs);
@@ -250,16 +251,21 @@ async function send({ message = "", audio = null, spoken = false, quiet = false,
 }
 
 async function readAgain(r, { message, history, doc }) {
-  const m = [...history, ...(doc ? [doc] : [])].find(x => x.scan && x.scan.id === r.reread), prepared = photos.get(r.reread);
-  if (!m || !prepared) return { ...r, reply: "I don't have that photo's lines. Add the photo again and I'll read it line by line.", table: null };
+  const id = r.reread, as = r.rereadAs === "bill" ? "bill" : "receipt";
+  const m = [...history, ...(doc ? [doc] : [])].find(x => (x.scan && x.scan.id === id) || x.photoId === id), prepared = photos.get(id);
+  if (!m || !prepared) return { ...r, reply: "I don't have that photo on hand any more. Add it again and I'll read it line by line.", table: null };
   msgs.push({ role: "assistant", content: r.reply }); paint();
-  let again = null;
-  try { again = await readReceipt(prepared, null, "receipt"); } catch { /* keeps the first reading */ }
-  if (!again || !again.ai || !((again.parsed && again.parsed.lines) || []).length) return { ...r, reply: "I still couldn't read its lines. Try a sharper photo, flat and in good light.", table: null };
-  m.scan.r = keepOf(again); persist();   // the same message object as in history: the new lines go with the question
-  const next = await ask({ message, history, doc, about: about ? { kind: about.kind, id: about.id } : null });
+  let again = null, why = null;
+  try { again = await readReceipt(prepared, null, as); } catch (e) { why = e; }
+  if (why && why.code === "limit") return { ...r, reply: why.message, table: null };
+  const lines = again && again.ai ? ((again.parsed && again.parsed.lines) || []).length + ((again.payments || []).length) : 0;
+  if (!again || !again.ai || (as === "receipt" && !lines && !again.bill)) return { ...r, reply: `I still couldn't read it${again && again.aiError ? ` (${again.aiError.message})` : why ? ` (${why.message})` : ""}. Try a sharper photo, flat and in good light, with the lines in view.`, table: null };
+  m.scan = { id, r: keepOf(again) }; persist();   // the same message object as in history: the new reading goes with the question
+  const next = await ask({ message, history, doc, again: true, about: about ? { kind: about.kind, id: about.id } : null });
   return { ...next, reread: null };
 }
+/* What they typed with the photo says what it is, as choosing Receipt or Bill does on Add. */
+export const hintOf = text => /\b(bill|invoice|lasku|e-?lasku)\b/i.test(text) ? "bill" : /\b(receipt|kuitti|kuitin|kuitista)\b/i.test(text) ? "receipt" : null;
 
 /* A photo or screenshot added in the chat: read by Koti's reader (the same as a scan), shown as yours, then sent with
    what was read so Koti can say what it is and offer the record that fits. The picture goes along once, so Koti can
@@ -277,18 +283,23 @@ const keepOf = r => ({ ai: true, docType: r.docType, reply: r.reply || null, bil
 async function sendPhoto(file) {
   if (busy) return;
   if (!canAsk()) { toast(aiOffReason("Koti")); return; }
-  const typed = ui.input.value.trim(), id = "p" + (msgs.filter(m => m.scan).length + 1);
-  const mine = { role: "user", content: typed || "Here's a photo.", typed: !!typed };
+  const typed = ui.input.value.trim(), id = "p" + (msgs.filter(m => m.scan || m.photoId).length + 1);
+  // Every photo has its id and stays on hand for this session, read or not: Koti can send it to the reader again.
+  const mine = { role: "user", content: typed || "Here's a photo.", typed: !!typed, photoId: id };
   msgs.push(mine); ui.input.value = ""; busy = true; paint();
   let image = null;
   try {
     const prepared = await prepareFile(file);
     if (prepared.type === "application/pdf") mine.pdf = true; else { mine.photo = thumbOf(prepared); image = await toDataURL(prepared.blob); }
     paint();
+    photos.set(id, prepared);
     let r = null;
-    try { r = await readReceipt(prepared, null, null); } catch (e) { if (e.code !== "not_receipt") throw e; }   // not a receipt: Koti still looks at it
-    if (r && r.ai) { mine.scan = { id, r: keepOf(r) }; photos.set(id, prepared); }
-    else if (!image) throw new Error("Koti couldn't read that PDF. Try a photo or a screenshot of it.");
+    // The same reader as Add, told what it is when they said so. Not a receipt: Koti still looks at it (and can send
+    // it to the reader again as a receipt or a bill). The AI reader failing isn't hidden behind the phone's own reader.
+    try { r = await readReceipt(prepared, null, hintOf(typed)); } catch (e) { if (e.code !== "not_receipt") throw e; }
+    if (r && !r.ai && r.aiError && r.aiError.code === "limit") throw r.aiError;
+    if (r && r.ai) mine.scan = { id, r: keepOf(r) };
+    else if (!image) throw new Error(r && r.aiError ? r.aiError.message : "Koti couldn't read that PDF. Try a photo or a screenshot of it.");
   } catch (e) {
     msgs.push({ role: "error", content: String(e.message || e) });
     busy = false; persist(); paint(); return;
