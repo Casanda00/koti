@@ -15,6 +15,7 @@ import { setBalanceNow } from "./money.js";
 import { payDateFor, LAST_WORKING_DAY, LAST_DAY } from "./paydays.js";
 import { remember } from "./brain.js";
 import { consent, setConsent, showConsentBanner } from "./privacy.js";
+import { wantsHomeStep, canPrompt, promptInstall, isIOS, isAndroid, markSeen } from "./install.js";
 
 /* Everything said, in both languages. A function where the words depend on an answer. */
 export const TX = {
@@ -59,6 +60,8 @@ export const TX = {
     privT: "Your data, your choice", privP: "I keep your records to work out your money: on this phone, and in your account if you create one. No ads, no tracking, and your data is never sold.",
     privAiT: "My AI", privAi: "Reading receipts, talking with me and today's note send what you scan, say or ask, with the records needed to answer, to OpenAI. Nothing is sent unless you allow it, and you can change your mind any time in You → Privacy.",
     privLink: "Read the privacy policy", privNo: "Only necessary", privYes: "Allow AI",
+    homeT: "One last thing: let's put Koti on your Home Screen", homeP: "That's how your reminders reach you: before a bill, on payday, on Sunday. It opens like an app, even offline.",
+    homeIos: ["Tap Share", "Add to Home Screen", "Tap Add"], homeAnd: ["Open the menu", "Install app", "Tap Install"], homeGo: "Add to Home Screen", homeDone: "I've added it", homeLater: "Maybe later", homeIcon: "Koti on your Home Screen",
     accUpT: f => `Let's keep it safe${f ? `, ${f}` : ""}`, accInT: f => `Welcome back${f ? `, ${f}` : ""}`,
     accUpP: "Create your account and everything you've told me is saved, on every device you sign in on.", accInP: "Sign in, and what's in your account comes to this phone.",
     email: "Email", password: "Password", pwHint: "At least 8 characters. We'll email you to confirm the address.", haveAcc: "I already have an account", newAcc: "Create a new account instead",
@@ -116,6 +119,8 @@ export const TX = {
     privT: "Tietosi, valintasi", privP: "Säilytän tietosi, jotta voin laskea raha-asiasi: tällä puhelimella ja tililläsi, jos luot sellaisen. Ei mainoksia, ei seurantaa, eikä tietojasi myydä koskaan.",
     privAiT: "Tekoälyni", privAi: "Kuittien lukeminen, keskustelu kanssani ja päivän muistiinpano lähettävät skannaamasi, sanomasi tai kysymäsi ja vastaamiseen tarvittavat tiedot OpenAI:lle. Mitään ei lähetetä ilman lupaasi, ja voit muuttaa mielesi milloin vain kohdasta You → Privacy.",
     privLink: "Lue tietosuojaseloste", privNo: "Vain välttämättömät", privYes: "Salli tekoäly",
+    homeT: "Vielä yksi juttu: laitetaan Koti kotivalikkoon", homeP: "Näin muistutukset tavoittavat sinut: ennen laskua, palkkapäivänä, sunnuntaina. Koti aukeaa kuin sovellus, myös ilman verkkoa.",
+    homeIos: ["Napauta Jaa", "Lisää Koti-valikkoon", "Napauta Lisää"], homeAnd: ["Avaa valikko", "Asenna sovellus", "Napauta Asenna"], homeGo: "Lisää kotivalikkoon", homeDone: "Lisäsin sen", homeLater: "Ehkä myöhemmin", homeIcon: "Koti kotivalikossa",
     accUpT: f => `Pidetään ne tallessa${f ? `, ${f}` : ""}`, accInT: f => `Tervetuloa takaisin${f ? `, ${f}` : ""}`,
     accUpP: "Luo tili, niin kaikki kertomasi tallentuu jokaiselle laitteelle, jolla kirjaudut.", accInP: "Kirjaudu, niin tilisi tiedot tulevat tälle puhelimelle.",
     email: "Sähköposti", password: "Salasana", pwHint: "Vähintään 8 merkkiä. Lähetämme sähköpostin osoitteen vahvistamiseksi.", haveAcc: "Minulla on jo tili", newAcc: "Luo uusi tili",
@@ -139,7 +144,7 @@ export const WHY = TX.en.WHY, FEEL = TX.en.FEEL, PEOPLE = TX.en.PEOPLE, GOALS = 
 /* Skin tones for their hand (the wave, and the handshake after their name): the default yellow, then five tones. */
 export const TONES = ["", "\u{1F3FB}", "\u{1F3FC}", "\u{1F3FD}", "\u{1F3FE}", "\u{1F3FF}"].map((m, k) => [m, TX.en.TONES[k]]);
 /* The steps, in order. */
-export const STEPS = ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account"];
+export const STEPS = ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account", "home"];
 
 /* What Koti will do for them, from their answers: shown on "Here's how I'll work for you", at most five lines. The
    same answers (settings.profile) go to Koti with every question, so it really works this way. */
@@ -172,7 +177,7 @@ const nextMonthStart = () => { const d = new Date(); const n = new Date(d.getFul
 let el = null, step = 0, st = null, dir = 1;
 const L = () => TX[st && st.lang === "fi" ? "fi" : "en"];
 /* The steps shown: the account is left out when signed in already, or with no server. */
-const steps = () => STEPS.filter(s => !(s === "account" && (sync.user || !sync.configured)) && !(s === "goalWhen" && st && !st.goal));   // the date only with a goal
+const steps = () => STEPS.filter(s => !(s === "account" && (sync.user || !sync.configured)) && !(s === "goalWhen" && st && !st.goal) && !(s === "home" && !(st && st.home)));   // the date only with a goal; the Home Screen only where it can go there
 export const stepCount = () => steps().length;
 const id = () => steps()[step];
 const go = s => { step = steps().indexOf(s); };
@@ -186,7 +191,7 @@ export function openOnboarding() {
   el = $("#onb"); step = 0; dir = 1;
   st = { lang: String(S.voiceLang || "en-GB").startsWith("fi") ? "fi" : "en", why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), custom: [], adding: false, newBill: "", amounts: {}, days: {},
     balance: "", feel: new Set(), people: null, goal: null, goalAmt: "", by: null, byMonth: "", nudge: { bills: R.bills !== false, payday: R.payday !== false, weekly: !!R.weekly },
-    name: S.name || "", tone: Math.max(0, Math.min(5, Number(S.skinTone) || 0)), email: "", mode: "up", sent: false, back: null, ids: {} };
+    home: wantsHomeStep(), name: S.name || "", tone: Math.max(0, Math.min(5, Number(S.skinTone) || 0)), email: "", mode: "up", sent: false, back: null, ids: {} };
   el.hidden = false; document.body.classList.add("onb-open"); paint();
 }
 /* Data arrived from another device while the questions were open: they're already answered there. */
@@ -194,6 +199,8 @@ export function dismissIfAnswered() {
   if (!el || el.hidden || shouldOnboard()) return;
   if (store.model.income.some(x => x.id !== (st && st.ids.income))) { el.hidden = true; el.innerHTML = ""; document.body.classList.remove("onb-open"); }
 }
+/* The account done (or left for later): the Home Screen last, where it can go there; otherwise finished. */
+function finish() { if (steps().includes("home") && id() !== "home") { go("home"); dir = 1; paint(); } else close(); }
 /* Finished (or the account left for later): the month, and the AI question if they never got to it. */
 function close() {
   el.hidden = true; el.innerHTML = ""; document.body.classList.remove("onb-open"); store.updateSettings({ setupDone: true }); location.hash = "#now";
@@ -310,6 +317,21 @@ function paint() {
     el.innerHTML = head(T.privT, T.privP)
       + `<div class="onb-priv"><h2>${T.privAiT}</h2><p>${T.privAi}</p><a href="privacy.html" target="_blank" rel="noopener">${T.privLink}</a></div>
       <div class="onb-foot onb-two"><button type="button" class="onb-go ghost" data-ai="no">${T.privNo}</button><button type="button" class="onb-go" data-ai="yes">${T.privYes}</button></div></div>`;
+  } else if (s === "home") {
+    markSeen();   // this is the first-visit sheet: it doesn't come again after
+    const ios = isIOS() || !isAndroid(), steps3 = ios ? T.homeIos : T.homeAnd, prompt = !ios && canPrompt();
+    el.innerHTML = head(T.homeT, T.homeP)
+      + `<div class="onb-guide ${ios ? "ios" : "and"}" role="img" aria-label="${esc(steps3.join(", "))}">
+        <div class="g-phone" aria-hidden="true">
+          <div class="g-screen g-browser"><div class="g-page"><b>Koti</b><i></i><i></i><i></i></div>
+            <div class="g-bar">${ios ? `<span class="g-url">koti</span><span class="g-share"></span>` : `<span class="g-url">koti</span><span class="g-menu"></span>`}</div>
+            <div class="g-sheet"><span class="g-row"></span><span class="g-row g-add">${esc(steps3[1])}</span><span class="g-row"></span></div>
+            <span class="g-tap"></span></div>
+          <div class="g-screen g-home"><span></span><span></span><span></span><span></span><span></span><span></span><span class="g-koti"><img src="icons/icon-192.png" alt=""><small>Koti</small></span></div>
+        </div>
+        <ol class="g-steps">${steps3.map((t, k) => `<li style="--k:${k}">${esc(t)}</li>`).join("")}</ol>
+      </div>
+      <div class="onb-foot"><button type="button" class="onb-later" data-homelater>${T.homeLater}</button><button type="button" class="onb-go" data-home="${prompt ? "prompt" : "done"}">${prompt ? T.homeGo : T.homeDone}</button></div></div>`;
   } else {
     el.innerHTML = st.sent ? `<div class="onb-in">${progress()}
       <div class="onb-hi" aria-hidden="true"><span class="onb-pop">✉️</span></div>
@@ -345,10 +367,12 @@ function paint() {
 function onClick(e) {
   const t = e.target, again = (just = null) => { keepRows(); st.just = just; dir = 0; paint(); st.just = null; };
   if (t.closest("[data-signin-first]")) { el.hidden = true; el.innerHTML = ""; document.body.classList.remove("onb-open"); import("./more.js").then(m => m.openAuth("in")); return; }
-  if (t.closest("[data-done]")) { close(); return; }
+  if (t.closest("[data-done]")) { finish(); return; }
+  if (t.closest("[data-homelater]")) { close(); return; }
+  const hm = t.closest("[data-home]"); if (hm) { if (hm.dataset.home === "prompt") promptInstall().then(() => close()); else close(); return; }
   if (t.closest("[data-switch]")) { st.mode = st.mode === "up" ? "in" : "up"; again(); return; }
   const lg = t.closest("[data-lang]"); if (lg) { st.lang = lg.dataset.lang; store.updateSettings({ voiceLang: st.lang === "fi" ? "fi-FI" : "en-GB" }); again(); setTimeout(() => { if (id() === "lang") next(false); }, 320); return; }
-  const ai = t.closest("[data-ai]"); if (ai) { setConsent({ ai: ai.dataset.ai === "yes" }); if (step >= steps().length - 1) close(); else advance(); return; }   // signed in already: privacy is the last step
+  const ai = t.closest("[data-ai]"); if (ai) { setConsent({ ai: ai.dataset.ai === "yes" }); if (steps()[step + 1] === "home" || step >= steps().length - 1) finish(); else advance(); return; }   // signed in already: privacy is the last step
   const ed = t.closest("[data-edit]"); if (ed) { keepRows(); st.back = "summary"; go(ed.dataset.edit); dir = -1; paint(); return; }
   const fe = t.closest("[data-feel]"); if (fe) { const v = fe.dataset.feel; st.feel.has(v) ? st.feel.delete(v) : st.feel.add(v); again(v); return; }
   const tn = t.closest("[data-tone]"); if (tn) { st.tone = Number(tn.dataset.tone); $$("[data-tone]", el).forEach(x => x.setAttribute("aria-checked", x === tn)); const w = $(".onb-wave", el); if (w) w.textContent = hand("\u{1F44B}"); return; }
@@ -467,7 +491,7 @@ function next(later) {
     saveProfile({ goal: { ...(store.model.settings.profile || {}).goal, by, monthly } });
   }
   if (s === "summary") st.back = null;
-  if (s === "account") { if (later) { close(); return; } return account(); }
+  if (s === "account") { if (later) { finish(); return; } return account(); }
   advance();
 }
 
@@ -480,7 +504,7 @@ async function account() {
   try {
     if (st.mode === "up") { const r = await signUp(email, pw); if (r.needsConfirm) { st.sent = true; dir = 0; paint(); return; } }
     else await signIn(email, pw);
-    close(); toast(st.mode === "up" ? T.madeT : T.inT);
+    toast(st.mode === "up" ? T.madeT : T.inT); finish();
   } catch (err) {
     const m = String(err.message || err);
     btn.disabled = false; btn.textContent = st.mode === "up" ? T.create : T.signin;

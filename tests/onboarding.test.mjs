@@ -15,9 +15,9 @@ const OB = await import("../js/onboarding.js");
 const A = await import("../supabase/functions/koti/agent.js");
 
 test("the order: language, four questions, the name, five more, a summary, what Koti will do, privacy, the account", () => {
-  assert.deepEqual(OB.STEPS, ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account"]);
-  assert.match(O, /const steps = \(\) => STEPS\.filter\(s => !\(s === "account" && \(sync\.user \|\| !sync\.configured\)\) && !\(s === "goalWhen" && st && !st\.goal\)\);/, "no account step when signed in or with no server; the goal's date only with a goal");
-  assert.match(O, /if \(step >= steps\(\)\.length - 1\) close\(\); else advance\(\);/, "then privacy is the last step");
+  assert.deepEqual(OB.STEPS, ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "goalWhen", "summary", "learned", "privacy", "account", "home"]);
+  assert.match(O, /!\(s === "account" && \(sync\.user \|\| !sync\.configured\)\) && !\(s === "goalWhen" && st && !st\.goal\)/, "no account step when signed in or with no server; the goal's date only with a goal");
+  assert.match(O, /if \(steps\(\)\[step \+ 1\] === "home" \|\| step >= steps\(\)\.length - 1\) finish\(\); else advance\(\);/, "with no account step, privacy leads to the Home Screen or the end");
 });
 
 test("everything is said in both languages, with the same keys, and the language picked first is the one used after", () => {
@@ -135,4 +135,17 @@ test("shorter, plainer questions", () => {
   assert.match(O, /<label class="onb-l onb-q" for="obAmt">/, "the question itself in bold");
   assert.match(C, /\.onb-q\{font-size:19px;font-weight:700/);
   assert.equal(OB.TX.en.billsT, "What do you spend money on?"); assert.equal(OB.TX.fi.billsT, "Mihin käytät rahaa?");
+});
+
+// "Last will be to add to Home Screen to receive notifications. A short video guiding the user on it."
+test("last: Koti on the Home Screen, with a guide that shows how, only where it can go there", () => {
+  const I = read("js/install.js");
+  assert.match(I, /export const wantsHomeStep = \(\) => !isNative\(\) && !isInstalled\(\) && !inAppBrowser\(\) && \(isIOS\(\) \|\| \/Android\/i\.test\(ua\) \|\| !!deferred\);/, "not in the phone app, not once installed, not on a computer that can't");
+  assert.match(O, /!\(s === "home" && !\(st && st\.home\)\)/);
+  assert.match(O, /function finish\(\) \{ if \(steps\(\)\.includes\("home"\) && id\(\) !== "home"\) \{ go\("home"\);/, "after the account (made, confirmed or left for later)");
+  assert.match(O, /class="onb-guide \$\{ios \? "ios" : "and"\}" role="img" aria-label=/, "the guide, for iPhone or Android, described for screen readers");
+  assert.match(O, /data-home="\$\{prompt \? "prompt" : "done"\}"/, "Android: the browser's own dialog, from our button");
+  assert.match(C, /@keyframes gSheet/); assert.match(C, /@keyframes gIcon/);
+  assert.match(O, /markSeen\(\);/); assert.match(I, /const tryShow = \(\) => \{ if \(read\(\)\.seen\) return;/, "and the install sheet doesn't come again after");
+  assert.equal(OB.TX.fi.homeIos.length, 3); assert.equal(OB.TX.en.homeT, "One last thing: let's put Koti on your Home Screen");
 });
