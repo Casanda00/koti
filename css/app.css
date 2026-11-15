@@ -635,10 +635,11 @@ body[data-mood] .views{padding-bottom:0}
 body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-in{max-width:560px;margin:0 auto;min-height:100%;padding:calc(var(--safe-top) + 26px) 20px calc(var(--safe-bottom) + 120px);display:grid;gap:12px;align-content:start;position:relative}
 /* The gold progress bar: a gold gradient that fills as you go, with a light sweeping across it. */
-:root{--gold:linear-gradient(90deg,#8C6420 0%,#C9962F 22%,#F3D27A 48%,#FFF0BF 56%,#E2B54B 72%,#A87A26 100%)}
+/* Honey gold: bright and warm, no brown ends (15 November 2026: "Change that gold color"). */
+:root{--gold:linear-gradient(90deg,#F2A900 0%,#FFC93C 30%,#FFE58F 50%,#FFC93C 70%,#F2A900 100%);--gold-solid:#F2B01E;--gold-ring:rgba(242,176,30,.28)}
 .onb-prog{position:relative;height:8px;border-radius:99px;background:var(--line);overflow:hidden;max-width:260px}
 .onb.lake .onb-prog{background:rgba(255,255,255,.28)}
-.onb-prog i{position:absolute;inset:0 auto 0 0;border-radius:inherit;background:var(--gold);background-size:200% 100%;box-shadow:0 0 10px rgba(226,181,75,.55);transition:width .7s cubic-bezier(.22,1,.36,1);animation:onbGold 2.6s linear infinite}
+.onb-prog i{position:absolute;inset:0 auto 0 0;border-radius:inherit;background:var(--gold);background-size:200% 100%;box-shadow:0 0 10px var(--gold-ring);transition:width .7s cubic-bezier(.22,1,.36,1);animation:onbGold 2.6s linear infinite}
 .onb-prog i::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.75) 50%,transparent 70%);background-size:220% 100%;animation:onbShine 2.2s ease-in-out infinite}
 @keyframes onbGold{to{background-position:-200% 0}}
 @keyframes onbShine{0%{background-position:160% 0}100%{background-position:-60% 0}}
@@ -657,11 +658,11 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 @keyframes onbWave{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(16deg)}20%,40%{transform:rotate(-8deg)}}
 .onb-pop{display:inline-block;animation:onbPop .5s cubic-bezier(.34,1.56,.64,1) .2s both}
 .onb-name{font-size:52px;margin-top:10px}
-.onb-name:focus{border-color:#C9962F}
+.onb-name:focus{border-color:var(--gold-solid)}
 /* Creating the account, the last step. */
 .onb-form{display:grid;gap:6px;margin-top:6px}
 .onb-field{font:600 18px var(--body);color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:14px;padding:14px 14px;width:100%}
-.onb-field:focus{outline:none;border-color:#C9962F;box-shadow:0 0 0 3px rgba(226,181,75,.25)}
+.onb-field:focus{outline:none;border-color:var(--gold-solid);box-shadow:0 0 0 3px var(--gold-ring)}
 .onb-hint{margin:2px 0 0;font-size:14px;color:var(--ink-2)}
 .onb-switch{justify-self:start;margin-top:6px;font-weight:600;color:var(--spruce);padding:6px 0}
 .onb-go:disabled{opacity:.6}
@@ -673,6 +674,11 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-tog i::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
 .onb-tog[aria-checked="true"] i{background:var(--gold)}
 .onb-tog[aria-checked="true"] i::after{transform:translateX(20px)}
+/* "Here's how I'll work for you": one line at a time, each with a gold check. */
+.onb-plan{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:12px}
+.onb-plan li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;font-size:17px;line-height:1.4;animation:onbIn .5s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(.35s + var(--k) * .35s)!important}
+.onb-plan i{width:28px;height:28px;border-radius:50%;background:var(--gold);position:relative;box-shadow:0 2px 8px var(--gold-ring)}
+.onb-plan i::after{content:"";position:absolute;left:9px;top:5px;width:7px;height:13px;border:solid #15161A;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
 .onb-back{position:absolute;right:20px;top:calc(var(--safe-top) + 16px);font-weight:600;color:inherit;padding:6px 0}
 .onb h1{font:800 52px/.95 var(--display);font-stretch:62%;margin:22px 0 4px;max-width:14ch}
 .onb-p{margin:0;font-size:17px;line-height:1.4;color:var(--ink-2);max-width:34ch}

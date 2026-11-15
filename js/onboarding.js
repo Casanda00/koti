@@ -22,7 +22,23 @@ export const FEEL = [["left", "There's usually some left", "Usually has some mon
 export const PEOPLE = [["me", "Just me", "Manages money on their own."], ["partner", "Me and a partner", "Shares money with a partner."], ["family", "A family with children", "Has a family with children."], ["flat", "Flatmates", "Lives with flatmates and shares some costs."]];
 export const GOALS = ["Holiday", "Emergency fund", "New home", "Car", "Something else"];
 /* The steps, in order. */
-export const STEPS = ["why", "pay", "bills", "balance", "feel", "people", "goal", "nudges", "name", "account"];
+export const STEPS = ["why", "pay", "bills", "balance", "feel", "people", "goal", "nudges", "name", "learned", "account"];
+/* What Koti will do for them, from their answers: shown on "Here's how I'll work for you", at most five lines. The
+   same answers (settings.profile) go to Koti with every question, so it really works this way. */
+export function planFor(p = {}) {
+  const out = [], why = new Set(p.why || []), goal = p.goal && p.goal.name;
+  out.push(why.has("spend") || !why.size ? "Keep your daily number up top: what's yours to spend each day until payday." : "Work out what's yours to spend each day until payday.");
+  if (p.bills || why.has("bills")) out.push(`Set ${p.bills ? `your ${p.bills} ${p.bills === 1 ? "bill" : "bills"}` : "your bills"} aside before anything else${p.nudges && p.nudges.bills ? ", and remind you the morning before each one" : ""}.`);
+  const feel = { short: "Give you an early heads-up when money's getting tight, and help you find where to slow down.", just: "Tell you when payday is close and what's left until then.",
+    left: `Point out spare money${goal ? ` that could go to your ${goal.toLowerCase()} fund` : " you could put aside"}.`, varies: "Watch for the months that run short, and warn you before they do." }[p.feel];
+  if (feel) out.push(feel);
+  if (goal) out.push(`Track your ${goal === "Something else" ? "savings goal" : `${goal.toLowerCase()} fund`}${p.goal.target ? ` to €${Number(p.goal.target).toLocaleString("en-GB")}` : ""}, and show what to put aside each month.`);
+  if (p.people && p.people !== "me") out.push({ partner: "Keep shared costs with your partner in mind when we talk.", family: "Keep the whole family's costs in mind when we talk.", flat: "Keep costs you share with flatmates in mind when we talk." }[p.people]);
+  if (why.has("home")) out.push("Keep your Home setup close: rooms, what's bought and what's left.");
+  if (why.has("where")) out.push("Show you where your money goes, by category, every week.");
+  if (p.nudges && p.nudges.weekly) out.push("Send you a short summary on Sunday evenings.");
+  return out.filter(Boolean).slice(0, 5);
+}
 const nextMonthStart = () => { const d = new Date(); const n = new Date(d.getFullYear(), d.getMonth() + 1, 1); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`; };
 const longDay = d => d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 let el = null, step = 0, st = null, dir = 1;
@@ -114,9 +130,16 @@ function paint() {
       <p class="onb-p">So we can be on first-name terms. I'll use it when we talk about your money.</p>
       <label class="sr" for="obName">Your first name</label>
       <input class="onb-amt onb-name" id="obName" placeholder="Your name" value="${esc(st.name)}" maxlength="40" autocomplete="given-name" autocapitalize="words" enterkeyhint="next">`
-      + tail(steps().includes("account") ? "Nice to meet you" : "Show me my month");
+      + tail("Nice to meet you");
     focus("#obName");
     $("#obName", el).addEventListener("keydown", e => { if (e.key === "Enter") { keepRows(); next(false); } });
+  } else if (s === "learned") {
+    const f = first(), plan = planFor(store.model.settings.profile || {});
+    el.innerHTML = `<div class="onb-in">${progress()}${back()}
+      <h1>${f ? `Nice to meet you, ${esc(f)}.` : "Nice to meet you."} Here's how I'll work for you</h1>
+      <p class="onb-p">From what you've told me. I'll keep learning as we go, and you can change any of it in You.</p>
+      <ul class="onb-plan">${plan.map((t, k) => `<li style="--k:${k}"><i aria-hidden="true"></i><span>${esc(t)}</span></li>`).join("")}</ul>
+      <div class="onb-foot"><button type="button" class="onb-go" data-next>${steps().includes("account") ? "Sounds good" : "Show me my month"}</button></div></div>`;
   } else {
     const f = first();
     el.innerHTML = st.sent ? `<div class="onb-in">${progress()}
@@ -170,6 +193,8 @@ function onClick(e) {
   if (t.closest("[data-later]")) { keepRows(); next(true); return; }
   if (t.closest("[data-next]")) { keepRows(); next(false); }
 }
+/* What they told Koti, as a profile Koti reads with every question (settings.profile). */
+const saveProfile = patch => store.updateSettings({ profile: { ...(store.model.settings.profile || {}), ...patch, at: new Date().toISOString().slice(0, 10) } });
 function msg(t) { const m = $("#obMsg", el); if (m) m.textContent = t; }
 function keepRows() {
   const v = sel => { const x = $(sel, el); return x ? x.value : null; };
@@ -185,6 +210,7 @@ function keepRows() {
 
 function next(later) {
   const s = id();
+  if (s === "why" && !later && st.why.size) saveProfile({ why: [...st.why] });
   if (s === "why" && !later && st.why.size) remember(`Wants Koti's help with ${WHY.filter(([v]) => st.why.has(v)).map(([, , m]) => m).join(", ")}.`);
   if (s === "pay" && !later) {
     const amount = parseMoney(st.amount);
@@ -195,6 +221,7 @@ function next(later) {
   if (s === "bills" && !later) {
     const missing = [...st.picked].filter(n => { const v = parseMoney(st.amounts[n]); return !v || Number.isNaN(v); });
     if (missing.length) return msg(`Add an amount for ${missing.join(", ")}, or tap it again to take it off.`);
+    if (st.picked.size) saveProfile({ bills: st.picked.size });
     [...st.picked].forEach((n, k) => { st.ids["b:" + n] = store.put("bills", { id: st.ids["b:" + n], name: n, amount: parseMoney(st.amounts[n]), frequency: "monthly", dueDay: st.days[n] || 1, anchorMonth: new Date().getMonth() + 1, startDate: (st.days[n] || 1) < new Date().getDate() ? nextMonthStart() : null, active: true, position: store.model.bills.length + k }).id; });
   }
   if (s === "balance" && !later) {
@@ -202,23 +229,27 @@ function next(later) {
     if (v == null || Number.isNaN(v)) return msg("Type the number from your bank, like 1120.");
     setBalanceNow(/^\s*-/.test(raw) ? -v : v);
   }
+  if (s === "feel" && !later && st.feel) saveProfile({ feel: st.feel });
   if (s === "feel" && !later && st.feel) remember(FEEL.find(([v]) => v === st.feel)[2]);
+  if (s === "people" && !later && st.people) saveProfile({ people: st.people });
   if (s === "people" && !later && st.people) remember(PEOPLE.find(([v]) => v === st.people)[2]);
   if (s === "goal" && !later && st.goal) {
     const target = parseMoney(st.goalAmt);
     if (st.goalAmt && (target == null || Number.isNaN(target) || target <= 0)) return msg("Type an amount like 1500, or leave it empty.");
+    saveProfile({ goal: { name: st.goal, target: target || null } });
     st.ids.goal = store.put("goals", { id: st.ids.goal, name: st.goal, target: target || null, saved: 0, monthly: null, targetDate: null, position: store.model.goals.length }).id;
   }
   if (s === "nudges" && !later) {
     const R = store.model.settings.reminders || {};
     store.updateSettings({ reminders: { ...R, bills: st.nudge.bills, payday: st.nudge.payday, weekly: st.nudge.weekly }, voiceLang: st.lang === "fi" ? "fi-FI" : "en-GB" });
+    saveProfile({ nudges: { ...st.nudge }, lang: st.lang });
   }
   if (s === "name") {
     const name = String(st.name || "").trim().slice(0, 40);
     if (!later && !name) return msg("Type your name, or tap Later.");
     if (name) store.updateSettings({ name });
-    if (!steps().includes("account")) { close(); return; }
   }
+  if (s === "learned" && !steps().includes("account")) { close(); return; }
   if (s === "account") { if (later) { close(); return; } return account(); }
   step++; dir = 1; paint();
 }
