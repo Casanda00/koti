@@ -9,7 +9,7 @@
 import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
 import { shouldAsk, rateChat, markAsked, feedback, forgetFeedback } from "./feedback.js";
-import { ask, readingText, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
+import { ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
 import { learned, forgetLearned } from "./learn.js";
 import { aiVoice } from "./hear.js";
@@ -228,7 +228,7 @@ async function send({ message = "", audio = null, spoken = false, quiet = false,
   if (message && !mine) msgs.push({ role: "user", content: message });
   ui.input.value = ""; busy = true; paint();
   try {
-    const doc = mine && mine.scan ? readingText(mine.scan.id, mine.scan.r) : null;
+    const doc = mine && mine.scan ? mine : null;
     const r = await ask({ message, audio, history, spoken: spoken && !audio && speaks(), image, doc, about: about ? { kind: about.kind, id: about.id } : null });
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
     // At the end of a real conversation, once a day, Koti asks how it did instead of closing straight away.
