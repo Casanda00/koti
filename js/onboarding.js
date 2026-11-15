@@ -55,7 +55,7 @@ export function shouldOnboard() {
 export function openOnboarding() {
   const S = store.model.settings, R = S.reminders || {};
   el = $("#onb"); step = 0; dir = 1;
-  st = { why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), amounts: {}, days: {}, balance: "", feel: null, people: null, goal: null, goalAmt: "",
+  st = { why: new Set(), amount: "", when: LAST_WORKING_DAY, day: 25, picked: new Set(), custom: [], adding: false, newBill: "", amounts: {}, days: {}, balance: "", feel: null, people: null, goal: null, goalAmt: "",
     nudge: { bills: R.bills !== false, payday: R.payday !== false, weekly: !!R.weekly }, lang: String(S.voiceLang || "en-GB").startsWith("fi") ? "fi" : "en",
     name: S.name || "", email: "", mode: "up", sent: false, ids: {} };
   el.hidden = false; document.body.classList.add("onb-open"); paint();
@@ -98,10 +98,12 @@ function paint() {
       + tail("Next: your bills");
     focus("#obAmt");
   } else if (s === "bills") {
-    el.innerHTML = head("What goes out every month?", "Tap the bills you pay, then add the amount and the day each one is due. I'll set that money aside before telling you what's yours to spend. Anything due before today starts next month.")
-      + chips(BILLS.map(n => [n, n]), n => st.picked.has(n), "bill")
+    el.innerHTML = head("What goes out every month?", "Tap the bills you pay, or add your own, then the amount and the day each one is due. I'll set that money aside before telling you what's yours to spend. Anything due before today starts next month.")
+      + chips([...BILLS, ...st.custom].map(n => [n, n]), n => st.picked.has(n), "bill").replace(/<\/div>$/, st.adding ? "</div>" : `<button type="button" class="onb-chip onb-add" data-addbill>+ Add your own</button></div>`)
+      + (st.adding ? `<div class="onb-newbill"><label class="sr" for="obNewBill">Your own bill</label><input class="onb-field" id="obNewBill" placeholder="e.g. Daycare, Car loan, Union fee" maxlength="40" value="${esc(st.newBill)}" enterkeyhint="done" autocapitalize="sentences"><button type="button" class="onb-addgo" data-savebill>Add</button></div>` : "")
       + `<div class="onb-rows">${[...st.picked].map(n => `<div class="onb-row"><span>${esc(n)}</span><input inputmode="decimal" placeholder="€0" aria-label="${esc(n)} amount" data-amt="${esc(n)}" value="${esc(st.amounts[n] || "")}"><select aria-label="${esc(n)} is due on day" data-dday="${esc(n)}">${Array.from({ length: 31 }, (_, k) => `<option value="${k + 1}"${k + 1 === (st.days[n] || 1) ? " selected" : ""}>Day ${k + 1}</option>`).join("")}</select></div>`).join("")}</div>`
-      + tail("Next: your balance");
+      + tail("Next: your name");
+    if (st.adding) { focus("#obNewBill"); $("#obNewBill", el).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addBill(); } }); }
   } else if (s === "balance") {
     el.innerHTML = head(`${by("Thanks, ", ". ")}What does your bank say right now?`, "Open your bank app and copy the number over. You only do this once: from here I keep count with you.")
       + `<label class="sr" for="obBal">Money in your account today</label>
@@ -179,6 +181,8 @@ function onClick(e) {
   if (t.closest("[data-done]")) { close(); return; }
   if (t.closest("[data-switch]")) { st.mode = st.mode === "up" ? "in" : "up"; again(); return; }
   const w = t.closest("[data-why]"); if (w) { const v = w.dataset.why; st.why.has(v) ? st.why.delete(v) : st.why.add(v); again(v); return; }
+  if (t.closest("[data-addbill]")) { st.adding = true; again(); return; }
+  if (t.closest("[data-savebill]")) { addBill(); return; }
   const b = t.closest("[data-bill]"); if (b) { const n = b.dataset.bill; st.picked.has(n) ? st.picked.delete(n) : st.picked.add(n); again(n); return; }
   const g = t.closest("[data-goal]"); if (g) { st.goal = st.goal === g.dataset.goal ? null : g.dataset.goal; again(st.goal); return; }
   const n = t.closest("[data-nudge]"); if (n) { st.nudge[n.dataset.nudge] = !st.nudge[n.dataset.nudge]; n.setAttribute("aria-checked", st.nudge[n.dataset.nudge]); return; }
@@ -198,6 +202,15 @@ function onClick(e) {
 }
 /* What they told Koti, as a profile Koti reads with every question (settings.profile). */
 const saveProfile = patch => store.updateSettings({ profile: { ...(store.model.settings.profile || {}), ...patch, at: new Date().toISOString().slice(0, 10) } });
+/* Their own bill (not in the list): it becomes a chip, already picked, with its amount and day to fill in. */
+function addBill() {
+  keepRows();
+  const name = String(st.newBill || "").trim().replace(/\s+/g, " ").slice(0, 40);
+  if (!name) { st.adding = false; dir = 0; paint(); return; }
+  const same = [...BILLS, ...st.custom].find(x => x.toLowerCase() === name.toLowerCase());
+  if (!same) st.custom.push(name);
+  st.picked.add(same || name); st.newBill = ""; st.adding = false; st.just = same || name; dir = 0; paint(); st.just = null;
+}
 function msg(t) { const m = $("#obMsg", el); if (m) m.textContent = t; }
 function keepRows() {
   const v = sel => { const x = $(sel, el); return x ? x.value : null; };
@@ -206,6 +219,7 @@ function keepRows() {
   if (v("#obBal") != null) st.balance = v("#obBal");
   if (v("#obGoalAmt") != null) st.goalAmt = v("#obGoalAmt");
   if (v("#obName") != null) st.name = v("#obName");
+  if (v("#obNewBill") != null) st.newBill = v("#obNewBill");
   if (v("#obEmail") != null) st.email = v("#obEmail").trim();
   $$("[data-amt]", el).forEach(i => { st.amounts[i.dataset.amt] = i.value; });
   $$("[data-dday]", el).forEach(s => { st.days[s.dataset.dday] = Number(s.value); });

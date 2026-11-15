@@ -76,3 +76,10 @@ test("once they've given their name, Koti uses it, now and then", () => {
   assert.doesNotMatch(O, /esc\(f\)/, "and never twice");
   assert.doesNotMatch(O, /That's everything/, "the name isn't the last question any more");
 });
+
+test("bills: their own, not only the ones listed", () => {
+  assert.match(O, /data-addbill>\+ Add your own</);
+  assert.match(O, /chips\(\[\.\.\.BILLS, \.\.\.st\.custom\]/, "their own bills sit with the others");
+  assert.match(O, /function addBill\(\) \{[^]*if \(!same\) st\.custom\.push\(name\);[^]*st\.picked\.add\(same \|\| name\)/, "added and picked; the same name twice is one bill");
+  assert.match(O, /if \(e\.key === "Enter"\) \{ e\.preventDefault\(\); addBill\(\); \}/);
+});
