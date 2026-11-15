@@ -201,10 +201,20 @@ export function openNewPassword() {
     onRight: async B => { const pw = $("#npPass", B).value; if (pw.length < 8) { $("#npMsg", B).dataset.state = "error"; return; }
       try { await setPassword(pw); closeSheet(); toast("Password updated"); } catch (err) { $("#npMsg", B).dataset.state = "error"; $("#npMsg", B).textContent = String(err.message || err); } } });
 }
+/* Signing out leaves nothing of the account on this phone: money, lists, chats, receipt photos (15 November 2026: "I
+   signed out and still see everything"). Signing in again brings it all back from the account. */
 async function doSignOut() {
   const n = pendingCount();
-  if (!confirm(n ? `${n} change${n === 1 ? " hasn't" : "s haven't"} reached your account yet. Sign out anyway? They stay on this device and upload when you sign back in.` : "Sign out on this device? Your data stays here, and syncs again when you sign back in.")) return;
-  await signOut(); toast("Signed out");
+  if (!confirm(n ? `${n} change${n === 1 ? " hasn't" : "s haven't"} reached your account yet and will be removed from this phone. Sign out anyway?` : "Sign out? Your money, lists and chats are removed from this phone. Sign in again to bring them back.")) return;
+  try { await signOut(); } catch (err) { toast(`Couldn't sign out: ${err.message || err}`); return; }
+  await clearAccountHere();
+  toast("Signed out"); setTimeout(() => location.reload(), 700);
+}
+/* What stays on the phone after signing out: this device's own choices, nothing of the account. */
+export const KEEP_ON_SIGN_OUT = ["koti.consent", "koti.install", "koti.palette", "koti.mode", "koti.heroView", "koti.aiLimit", "koti.reloadedFor", "kotiSpeaks"];
+export async function clearAccountHere(storage = localStorage) {
+  try { Object.keys(storage).filter(k => k.startsWith("koti") && !KEEP_ON_SIGN_OUT.includes(k)).forEach(k => storage.removeItem(k)); } catch {}
+  try { indexedDB.deleteDatabase("koti-files"); } catch {}   // receipt photos
 }
 
 /* Delete your account: everything in it, on the server and on this device. The App Store requires it in the app. */

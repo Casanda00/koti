@@ -261,4 +261,10 @@ export async function signUp(email, password) {
 }
 export async function sendReset(email) { const { error } = await sync.client.auth.resetPasswordForEmail(email, { redirectTo: redirect() + "#settings" }); if (error) throw error; }
 export async function setPassword(password) { const { error } = await sync.client.auth.updateUser({ password }); if (error) throw error; }
-export async function signOut() { await sync.client.auth.signOut(); }
+/* Signs out for real: the session ends everywhere if the server can be reached, and always on this device (the library
+   keeps you signed in when the server call fails, e.g. offline; 15 November 2026: "Signed out" while still signed in). */
+export async function signOut() {
+  const { error } = await sync.client.auth.signOut();
+  if (error) { const local = await sync.client.auth.signOut({ scope: "local" }); if (local.error) throw local.error; }
+  sync.user = null;
+}
