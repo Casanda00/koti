@@ -36,7 +36,8 @@ test("a conversation turn: memory is kept straight away, the rest come back as c
   assert.equal(calls[0].name, "koti");
   assert.equal(calls[0].body.message, "I'm saving for a sofa");
   assert.equal(calls[0].body.mode, "chat");
-  assert.equal(calls[0].body.history.length, 12);
+  assert.equal(calls[0].body.history.length, 16);
+  assert.deepEqual(calls[0].body.earlier, ["They: m0", "Koti: m1", "They: m2", "Koti: m3"], "the turns before the window go as working memory");
   assert.ok(calls[0].body.history.every(m => m.role !== "error"));
   assert.deepEqual(r.actions.map(a => a.type), ["list"]);
   assert.equal(r.remembered[0].done, true);
