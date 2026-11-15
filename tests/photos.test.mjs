@@ -84,7 +84,7 @@ test("the app: photos in the chat go into the conversation, and a bill has Ask K
   assert.match(k, /addEventListener\("change", e => \{ const f = e\.target\.files\[0\]; e\.target\.value = ""; if \(f\) sendPhoto\(f\); \}\)/);
   assert.match(k, /openReading\(\{ r: m\.scan\.r/);
   assert.match(p, /openKoti\(\{ about: \{ kind: "bill", id: bill\.id, name: bill\.name \} \}\)/);
-  assert.match(i, /runAgent\(\{[^}]*image, about, pinned, earlier, again: body\.again === true \}\)/);
+  assert.match(i, /runAgent\(\{[^}]*image, about, pinned, earlier, again: body\.again === true, drafts \}\)/);
 });
 
 test("a breakdown of a photo is a table from its reading, cards are never claimed as done, and chips never answer a card", () => {
@@ -251,7 +251,7 @@ test("the app: a purchase card opens Add's Check it screen with the lines, categ
   assert.deepEqual(P.lines.map(l => [l.name, l.categoryId, l.placeId]), [["Milk", cat.id, null], ["Lamp", null, null]]);
   assert.equal(P.amount, 23.4); assert.equal(P.categoryId, cat.id);
   const k = read("js/koti.js");
-  assert.match(k, /a\.type === "purchase"[^]*s\.openReading\(\{ r: \{ ai: true, docType: "receipt"[^]*s\.openParsed\(parsed\)/);
+  assert.match(k, /a\.type === "purchase"[^]*s\.openReading\(\{ r: \{ ai: true, docType: "receipt"[^]*s\.openParsed\(parsed, \{ onSaved: savedFor\(a\) \}\)/);
 });
 
 // "Better context is needed": Koti works out what this turn is about in code, before the model reads it.

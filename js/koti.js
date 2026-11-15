@@ -9,7 +9,7 @@
 import { $, esc, toast, icon, openSheet } from "./ui.js";
 import { store } from "./data.js";
 import { shouldAsk, rateChat, markAsked, feedback, forgetFeedback } from "./feedback.js";
-import { parsedOfPurchase, ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
+import { parsedOfPurchase, draftsOf, ask, conversation, saveConversation, newConversation, pastConversations, openConversation, deleteConversation, canAsk, describeAction, doAction, cachedBrief, brief, dismissBriefAction, memory, remember, forget } from "./brain.js";
 import { initTalk } from "./talk.js";
 import { learned, forgetLearned } from "./learn.js";
 import { aiVoice } from "./hear.js";
@@ -126,6 +126,7 @@ function paint() {
   u.log.innerHTML = aboutChip + msgs.map((m, i) => m.role === "user"
     ? `<div class="kmsg mine">${m.photo ? `<img class="kphoto" src="${esc(m.photo)}" alt="Your photo">` : m.pdf ? `<span class="kphoto pdf">PDF</span>` : ""}${!m.photo && !m.pdf || m.typed ? `<p>${esc(m.content)}</p>` : ""}</div>`
     : m.role === "error" ? `<div class="kmsg err"><p>${esc(m.content)}</p></div>`
+    : m.role === "note" ? `<p class="kmem kmem-saved">${icon("check", "ic xs")} ${esc(m.content)}</p>`
     : `<div class="kmsg koti">${m.content ? `<div class="ai-says"><span class="ai-mark" aria-hidden="true">${icon("spark", "ic sm")}</span><p>${esc(m.content)}</p></div>` : ""}
         ${tableHTML(m.table, m, i)}
         ${(m.actions || []).map((a, j) => m.table && m.table.action === a.id ? "" : cardHTML(a, `${i}:${j}`)).join("")}
@@ -182,6 +183,16 @@ function cardHTML(a, key) {
   return `<div class="kcard"><span class="ico g">${icon(d.icon)}</span><span class="rt">${esc(d.title)}${d.sub ? `<small>${esc(d.sub)}</small>` : ""}</span>${state}</div>`;
 }
 
+/* The Check it screen a card opened was saved (or the save undone): the card says so, the purchase being worked on
+   becomes "saved as record X", and a line in the chat says what was saved. Koti then knows it's saved. */
+const savedFor = a => saved => {
+  const d = a.draftId ? draftsOf(msgs).find(x => x.id === a.draftId) : null;
+  a.status = saved ? "done" : "undone";
+  if (d) { d.status = saved ? "saved" : "undone"; d.txId = saved ? saved.id : null; }
+  msgs.push({ role: "note", content: saved ? `Saved ${euroOf(saved.amount)}${saved.payee ? ` at ${saved.payee}` : ""}${saved.lines ? ` with ${saved.lines} lines` : ""}` : "Save undone" });
+  persist(); paint();
+};
+const euroOf = v => `€${(Math.round(Number(v) * 100) / 100).toFixed(2)}`;
 async function runCard(btn) {
   const [i, j] = btn.dataset.act.split(":"), brief = i === "b";
   const a = brief ? (cachedBrief() || { actions: [] }).actions.find(x => x.id === j) : msgs[+i] && msgs[+i].actions[+j];
@@ -189,12 +200,13 @@ async function runCard(btn) {
   if (a.type === "scan") {   // the photo's reading, on the usual "Check it" screen
     const m = msgs.find(x => x.scan && x.scan.id === a.scanId);
     if (!m) { toast("That photo isn't in this chat any more. Add it again."); return; }
-    import("./scan.js").then(s => s.openReading({ r: m.scan.r, file: photos.get(a.scanId) || null }));
+    import("./scan.js").then(s => s.openReading({ r: m.scan.r, file: photos.get(a.scanId) || null, onSaved: savedFor(a) }));
     a.status = "opened"; persist(); paint(); return;
   }
   if (a.type === "purchase") {   // one purchase with the lines they gave, on Add's "Check it" screen (with its photo when it's here)
     const parsed = parsedOfPurchase(a), file = a.scanId ? photos.get(a.scanId) || null : null;
-    import("./scan.js").then(s => file ? s.openReading({ r: { ai: true, docType: "receipt", reply: null, bill: null, payments: null, parsed }, file }) : s.openParsed(parsed));
+    import("./scan.js").then(s => file ? s.openReading({ r: { ai: true, docType: "receipt", reply: null, bill: null, payments: null, parsed }, file, onSaved: savedFor(a) }) : s.openParsed(parsed, { onSaved: savedFor(a) }));
+    const d = a.draftId ? draftsOf(msgs).find(x => x.id === a.draftId) : null; if (d && d.status === "proposed") d.status = "opened";
     a.status = "opened"; persist(); paint(); return;
   }
   btn.disabled = true;
@@ -243,7 +255,7 @@ async function send({ message = "", audio = null, spoken = false, quiet = false,
   ui.input.value = ""; busy = true; paint();
   try {
     const doc = mine && (mine.scan || mine.photoId) ? mine : null;
-    let r = await ask({ message, audio, history, spoken: spoken && !audio && speaks(), image, doc, about: about ? { kind: about.kind, id: about.id } : null });
+    let r = await ask({ message, audio, history, spoken: spoken && !audio && speaks(), image, doc, drafts: draftsOf(history), about: about ? { kind: about.kind, id: about.id } : null });
     if (audio) msgs.push({ role: "user", content: r.heard || "(recording)" });
     // Koti asked for the photo to go through the reader again (the same as Add, told what it is: a receipt or a bill),
     // because it wasn't read, or was read without its lines. The app reads it and asks again, once. After the app was
@@ -251,7 +263,7 @@ async function send({ message = "", audio = null, spoken = false, quiet = false,
     if (r.reread) r = await readAgain(r, { message: r.heard || message, history, doc });
     // At the end of a real conversation, once a day, Koti asks how it did instead of closing straight away.
     const rate = r.done && !quiet && shouldAsk(msgs);
-    msgs.push({ role: "assistant", content: r.reply, actions: r.actions, followUps: r.followUps, remembered: r.remembered, table: r.table || null, ...(rate ? { rate: "ask" } : {}) });
+    msgs.push({ role: "assistant", content: r.reply, actions: r.actions, followUps: r.followUps, remembered: r.remembered, table: r.table || null, ...(r.draft ? { draft: r.draft } : {}), ...(r.offer ? { offer: r.offer } : {}), ...(rate ? { rate: "ask" } : {}) });
     if ((audio || spoken) && !quiet) playReply({ speech: r.speech, text: r.reply });
     // They said that's all: Koti's goodbye shows, then the chat closes and the next one starts fresh.
     if (r.done && !quiet) { if (rate) markAsked(); else setTimeout(finishChat, 1800); }
@@ -275,7 +287,7 @@ async function readAgain(r, { message, history, doc }) {
   const lines = again && again.ai ? ((again.parsed && again.parsed.lines) || []).length + ((again.payments || []).length) : 0;
   if (!again || !again.ai || (as === "receipt" && !lines && !again.bill)) return { ...r, reply: `I still couldn't read it${again && again.aiError ? ` (${again.aiError.message})` : why ? ` (${why.message})` : ""}. Try a sharper photo, flat and in good light, with the lines in view.`, table: null };
   m.scan = { id, r: keepOf(again) }; persist();   // the same message object as in history: the new reading goes with the question
-  const next = await ask({ message, history, doc, again: true, about: about ? { kind: about.kind, id: about.id } : null });
+  const next = await ask({ message, history, doc, again: true, drafts: draftsOf(history), about: about ? { kind: about.kind, id: about.id } : null });
   return { ...next, reread: null };
 }
 /* What they typed with the photo says what it is, as choosing Receipt or Bill does on Add. */
