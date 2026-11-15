@@ -28,3 +28,24 @@ test("nothing of the account stays on the phone: only this device's own choices"
   assert.deepEqual(Object.keys(fake).sort(), ["koti.consent", "koti.install", "koti.mode", "kotiSpeaks", "other.app"]);
   assert.ok(!KEEP_ON_SIGN_OUT.some(k => /model|meta|chat|account|brief|auth/.test(k)));
 });
+
+// Security review, 15 November 2026: a session that ends any other way than Sign out (expired or revoked, signed out on
+// another device, the password changed) left the account's data on the phone, visible while signed out.
+test("a session that ends without Sign out clears the account from the phone too, keeping only unsent changes aside", async () => {
+  const s = read("js/sync.js");
+  assert.match(s, /if \(!sync\.user && !leaving && store\.meta\.owner && \(event === "SIGNED_OUT" \|\| event === "INITIAL_SESSION"\)\) endedElsewhere\(\);/);
+  assert.match(s, /export async function signOut\(\) \{\n  leaving = true;/, "Sign out in You clears the phone itself, after asking");
+  const { sessionEnded } = await import("../js/leave.js");
+  const mk = () => { const f = { "koti.model": "{}", "koti.meta": "{}", "koti.chats": "[]", "koti.auth": "t", "koti.consent": "{}" };
+    Object.defineProperty(f, "removeItem", { value: k => { delete f[k]; }, enumerable: false }); return f; };
+  let stashed = null;
+  const store = { meta: { owner: "u1" }, stashAccount(o) { stashed = o; fake["koti.account." + o] = "{}"; } };
+  let fake = mk();
+  assert.deepEqual(await sessionEnded(store, false, fake), { owner: "u1", kept: false });
+  assert.deepEqual(Object.keys(fake), ["koti.consent"], "nothing of the account"); assert.equal(stashed, null);
+  fake = mk();
+  assert.deepEqual(await sessionEnded(store, true, fake), { owner: "u1", kept: true });
+  assert.deepEqual(Object.keys(fake).sort(), ["koti.account.u1", "koti.consent"], "unsent changes kept aside for that account, nothing shown");
+  assert.equal(await sessionEnded({ meta: { owner: null } }, false, mk()), null, "no account's data here: nothing to do");
+  assert.match(read("js/app.js"), /You were signed out, so your data was removed from this phone/);
+});

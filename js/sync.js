@@ -248,8 +248,20 @@ export function initSync() {
     if (event === "PASSWORD_RECOVERY") listeners.forEach(f => f(sync, "recovery"));
     if (sync.user && sync.user.id !== before) setTimeout(start, 0);
     if (!sync.user) { if (channel) { sync.client.removeChannel(channel); channel = null; } idleStatus(); }
+    // signed out without Sign out here (expired, revoked, signed out elsewhere, password changed), or no session at all
+    // on a phone holding an account's data: that data goes too, as with Sign out (unsent changes kept aside, hidden)
+    if (!sync.user && !leaving && store.meta.owner && (event === "SIGNED_OUT" || event === "INITIAL_SESSION")) endedElsewhere();
   });
   idleStatus();
+}
+
+let leaving = false;
+async function endedElsewhere() {
+  leaving = true;
+  const { sessionEnded } = await import("./leave.js");
+  await sessionEnded(store, pendingCount() > 0);
+  try { localStorage.setItem("koti.endedNote", "1"); } catch {}   // said once after the reload
+  location.reload();
 }
 
 /* ---------- Account actions ---------- */
@@ -264,6 +276,7 @@ export async function setPassword(password) { const { error } = await sync.clien
 /* Signs out for real: the session ends everywhere if the server can be reached, and always on this device (the library
    keeps you signed in when the server call fails, e.g. offline; 15 November 2026: "Signed out" while still signed in). */
 export async function signOut() {
+  leaving = true;   // Sign out clears the phone itself (more.js), after asking about unsent changes
   const { error } = await sync.client.auth.signOut();
   if (error) { const local = await sync.client.auth.signOut({ scope: "local" }); if (local.error) throw local.error; }
   sync.user = null;
