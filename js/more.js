@@ -2,6 +2,7 @@
 import { store, ZONES, ZONE_ORDER, sortedLists, itemsOf, toModel, seedModel, backupJSON, todayISO, roomsOf, listOf, HOME_PROJECT } from "./data.js";
 import { $, $$, esc, eur, icon, parseMoney, moneyField, relTime, openSheet, closeSheet, toast } from "./ui.js";
 import { aiAllowed, openPrivacy } from "./privacy.js";
+import { clearAccountHere } from "./leave.js";
 import { sync, signIn, signUp, sendReset, setPassword, signOut, refresh, pendingCount, failedChanges, retryFailed, dropFailed } from "./sync.js";
 import { openCategories, openReceiptsList, openStartBalance } from "./money.js";
 import { startPoint } from "./ledger.js";
@@ -210,12 +211,7 @@ async function doSignOut() {
   await clearAccountHere();
   toast("Signed out"); setTimeout(() => location.reload(), 700);
 }
-/* What stays on the phone after signing out: this device's own choices, nothing of the account. */
-export const KEEP_ON_SIGN_OUT = ["koti.consent", "koti.install", "koti.palette", "koti.mode", "koti.heroView", "koti.aiLimit", "koti.reloadedFor", "kotiSpeaks"];
-export async function clearAccountHere(storage = localStorage) {
-  try { Object.keys(storage).filter(k => k.startsWith("koti") && !KEEP_ON_SIGN_OUT.includes(k)).forEach(k => storage.removeItem(k)); } catch {}
-  try { indexedDB.deleteDatabase("koti-files"); } catch {}   // receipt photos
-}
+export { KEEP_ON_SIGN_OUT, clearAccountHere } from "./leave.js";
 
 /* Delete your account: everything in it, on the server and on this device. The App Store requires it in the app. */
 export function openDeleteAccount() {

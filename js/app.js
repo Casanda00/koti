@@ -135,6 +135,8 @@ function init() {
   applyDefaults2();
   saveTimeZone();
   initSync();
+  // signed out without Sign out (session expired, or ended on another device): said once, after the phone was cleared
+  try { if (localStorage.getItem("koti.endedNote")) { localStorage.removeItem("koti.endedNote"); setTimeout(() => toast("You were signed out, so your data was removed from this phone. Sign in to bring it back."), 600); } } catch {}
   initReceipts();
 
   document.addEventListener("click", e => {
