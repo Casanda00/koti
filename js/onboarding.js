@@ -327,7 +327,7 @@ function paint() {
             <div class="g-bar">${ios ? `<span class="g-url">koti</span><span class="g-share"></span>` : `<span class="g-url">koti</span><span class="g-menu"></span>`}</div>
             <div class="g-sheet"><span class="g-row"></span><span class="g-row g-add">${esc(steps3[1])}</span><span class="g-row"></span></div>
             <span class="g-tap"></span></div>
-          <div class="g-screen g-home"><span></span><span></span><span></span><span></span><span></span><span></span><span class="g-koti"><img src="icons/icon-192.png" alt=""><small>Koti</small></span></div>
+          <div class="g-screen g-home"><span></span><span></span><span></span><span></span><span class="g-koti"><img src="icons/icon-192.png" alt=""><small>Koti</small></span><span></span><span></span><span></span></div>
         </div>
         <ol class="g-steps">${steps3.map((t, k) => `<li style="--k:${k}">${esc(t)}</li>`).join("")}</ol>
       </div>

@@ -690,8 +690,8 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-two .onb-go{flex:1}
 .onb-go.ghost{background:transparent;color:inherit;border:1.5px solid currentColor}
 /* The Home Screen guide: a phone that shows it, on a loop (8 s): the browser, the tap, the sheet, then the icon. */
-.onb-guide{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px;align-items:center;margin-top:6px}
-.g-phone{position:relative;width:150px;height:300px;border-radius:26px;background:#15161A;padding:7px;box-shadow:0 14px 34px rgba(0,0,0,.18)}
+.onb-guide{display:grid;grid-template-columns:124px minmax(0,1fr);gap:18px;align-items:center;margin-top:4px}
+.g-phone{position:relative;width:124px;height:248px;border-radius:24px;background:#15161A;padding:7px;box-shadow:0 14px 34px rgba(0,0,0,.18)}
 .g-screen{position:absolute;inset:7px;border-radius:20px;overflow:hidden}
 .g-browser{background:#F7F7F5;animation:gBrowser 8s infinite}
 .g-page{padding:28px 14px;display:grid;gap:8px}.g-page b{font:800 22px var(--display);font-stretch:62%;color:#15161A}
@@ -706,10 +706,10 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .g-add{display:flex;align-items:center;padding:0 8px;font-size:10px;font-weight:700;color:#15161A;animation:gAdd 8s infinite}
 .g-tap{position:absolute;width:26px;height:26px;border-radius:50%;background:rgba(36,66,214,.35);box-shadow:0 0 0 0 rgba(36,66,214,.4);opacity:0;animation:gTap 8s infinite;right:12px;bottom:12px}
 .onb-guide.and .g-tap{animation-name:gTapAnd}
-.g-home{background:linear-gradient(160deg,#2442D6,#7E95FF);display:grid;grid-template-columns:repeat(3,1fr);align-content:start;gap:14px;padding:30px 14px;opacity:0;animation:gHome 8s infinite}
-.g-home>span{width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.35);justify-self:center}
+.g-home{background:linear-gradient(160deg,#2442D6,#7E95FF);display:grid;grid-template-columns:repeat(3,28px);justify-content:center;align-content:start;gap:12px 8px;padding:26px 6px;opacity:0;animation:gHome 8s infinite}
+.g-home>span{width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.35)}
 .g-home .g-koti{background:none;width:auto;height:auto;display:grid;justify-items:center;gap:3px;animation:gIcon 8s infinite}
-.g-koti img{width:34px;height:34px;border-radius:9px;box-shadow:0 3px 8px rgba(0,0,0,.25)}.g-koti small{font-size:9px;color:#fff;font-weight:600}
+.g-koti img{width:28px;height:28px;border-radius:8px;box-shadow:0 3px 8px rgba(0,0,0,.25)}.g-koti small{font-size:9px;color:#fff;font-weight:600}
 .g-steps{margin:0;padding-left:20px;display:grid;gap:10px;font-size:17px;font-weight:600}
 .g-steps li{animation:gStep 8s infinite;animation-delay:calc(var(--k) * 1.6s)}
 @keyframes gTap{0%,8%{opacity:0;transform:scale(.6)}12%{opacity:1;transform:scale(1);box-shadow:0 0 0 0 rgba(36,66,214,.4)}20%{box-shadow:0 0 0 14px rgba(36,66,214,0)}24%{opacity:0;right:12px;bottom:12px}
