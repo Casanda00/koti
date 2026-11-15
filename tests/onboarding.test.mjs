@@ -1,107 +1,106 @@
-// Signing up, 15 November 2026: eight questions come first, then Koti asks your name (making friends), and creating
-// the account is the last step. The progress bar is gold and fills as you go; steps slide in.
+// Signing up, 15 November 2026, as it came together from the owner's comments: the language first (everything after
+// follows it), what you want from Koti, your pay, your bills and their reminders, then your name early (a handshake in
+// your skin tone, and Koti calls you by it), your balance, how the month ends (all that are true), who shares your
+// money, what you're saving for, a summary to check and edit, what Koti will do for you, your data and Koti's AI, and
+// last, the account. A blue bar with the percentage; each step slides in.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { setToday, app } from "./_env.mjs";
+setToday("2026-11-15");
+await app();
 const read = f => readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
-const O = read("js/onboarding.js"), C = read("css/app.css");
+const O = read("js/onboarding.js"), C = read("css/app.css"), APP = read("js/app.js");
+const OB = await import("../js/onboarding.js");
+const A = await import("../supabase/functions/koti/agent.js");
 
-test("three questions, then the name (early, making friends), five more, then the account, last", () => {
-  assert.match(O, /export const STEPS = \["why", "pay", "bills", "name", "balance", "feel", "people", "goal", "nudges", "learned", "account"\];/);
-  const at = s => { const k = O.indexOf(s); assert.ok(k > 0, s); return k; };
-  const titles = ["Hi, I'm Koti. What would make me worth it for you?", "Let's start with your pay", "What goes out every month?", "Before we go on, what should I call you?", "What does your bank say right now?",
-    "How does the end of the month usually feel", "Who shares your money life?", "Saving for something", "How should I keep you on track?", "<h1>Here's how I'll work for you", "Let's keep it safe"];
-  titles.forEach(at);   // each step's heading; their order is STEPS above
+test("the order: language, four questions, the name, five more, a summary, what Koti will do, privacy, the account", () => {
+  assert.deepEqual(OB.STEPS, ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal", "summary", "learned", "privacy", "account"]);
   assert.match(O, /const steps = \(\) => \(sync\.user \|\| !sync\.configured \? STEPS\.filter\(s => s !== "account"\) : STEPS\);/, "signed in already, or no server: no account step");
-  assert.match(O, /data-later>Not now</, "the account can wait: everything stays on this phone");
-  assert.match(O, /data-signin-first>Sign in</, "someone with an account can sign in before answering anything");
+  assert.match(O, /if \(step >= steps\(\)\.length - 1\) close\(\); else advance\(\);/, "then privacy is the last step");
 });
 
-test("each answer lands somewhere Koti uses", () => {
-  assert.match(O, /remember\(`Wants Koti's help with /, "what they want from Koti: remembered");
-  assert.match(O, /FEEL\.filter\(\(\[v\]\) => st\.feel\.has\(v\)\)\.forEach\(\(\[, , m\]\) => remember\(m\)\)/, "how the month ends, every one that's true: remembered");
-  assert.match(O, /remember\(PEOPLE\.find/, "who shares it: remembered");
-  assert.match(O, /store\.put\("goals", \{ id: st\.ids\.goal, name: st\.goal, target: target \|\| null/, "what they save for: a goal");
-  assert.match(O, /reminders: \{ \.\.\.R, bills: st\.nudge\.bills, payday: st\.nudge\.payday, weekly: st\.nudge\.weekly \}, voiceLang:/, "reminders and the language");
-  assert.match(O, /if \(name\) store\.updateSettings\(\{ name, skinTone: st\.tone \}\);/, "the name is what Koti calls them");
+test("everything is said in both languages, with the same keys, and the language picked first is the one used after", () => {
+  const keys = o => Object.keys(o).sort();
+  assert.deepEqual(keys(OB.TX.fi), keys(OB.TX.en));
+  assert.deepEqual(keys(OB.TX.fi.plan), keys(OB.TX.en.plan));
+  assert.deepEqual(keys(OB.TX.fi.rows), keys(OB.TX.en.rows));
+  for (const k of ["WHY", "FEEL", "PEOPLE"]) assert.deepEqual(OB.TX.fi[k].map(x => x[0]), OB.TX.en[k].map(x => x[0]), k);
+  assert.equal(OB.TX.fi.BILLS.length, OB.TX.en.BILLS.length); assert.equal(OB.TX.fi.GOALS.length, OB.TX.en.GOALS.length); assert.equal(OB.TX.fi.TONES.length, 6);
+  assert.equal(OB.TX.fi.balT("Antti"), "Kiitos, Antti. Paljonko tililläsi on juuri nyt?");
+  assert.equal(OB.TX.en.balT("Antti"), "Thanks, Antti. What does your bank say right now?");
+  assert.equal(OB.TX.en.balT(""), "What does your bank say right now?", "no name given: no thanks");
+  assert.match(O, /const lg = t\.closest\("\[data-lang\]"\); if \(lg\) \{ st\.lang = lg\.dataset\.lang; store\.updateSettings\(\{ voiceLang:/, "and Koti speaks it");
+  assert.match(O, /const L = \(\) => TX\[st && st\.lang === "fi" \? "fi" : "en"\];/);
+});
+
+test("Koti uses the name now and then once it's given, and says what it will do, in their language", () => {
+  assert.equal(OB.TX.en.feelT("Antti"), "How does the end of the month usually feel, Antti?");
+  assert.equal(OB.TX.en.goalT, "Saving for something?", "not on every heading: it would feel forced");
+  assert.equal(OB.TX.en.learnT("Antti"), "Here's how I'll work for you, Antti");
+  assert.equal(OB.TX.en.meet("Antti"), "Nice to meet you, Antti");
+  const p = { why: ["spend", "bills", "home"], bills: 3, feel: ["short", "left"], people: "partner", goal: { name: "Holiday", target: 1500 }, nudges: { bills: true, payday: true, weekly: true } };
+  const en = OB.planFor(p);
+  assert.equal(en.length, 5);
+  assert.match(en[0], /^Keep your daily number up top/);
+  assert.equal(en[1], "Set your 3 bills aside before anything else, and remind you the morning before each one.");
+  assert.match(en[2], /early heads-up/); assert.match(en[3], /spare money that could go to your holiday fund/); assert.equal(en[4], "Track your holiday fund to €1,500, and show what to put aside each month.");
+  const fi = OB.planFor(p, "fi");
+  assert.equal(fi[1], "Varaan 3 laskuasi ennen mitään muuta ja muistutan edellisenä aamuna jokaisesta.");
+  assert.match(fi[0], /^Pidän päivän summasi ylimpänä/);
+  assert.match(fi.join(" "), /\(loma\), 1\s500\s€/, "the goal said in Finnish, not by the English name it's kept under");
+  assert.equal(OB.planFor({}).length, 1, "nothing answered: still the daily number");
+});
+
+test("each answer lands somewhere Koti uses, and Koti is told how they started", () => {
+  assert.match(O, /remember\(T\.whyMem\(/, "what they want from Koti");
+  assert.match(O, /T\.FEEL\.filter\(\(\[v\]\) => st\.feel\.has\(v\)\)\.forEach\(\(\[, , m\]\) => remember\(m\)\)/, "how the month ends, every one that's true");
+  assert.match(O, /saveProfile\(\{ people: st\.people \}\); remember\(/, "who shares it");
+  assert.match(O, /store\.put\("goals", \{ id: st\.ids\.goal, name, target: target \|\| null/, "a goal, named in their language");
+  assert.match(O, /reminders: \{ \.\.\.R, bills: st\.nudge\.bills, payday: st\.nudge\.payday, weekly: st\.nudge\.weekly \}/, "the reminders");
+  assert.match(O, /store\.updateSettings\(\{ name, skinTone: st\.tone \}\)/, "the name and their hand");
   assert.match(O, /store\.put\("income", /); assert.match(O, /store\.put\("bills", /); assert.match(O, /setBalanceNow\(/);
-  assert.match(O, /if \(st\.mode === "up"\) \{ const r = await signUp\(email, pw\); if \(r\.needsConfirm\) \{ st\.sent = true;/);
+  const n = A.profileNotes({ why: ["spend"], feel: ["left", "varies"], people: "partner", goal: { name: "Holiday", target: 1500 } });
+  assert.match(n, /lead with today's amount/); assert.match(n, /money left at the end of the month/); assert.match(n, /changes a lot/); assert.match(n, /saving for: Holiday \(target €1500\)/);
+  assert.match(A.profileNotes({ feel: "short" }), /runs short/, "a profile from before (one answer) still reads");
+  assert.match(A.systemPrompt(A.modelFromRows({ settings: { monthStart: 1, profile: { feel: ["short"] } } }), "2026-11-15"), /How they started with Koti[^]*warn early/);
+  assert.match(read("js/koti.js"), /startersFor\(store\.model\.settings\.profile, store\.model\.goals\)/, "the first questions to tap follow what they want");
+});
+
+test("bills: their own, not only the ones listed; the end of the month: all that are true", () => {
+  assert.match(O, /data-addbill>\$\{T\.addOwn\}</);
+  assert.match(O, /function addBill\(\) \{[^]*if \(!same\) st\.custom\.push\(name\);[^]*st\.picked\.add\(same \|\| name\)/, "added and picked; the same name twice is one bill");
+  assert.match(O, /chips\(T\.FEEL\.map\(\(\[v, t\]\) => \[v, t\]\), v => st\.feel\.has\(v\), "feel"\)/, "several can be picked");
+  assert.doesNotMatch(O, /s === "feel" \|\| s === "people"\) setTimeout/, "it doesn't move on after one tap");
+});
+
+test("their hand in their skin tone, and a handshake after their name", () => {
+  assert.deepEqual(OB.TONES.map(t => t[1]), ["Default", "Light", "Medium-light", "Medium", "Medium-dark", "Dark"]);
+  assert.match(O, /role="radio" class="onb-tone" data-tone="\$\{k\}" aria-checked="\$\{k === st\.tone\}"/);
+  assert.match(O, /<span class="h-you">\$\{hand\("\\u\{1FAF1\}"\)\}<\/span><span class="h-koti">\\u\{1FAF2\}<\/span>/, "their hand in their tone meets Koti's");
+  assert.match(C, /@keyframes onbYou/); assert.match(C, /@keyframes onbKoti/);
+});
+
+test("a summary to check, each answer editable (back to the question, then back to the summary)", () => {
+  assert.match(O, /const ed = t\.closest\("\[data-edit\]"\); if \(ed\) \{ keepRows\(\); st\.back = "summary"; go\(ed\.dataset\.edit\);/);
+  assert.match(O, /function advance\(\) \{ if \(st\.back\) \{ go\(st\.back\); st\.back = null; \} else step\+\+;/);
+  assert.deepEqual(Object.keys(OB.TX.en.rows), ["lang", "why", "pay", "bills", "nudges", "name", "balance", "feel", "people", "goal"], "every answer is on it");
+});
+
+test("privacy before the account: what Koti keeps and the AI choice, as a step instead of a banner over the first question", () => {
+  assert.match(O, /setConsent\(\{ ai: ai\.dataset\.ai === "yes" \}\)/);
+  assert.match(O, /data-ai="no">\$\{T\.privNo\}<\/button><button type="button" class="onb-go" data-ai="yes">\$\{T\.privYes\}/, "two answers, neither chosen for them");
+  assert.match(O, /<a href="privacy\.html" target="_blank" rel="noopener">\$\{T\.privLink\}<\/a>/);
+  assert.match(O, /if \(!consent\(\)\) showConsentBanner\(\);/, "they never got to it: the banner, after");
+  assert.match(APP, /if \(!document\.body\.classList\.contains\("onb-open"\)\) showConsentBanner\(\);/, "not over the questions");
 });
 
 test("the blue progress bar fills as you go with the percentage counting up, and each step slides in (not with Reduce motion)", () => {
-  assert.match(C, /--bar:linear-gradient\(90deg,#2442D6 0%,#3D63FF 35%,#8FA8FF 50%/, "Koti's blue (it was gold)");
-  assert.doesNotMatch(C, /--gold/, "no gold left");
-  assert.match(C, /\.onb-prog i\{[^}]*background:var\(--bar\)[^}]*transition:width \.7s/);
+  assert.match(C, /--bar:linear-gradient\(90deg,#2442D6 0%,#3D63FF 35%,#8FA8FF 50%/, "Koti's blue");
+  assert.doesNotMatch(C, /--gold/);
   assert.match(C, /\.onb\.lake \.onb-prog i\{background:linear-gradient\(90deg,#DCE3FF,#FFFFFF 50%/, "white on the blue screen");
-  assert.match(C, /\.onb-tog\[aria-checked="true"\] i\{background:var\(--bar\)\}/);
-  assert.match(O, /aria-label="Step \$\{n \+ 1\} of \$\{all\}, \$\{to\}% done"/);
-  assert.match(O, /<span class="onb-pct" aria-hidden="true" data-from="\$\{from\}">\$\{from\}%<\/span>/, "the percentage, beside the bar");
-  assert.match(O, /pct\.textContent = `\$\{Math\.round\(a \+ \(b - a\) \* e\)\}%`/, "counting up with the bar");
-  assert.match(C, /@keyframes onbIn/); assert.match(C, /@keyframes onbBack/); assert.match(C, /@keyframes onbWave/);
+  assert.match(O, /<span class="onb-pct" aria-hidden="true" data-from="\$\{from\}">\$\{from\}%<\/span>/);
+  assert.match(O, /pct\.textContent = `\$\{Math\.round\(a \+ \(b - a\) \* e\)\}%`/);
+  assert.match(C, /@keyframes onbIn/); assert.match(C, /@keyframes onbBack/);
   assert.match(C, /@media \(prefers-reduced-motion:reduce\)\{\*\{transition:none!important;animation:none!important\}\}/);
-});
-
-// "Koti learns and adjusts for you from the onboarding": the answers are a profile Koti works from, shown back to them
-// as "Here's how I'll work for you", and sent with every question.
-test("what Koti will do is worked out from their answers, and Koti is told to work that way", async () => {
-  const { setToday, app } = await import("./_env.mjs");
-  setToday("2026-11-15"); await app();
-  const { planFor } = await import("../js/onboarding.js");
-  const A = await import("../supabase/functions/koti/agent.js");
-  const p = { why: ["spend", "bills", "home"], bills: 3, feel: "short", people: "partner", goal: { name: "Holiday", target: 1500 }, nudges: { bills: true, payday: true, weekly: true }, lang: "en" };
-  const plan = planFor(p);
-  assert.equal(plan.length, 5);
-  assert.match(plan[0], /^Keep your daily number up top/);
-  assert.equal(plan[1], "Set your 3 bills aside before anything else, and remind you the morning before each one.");
-  assert.match(plan[2], /early heads-up when money's getting tight/);
-  assert.equal(plan[3], "Track your holiday fund to €1,500, and show what to put aside each month.");
-  assert.match(plan[4], /shared costs with your partner/);
-  assert.match(planFor({ feel: "left", goal: { name: "Car", target: null } }).join(" "), /spare money that could go to your car fund/);
-  assert.equal(planFor({}).length, 1, "nothing answered: still the daily number");
-  const notes = A.profileNotes(p);
-  assert.match(notes, /^\nHow they started with Koti/);
-  assert.match(notes, /lead with today's amount/); assert.match(notes, /be careful with 'can I afford', warn early/); assert.match(notes, /share money with a partner/); assert.match(notes, /saving for: Holiday \(target €1500\)/);
-  assert.equal(A.profileNotes(null), "");
-  const M = A.modelFromRows({ settings: { monthStart: 1, profile: p } });
-  assert.match(A.systemPrompt(M, "2026-11-15"), /How they started with Koti[^]*warn early/, "with every question, and today's note");
-  const K = read("js/koti.js");
-  assert.match(K, /startersFor\(store\.model\.settings\.profile, store\.model\.goals\)/, "the first questions to tap follow what they want");
-  assert.match(K, /out\.push\(`How's my \$\{g\.toLowerCase\(\)\} fund doing\?`\)/);
-  assert.match(O, /const saveProfile = patch => store\.updateSettings\(\{ profile:/);
-});
-
-test("once they've given their name, Koti uses it, now and then", () => {
-  assert.match(O, /head\(`\$\{by\("Thanks, ", "\. "\)\}What does your bank say right now\?`/);
-  assert.match(O, /head\(`How does the end of the month usually feel\$\{by\(", "\)\}\?`/);
-  assert.match(O, /head\("Saving for something\?",/, "not on every heading: it would feel forced");
-  assert.match(O, /<h1>Here's how I'll work for you\$\{f \? `, \$\{f\}` : ""\}<\/h1>/);
-  assert.match(O, /const first = \(\) => esc\(/, "the name is escaped once, where it's taken");
-  assert.doesNotMatch(O, /esc\(f\)/, "and never twice");
-  assert.doesNotMatch(O, /That's everything/, "the name isn't the last question any more");
-});
-
-test("bills: their own, not only the ones listed", () => {
-  assert.match(O, /data-addbill>\+ Add your own</);
-  assert.match(O, /chips\(\[\.\.\.BILLS, \.\.\.st\.custom\]/, "their own bills sit with the others");
-  assert.match(O, /function addBill\(\) \{[^]*if \(!same\) st\.custom\.push\(name\);[^]*st\.picked\.add\(same \|\| name\)/, "added and picked; the same name twice is one bill");
-  assert.match(O, /if \(e\.key === "Enter"\) \{ e\.preventDefault\(\); addBill\(\); \}/);
-});
-
-test("the end of the month: all that are true; their hand in their skin tone, and a handshake after their name", async () => {
-  assert.match(O, /chips\(FEEL\.map\(\(\[v, t\]\) => \[v, t\]\), v => st\.feel\.has\(v\), "feel"\)/, "several can be picked");
-  assert.match(O, /Pick all that are true/);
-  assert.doesNotMatch(O, /s === "feel" \|\| s === "people"\) setTimeout/, "it doesn't move on after one tap any more");
-  const { planFor } = await import("../js/onboarding.js");
-  const both = planFor({ feel: ["left", "short"], goal: { name: "Car" } });
-  assert.match(both[1], /early heads-up/); assert.match(both[2], /spare money that could go to your car fund/);
-  const A = await import("../supabase/functions/koti/agent.js");
-  const n = A.profileNotes({ feel: ["left", "varies"] });
-  assert.match(n, /money left at the end of the month/); assert.match(n, /changes a lot/);
-  assert.match(A.profileNotes({ feel: "short" }), /runs short/, "a profile from before (one answer) still reads");
-  const { TONES } = await import("../js/onboarding.js");
-  assert.deepEqual(TONES.map(t => t[1]), ["Default", "Light", "Medium-light", "Medium", "Medium-dark", "Dark"]);
-  assert.match(O, /role="radio" class="onb-tone" data-tone="\$\{k\}" aria-checked="\$\{k === st\.tone\}" aria-label="\$\{label\}"/);
-  assert.match(O, /store\.updateSettings\(\{ name, skinTone: st\.tone \}\)/);
-  assert.match(O, /<span class="h-you">\$\{hand\("\\u\{1FAF1\}"\)\}<\/span><span class="h-koti">\\u\{1FAF2\}<\/span>/, "their hand in their tone meets Koti's");
-  assert.match(C, /@keyframes onbYou/); assert.match(C, /@keyframes onbKoti/);
 });

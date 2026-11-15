@@ -670,6 +670,25 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-hint{margin:2px 0 0;font-size:14px;color:var(--ink-2)}
 .onb-switch{justify-self:start;margin-top:6px;font-weight:600;color:var(--spruce);padding:6px 0}
 .onb-go:disabled{opacity:.6}
+/* The language, first. */
+.onb-langs{display:grid;gap:10px;margin-top:8px}
+.onb-lang{display:grid;gap:2px;text-align:left;min-height:76px;padding:14px 18px;border-radius:20px;border:1.5px solid var(--line);background:var(--paper);color:var(--ink)}
+.onb-lang b{font:800 32px/1 var(--display);font-stretch:62%}.onb-lang small{font-size:15px;color:var(--ink-2)}
+.onb-lang[aria-checked="true"]{border:2px solid var(--bar-solid);box-shadow:0 0 0 3px var(--bar-ring)}
+/* What they told Koti: one row each, with Edit. */
+.onb-sum{margin:8px 0 0;display:grid;border:1px solid var(--line);border-radius:18px;background:var(--paper);overflow:hidden}
+.onb-sumrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:12px 16px;border-top:1px solid var(--line)}
+.onb-sumrow:first-child{border-top:0}
+.onb-sumrow dt{font-size:13px;color:var(--ink-2);grid-column:1}
+.onb-sumrow dd{margin:0;font-size:16px;font-weight:600;grid-column:1;min-width:0;overflow-wrap:anywhere}
+.onb-edit{grid-column:2;grid-row:1/span 2;align-self:center;font-weight:600;color:var(--bar-solid);padding:8px 0 8px 8px}
+.onb-none{color:var(--ink-2);font-weight:400}
+/* Your data and the AI: two answers that look the same, neither chosen for you. */
+.onb-priv{margin-top:6px;padding:16px 18px;border-radius:18px;border:1px solid var(--line);background:var(--paper);display:grid;gap:8px}
+.onb-priv h2{margin:0;font-size:18px}.onb-priv p{margin:0;color:var(--ink-2);font-size:16px;line-height:1.45}
+.onb-priv a{color:var(--bar-solid);font-weight:600}
+.onb-two .onb-go{flex:1}
+.onb-go.ghost{background:transparent;color:inherit;border:1.5px solid currentColor}
 /* Their hand: six tones, the chosen one ringed. */
 .onb-tones{display:flex;flex-wrap:wrap;gap:8px}
 .onb-tone{width:48px;height:48px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);font-size:24px;line-height:1;display:grid;place-items:center}
