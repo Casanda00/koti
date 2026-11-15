@@ -665,6 +665,14 @@ body.onb-open .dock,body.onb-open .topbar{visibility:hidden}
 .onb-hint{margin:2px 0 0;font-size:14px;color:var(--ink-2)}
 .onb-switch{justify-self:start;margin-top:6px;font-weight:600;color:var(--spruce);padding:6px 0}
 .onb-go:disabled{opacity:.6}
+/* Reminders: one switch each, gold when on. */
+.onb-togs{display:grid;gap:8px;margin-top:6px}
+.onb-tog{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;min-height:64px;padding:12px 16px;border-radius:18px;border:1.5px solid var(--line);background:var(--paper);color:var(--ink)}
+.onb-tog b{display:block;font-size:17px}.onb-tog small{display:block;font-size:14px;color:var(--ink-2)}
+.onb-tog i{flex:none;width:50px;height:30px;border-radius:99px;background:var(--line);position:relative;transition:background .25s}
+.onb-tog i::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.onb-tog[aria-checked="true"] i{background:var(--gold)}
+.onb-tog[aria-checked="true"] i::after{transform:translateX(20px)}
 .onb-back{position:absolute;right:20px;top:calc(var(--safe-top) + 16px);font-weight:600;color:inherit;padding:6px 0}
 .onb h1{font:800 52px/.95 var(--display);font-stretch:62%;margin:22px 0 4px;max-width:14ch}
 .onb-p{margin:0;font-size:17px;line-height:1.4;color:var(--ink-2);max-width:34ch}
